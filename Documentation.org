@@ -1,0 +1,78 @@
+#+title: Documentation
+* Keywords:
+** =Packers=:
+
+*** What:
+
+Tools whose task consits of compressing executables and encrypting them simultaneosly.
+
+
+*** Why there were created:
+
+Bypass antivirus programs that analyse programs when they're loaded in memory, before they are executed.
+
+
+*** How works:
+
+During the execution the program passing throught a packer is load in memory, compresed and encrypted, then it will be decompressed and decrypted and finnally be executed.
+
+**** Why they work that way.
+Is related to the fact that =antivirus programs= generally *analyse programs when they are loaded in memory, before they are executed.* Throught =encryption= and =compresion= the packer could *bypass* by =obfuscating= the content of an executable until it execution.
+
+
+*** Example:
+       | type | Used to |
+       | SFX  | Bundle a compressed payload and executable module into a single archive. |
+       | =UPX= | Obfuscate the code by compressing and encrypting an executable.|
+
+       UPX files can be modified after packing 
+
+There’s a known technique that hackers use with UPX to make analysis more difficult, and you need to be aware of it. Corrupted UPX files can’t be decompressed with standard versions of UPX, meaning you can’t view what’s inside. However, it doesn’t affect its ability to execute potentially malicious code inside, which means the payload remains armed. 
+
+How do hackers “break” the archive Then either: 
+
+    Pack the archive with an unreleased version of UPX.   
+    Or modify l_info and p_info structures in an archive. 
+
+These two actions have the same effect. Namely, the archive will not be openable by the standard version of UPX, which can hinder both you as a researcher if you want to unpack the contents and view them in a file browser, and a security system that won’t be able to reliably apply signature-based detection to an encrypted UPX file
+
+* Goals:
+
+** Mandatory:
+
+*** Allowed functions:
+
+- open, close, exit.
+- fputsts, fflush, lseek.
+- mmap, munmap, mprotect.
+- perror, strerror.
+- syscall.
+- printf family.
+- libft ones.
+ 
+*** Requirements:
+
+- Executable name: *woody_woodpacker*
+- a binary parameter *ELF64 only*
+- End of execution create a file =woody=.
+- Free to chose encryption algorithm:
+  *Complex is Important for grading score*
+  - In case use encryption key, most randomly possible and display =stdout= when running the program
+    How to check entropy [[https://foxptr.medium.com/understanding-packers-for-malware-ddc58caad229][entropy]] 
+- When running encrypted program should display -> =stdin= "....WOODY....\n" to indicated that the file is encrypted.
+- The encrypt file isn't allowed to crash *if doesn't crash previously i supose*.
+- It execution  after decryption must suffer no alteration.
+  
+** Bonus
+
+*** 32 bit Management.
+
+*** Parameterized key.
+
+*** Binary compression:
+
+*** Optimisation of the used algorithm throught asm.
+
+*** Additional binay management (=PE=, =Mach-O=).
+
+
