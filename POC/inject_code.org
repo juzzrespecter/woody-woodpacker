@@ -1,0 +1,70 @@
+#+title: inject code in an elf file
+#+PROPERTY: header-args:c :tangle "inject_code.c" 
+
+#+begin_src c :tangle "target.c"
+  #include <stdio.h>
+
+  int main(int argc, char **argv)
+  {
+    puts("Hello World!");
+    return (0);
+  }
+
+#+end_src
+
+
+* Let's try to think of the steps:
+[[file:~/Documents/woody-woodpacker/Documentation.org][Refer]]
+** ELF
+Choice:
+   1. ~Create a new section (Cleaner, less error prune)~
+   2. ~Append at a existing section '.text' (Easier)~
+
+Check that is as valid executable....
+1. Add the string "....WOODY....\n" to the string section end for more easy.
+
+   1. Go Section header =.rodata=
+      1. Increment =sh_size= as needed.
+      2. write the content u want.
+         1. *Warning* Null ended.
+      3. Test with =readelf -r .rodata= for check is al fine, and that the executable still working with *64b * and *32b*.
+  
+2. Add instruction to the program:
+   1. Go to the Section header ='text'=.
+      1. go to the end of the section
+
+         1. =begin_elf_file= (mmap) + =sh_offset= + =original_sh_size=
+
+      2. write the instructions i want.
+
+      3. if =Shdr '.text'= is loadable as should be:
+
+         1. Increment =sh_size= as needed.
+
+            1. *Carefull* alignment.
+
+      4. Get Phdr
+
+         1. Save =Shdr '.text'.sh_offset and original_sh_size=
+
+         2. Search on phdr for one where: p_offset == sh_offset && p_filesz == sh_size
+      5. Modify =Phdr= and increment =p_filesz= and =p_memz= should be same size as =sh_size=.
+      6. Check the set of instructions was added for both arch =objdump -D | tail=
+         
+3. Change entrypoint to execute the new instructions
+    1. Detect how to jmp to the original entrypoint:
+
+    2. Write the instructions.
+
+    3. Check the program executed fine for both arch =./program=
+
+               
+
+
+    
+
+        
+  
+
+
+
