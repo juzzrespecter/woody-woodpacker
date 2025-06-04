@@ -1,0 +1,169 @@
+* ELF
+** Validate ELF
+
+*** What makes invalid a elf file:
+- Invalid Elf_header.
+- Invalid Section_header.
+- Invalid Program_header.
+
+*** Implementation
+**** Optimization
+When test if invalid elf_header we could check also if is =e_type == ET_EXEC= we should check if is an executable.
+**** Abstraction
+
+#+begin_comment
+For simplify the 64/32 bits management we're going to use unions and getters for take the values from the unions and abstract the 64/32 for the code.
+Abbreviation
+Program header = Phdr = ph       
+Section header = Shdr = sh       
+Elf header = ehdr = eh       
+#+end_comment
+
+#+begin_src c :tangle format_elf.h
+  # include <elf.h>    // Typedef ELFNN_*, ST_BIND, ...
+
+  typedef union u_elf_eh
+  {
+    const Elf32_Ehdr	*elf32;
+    const Elf64_Ehdr	*elf64;
+  }	t_elf_eh;
+
+  typedef union u_elf_ph
+  {
+    const Elf32_Phdr	*elf32;
+    const Elf64_Phdr	*elf64;
+  }	t_elf_ph;
+
+  typedef union u_elf_sh
+  {
+    const Elf32_Shdr	*elf32;
+    const Elf64_Shdr	*elf64;
+  }	t_elf_sh;
+
+  typedef union u_elf_sym
+  {
+    const Elf32_Sym	*elf32;
+    const Elf64_Sym	*elf64;
+  }	t_elf_sym;
+#+end_src
+
+**** Validation ELF_header
+***** How works the header.
+search man elf for the attributes of the structure:
+=unsigned char e_ident[EI_NIDENT];= {Magicnbr, 32/64b, Dataencoding, version, OSABI, ABI, ...}
+=uint16_t      e_type;= object file type {exec, rel, dyn, ...}
+=uint16_t      e_machine;= required archictecture for a file *Ignored*
+=uint32_t      e_version;= elf file version
+=ElfN_Addr     e_entry;= entrypoint of the program (where is the first instruction to execute
+=ElfN_Off      e_phoff;= Program header offset
+=ElfN_Off      e_shoff;= Section header offset
+=uint32_t      e_flags;= Processor-specific flags  *Ignored*
+=uint16_t      e_ehsize;= elf header size Bytes
+=uint16_t      e_phentsize;= elf program header size Bytes
+=uint16_t      e_phnum;= nbr of program header
+=uint16_t      e_shentsize;= elf section header size Bytes
+=uint16_t      e_shnum;= nbr of section header
+=uint16_t      e_shstrndx;= index of section header string (inside the array of section header)
+****** Edge Cases
+When the num of  =S/Phdr= is more than could be handle by uint16_t (65535) the first Sheader got the real info of =e_shnum, e_phnum, shstrndx=
+*What value got then:*
+- ===e_shnum == SHN_UNDEF===
+  - ==e_shnum = shdr[0].sh_size== //Where to find
+- ===e_phnum == PN_XNUM===
+  - ==e_phnum = shdr[0].sh_info== //Where to find
+- ===e_shstrndx == SHN_XINDEX===
+  - ==e_shstrndx = shdr[0].sh_link== //Where to find
+***** Coding
+****** Creating the getters
+******* Creating the getters for the edge cases.
+#+begin_src c :tangle get_real_data.c
+ 
+  uint16_t	get_real_phnum(const t_elf_eh *ehdr)
+  {
+          const t_elf_sh	shdr = get_section_header(ehdr, 0);
+          uint16_t		phnum;
+
+          phnum = get_elfh_phnum(ehdr);
+          if (PN_XNUM == phnum)
+                  phnum = get_section_header_info(&shdr,
+                                  get_elfh_e_ident_class((void *)ehdr->elf32));
+          return (phnum);
+  }
+
+  uint16_t	get_real_shstrndx(const t_elf_eh *ehdr, unsigned char class)
+  {
+          const t_elf_sh	shdr = get_section_header(ehdr, 0);
+          uint16_t		shstrndx;
+
+          shstrndx = get_elfh_shstrndx(ehdr);
+          if (shstrndx == SHN_XINDEX)
+                  shstrndx = get_section_header_link(&shdr, class);
+          return (shstrndx);
+  }
+
+  uint16_t	get_real_shnum(const t_elf_eh *ehdr, unsigned char class)
+  {
+          const t_elf_sh	shdr = get_section_header(ehdr, 0);
+          uint16_t		shnum;
+
+          shnum = get_elfh_shnum(ehdr);
+          if (shnum == SHN_UNDEF)
+                  shnum = get_section_header_size(&shdr, class);
+          return (shnum);
+  }
+
+#+end_src
+
+******* Prototype of the functions
+#+begin_src  c :tangle format_elf.h
+
+  //get_real_data
+  uint64_t	get_real_shnum(const t_elf_eh *ehdr, unsigned char class);
+  uint64_t	get_real_shstrndx(const t_elf_eh *ehdr, unsigned char class);
+  uint64_t	get_real_phnum(const t_elf_eh *ehdr);
+
+#+end_src
+
+** How do the packer logic: 
+1. Add the string "....WOODY....\n" to the string section end for more easy.
+
+   1. Go Section header =.rodata=
+      1. Increment =sh_size= as needed.
+      2. write the content u want.
+         1. *Warning* Null ended.
+      3. Test with =readelf -r .rodata= for check is al fine, and that the executable still working with *64b * and *32b*.
+  
+2. Add instruction to the program:
+   Choice:
+   - [ ] Create a new section (Cleaner, less error prune, maybe could be suspect an unusual section)
+   - [X] Append at a existing section '.text' (Easier)
+
+
+   1. Go to the Section header ='text'=.
+      1. go to the end of the section
+
+         1. =begin_elf_file= (mmap) + =sh_offset= + =original_sh_size=
+
+      2. write the instructions i want.
+
+      3. if =Shdr '.text'= is loadable as should be:
+
+         1. Increment =sh_size= as needed.
+
+            1. *Carefull* alignment.
+
+      4. Get Phdr
+
+         1. Save =Shdr '.text'.sh_offset and original_sh_size=
+
+         2. Search on phdr for one where: p_offset == sh_offset && p_filesz == sh_size
+      5. Modify =Phdr= and increment =p_filesz= and =p_memz= should be same size as =sh_size=.
+      6. Check the set of instructions was added for both arch =objdump -D | tail=
+         
+3. Change entrypoint to execute the new instructions
+    1. Detect how to jmp to the original entrypoint:
+
+    2. Write the instructions.
+
+    3. Check the program executed fine for both arch =./program=
+

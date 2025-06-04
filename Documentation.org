@@ -55,7 +55,7 @@ These two actions have the same effect. Namely, the archive will not be openable
 - Executable name: *woody_woodpacker*
 - a binary parameter *ELF64 only*
 - End of execution create a file =woody=.
-- Free to chose encryption algorithm:
+- Free to choose encryption algorithm:
   *Complex is Important for grading score*
   - In case use encryption key, most randomly possible and display =stdout= when running the program
     How to check entropy [[https://foxptr.medium.com/understanding-packers-for-malware-ddc58caad229][entropy]] 
