@@ -1,32 +1,33 @@
-* ELF
-** Validate ELF
+#+title: ELF
+#+PROPERTY: header-args:c :tangle "inject_code.c" :mkdirp yes
+* Validate ELF
 
-*** What makes invalid a elf file:
+** What makes invalid a elf file:
 - Invalid Elf_header.
 - Invalid Section_header.
 - Invalid Program_header.
 
-*** Implementation
-**** Optimization
+** Implementation
+*** Optimization
 When test if invalid elf_header we could check also if is =e_type == ET_EXEC= we should check if is an executable.
-**** Abstraction
+*** Abstraction
 
 #+begin_comment
 For simplify the 64/32 bits management we're going to use unions and getters for take the values from the unions and abstract the 64/32 for the code.
 Abbreviation
-Program header = Phdr = ph       
-Section header = Shdr = sh       
-Elf header = ehdr = eh       
+Program header = Phdr = _ph       
+Section header = Shdr = _sh       
+Elf header = ehdr = _h       
 #+end_comment
 
 #+begin_src c :tangle format_elf.h
   # include <elf.h>    // Typedef ELFNN_*, ST_BIND, ...
 
-  typedef union u_elf_eh
+  typedef union u_elf_h
   {
     const Elf32_Ehdr	*elf32;
     const Elf64_Ehdr	*elf64;
-  }	t_elf_eh;
+  }	t_elf_h;
 
   typedef union u_elf_ph
   {
@@ -47,8 +48,8 @@ Elf header = ehdr = eh
   }	t_elf_sym;
 #+end_src
 
-**** Validation ELF_header
-***** How works the header.
+*** Validation ELF_header
+**** How works the header.
 search man elf for the attributes of the structure:
 =unsigned char e_ident[EI_NIDENT];= {Magicnbr, 32/64b, Dataencoding, version, OSABI, ABI, ...}
 =uint16_t      e_type;= object file type {exec, rel, dyn, ...}
@@ -64,7 +65,7 @@ search man elf for the attributes of the structure:
 =uint16_t      e_shentsize;= elf section header size Bytes
 =uint16_t      e_shnum;= nbr of section header
 =uint16_t      e_shstrndx;= index of section header string (inside the array of section header)
-****** Edge Cases
+***** Edge Cases
 When the num of  =S/Phdr= is more than could be handle by uint16_t (65535) the first Sheader got the real info of =e_shnum, e_phnum, shstrndx=
 *What value got then:*
 - ===e_shnum == SHN_UNDEF===
@@ -73,58 +74,121 @@ When the num of  =S/Phdr= is more than could be handle by uint16_t (65535) the f
   - ==e_phnum = shdr[0].sh_info== //Where to find
 - ===e_shstrndx == SHN_XINDEX===
   - ==e_shstrndx = shdr[0].sh_link== //Where to find
-***** Coding
-****** Creating the getters
-******* Creating the getters for the edge cases.
+**** Coding
+***** Creating the getters
+
+***** Creating the getters for the edge cases
+
 #+begin_src c :tangle get_real_data.c
- 
-  uint16_t	get_real_phnum(const t_elf_eh *ehdr)
-  {
-          const t_elf_sh	shdr = get_section_header(ehdr, 0);
-          uint16_t		phnum;
+#include "format_elf.h"
 
-          phnum = get_elfh_phnum(ehdr);
-          if (PN_XNUM == phnum)
-                  phnum = get_section_header_info(&shdr,
-                                  get_elfh_e_ident_class((void *)ehdr->elf32));
-          return (phnum);
-  }
+uint16_t	get_real_phnum(const t_elf_eh *ehdr)
+{
+        const t_elf_sh	shdr = get_section_header(ehdr, 0);
+        uint16_t		phnum;
 
-  uint16_t	get_real_shstrndx(const t_elf_eh *ehdr, unsigned char class)
-  {
-          const t_elf_sh	shdr = get_section_header(ehdr, 0);
-          uint16_t		shstrndx;
+        phnum = get_elfh_phnum(ehdr);
+        if (PN_XNUM == phnum)
+                phnum = get_section_header_info(&shdr,
+                                get_elfh_e_ident_class((void *)ehdr->elf32));
+        return (phnum);
+}
 
-          shstrndx = get_elfh_shstrndx(ehdr);
-          if (shstrndx == SHN_XINDEX)
-                  shstrndx = get_section_header_link(&shdr, class);
-          return (shstrndx);
-  }
+uint16_t	get_real_shstrndx(const t_elf_eh *ehdr, unsigned char class)
+{
+        const t_elf_sh	shdr = get_section_header(ehdr, 0);
+        uint16_t		shstrndx;
 
-  uint16_t	get_real_shnum(const t_elf_eh *ehdr, unsigned char class)
-  {
-          const t_elf_sh	shdr = get_section_header(ehdr, 0);
-          uint16_t		shnum;
+        shstrndx = get_elfh_shstrndx(ehdr);
+        if (shstrndx == SHN_XINDEX)
+                shstrndx = get_section_header_link(&shdr, class);
+        return (shstrndx);
+}
 
-          shnum = get_elfh_shnum(ehdr);
-          if (shnum == SHN_UNDEF)
-                  shnum = get_section_header_size(&shdr, class);
-          return (shnum);
-  }
+uint16_t	get_real_shnum(const t_elf_eh *ehdr, unsigned char class)
+{
+        const t_elf_sh	shdr = get_section_header(ehdr, 0);
+        uint16_t		shnum;
 
+        shnum = get_elfh_shnum(ehdr);
+        if (shnum == SHN_UNDEF)
+                shnum = get_section_header_size(&shdr, class);
+        return (shnum);
+}
 #+end_src
-
-******* Prototype of the functions
+****** Prototype of the functions
 #+begin_src  c :tangle format_elf.h
 
   //get_real_data
-  uint64_t	get_real_shnum(const t_elf_eh *ehdr, unsigned char class);
-  uint64_t	get_real_shstrndx(const t_elf_eh *ehdr, unsigned char class);
-  uint64_t	get_real_phnum(const t_elf_eh *ehdr);
+  uint64_t	get_real_shnum(const t_elf_h *ehdr, unsigned char class);
+  uint64_t	get_real_shstrndx(const t_elf_h *ehdr, unsigned char class);
+  uint64_t	get_real_phnum(const t_elf_h *ehdr);
 
 #+end_src
 
-** How do the packer logic: 
+***** Create the validation
+#+begin_src c :tangle valid_elf_h_attrib.c
+  #include "format_elf.h"
+
+  bool	is_a_valid_elf_shoff(const t_elf_h *ehdr, off_t *elf_size)
+  {
+    return (get_elfh_shoff(ehdr) < (uint64_t )*elf_size
+            && get_elfh_shoff(ehdr)
+            >= (uint64_t)get_struct_size_elf_header((char *)ehdr->elf32));
+  }
+
+  bool	is_a_valid_elf_phoff(const t_elf_h *ehdr, off_t *elf_size)
+  {
+    return (get_elfh_phnum(ehdr)
+            && (get_elfh_phoff(ehdr) >= (uint64_t)get_struct_size_elf_header((char *)ehdr->elf32)
+            && get_elfh_phoff(ehdr) < (uint64_t)elf_size));
+  }
+#+end_src
+
+****** Coment
+#+begin_src c :tangle no
+  // Not real Because in case expanded got XINDEX != 0
+  // Generic elf files don't need phdrs bit  in an executable elf file we need phdr.
+     bool	valid_program_offset(const t_elf_h *ehdr, t_bag *bag)
+     {
+     return (!get_elfh_phnum(ehdr) || (get_elfh_shoff(ehdr) >= (uint64_t)get_struct_size_elf_header((char *)ehdr->elf32)
+     && get_elfh_phoff(ehdr) < (uint64_t)bag->elf_size));
+     }
+#+end_src
+
+#+begin_src c :tangle validate_elf_h.c
+  #include "format_elf.h"
+
+  bool is_file_size_sufficient_for_elf_header(off_t file_size, void *elf_mmap)
+  {
+    if (bag->elf_size < EI_NIDENT)
+      return (false);
+    return (bag->elf_size
+            >= get_struct_size_elf_header(bag->elf_mmap));
+  }
+
+  bool	is_valid_elf_data_format(char *elf_mmap)
+  {
+    const char	data = elf_mmap[EI_DATA];
+
+    return (data == ELFDATA2LSB || data == ELFDATA2MSB);
+  }
+
+  bool	is_a_valid_elf_version(char *elf_mmap)
+  {
+    return (EV_CURRENT == elf_mmap[EI_VERSION]);
+  }
+
+  bool	is_an_executable_elf_file(const t_elf_h *ehdr, off_t *file_size)
+  {
+    return (ET_EXEC == get_elfh_type(ehdr, file_size)
+            && is_a_valid_elf_shoff(ehdr, file_size)
+            && get_elfh_phoff(ehdr)// valid phoff
+            >= (uint64_t)get_struct_size_elf_header((char *)ehdr->elf32));
+  }
+#+end_src
+
+* How do the packer logic: 
 1. Add the string "....WOODY....\n" to the string section end for more easy.
 
    1. Go Section header =.rodata=
@@ -167,3 +231,4 @@ When the num of  =S/Phdr= is more than could be handle by uint16_t (65535) the f
 
     3. Check the program executed fine for both arch =./program=
 
+       

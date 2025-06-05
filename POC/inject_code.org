@@ -1,5 +1,5 @@
 #+title: inject code in an elf file
-#+PROPERTY: header-args:c :tangle "inject_code.c" 
+#+PROPERTY: header-args:c :tangle "inject_code.c" :mkdirp yes
 
 #+begin_src c :tangle "target.c"
   #include <stdio.h>
@@ -16,7 +16,7 @@
 [[file:~/Documents/woody-woodpacker/Documentation.org][Refer]]
 * Generic Logic
 ** Handling errors:
-#+begin_src c :tangle inject_code.h
+#+begin_src c :tangle "woody.h"
   #include
   # include <sys/mman.h> //mmap, munmap
   # include <unistd.h> // lseek
@@ -38,40 +38,23 @@
 *** check the parameter.
 Compare if the nbr of params is distint of 1.
    #+begin_src c :tangle main.c
-     #include "inject_code.h"
+     #include "woody.h"
 
      int main(int argc, char **argv)
      {
          off_t 	file_size;
-         int   	fd;
+         int   	fd;        //disposable should use a function for avoid use more space than necesary along all the program.
          void  	*file_mmap;
          t_file_type	ftype;
 
          if (argc == 1)
            return (BAD_NBR_PARAMS);
-         fd = get_file (argv[1]);
-         if (fd < 0)
-           return (FAIL_OPEN_FD);
-         if (get_file_size(fd, &file_size) != SUCCESS)
-         {
-             close (fd);
-             return (FAIL_LSEEK);
-         }
-         file_mmap = mmap (NULL, file_size, PROT_NONE | PROT_READ,
-                        NO_SHARE_CHANGES, fd, 0);
-         close(fd);
-         if (MAP-FAILED == file_mmap)
-           return (FAIL_MMAP);
-         ftype = get_ftype (file_mmap, &file_size);
-         if (ftype == FT_UNKNOW)
-           return (UNRECOGNIZED_FILE);
-         return (SUCCESS);
-     }
    #+end_src
 
 *** open the file.
 
    #+begin_src c :tangle file_validation.c
+     
      int	get_file(const char *filename, int *fd)
      {
        open(filename, O_RDONLY);
@@ -82,6 +65,13 @@ Compare if the nbr of params is distint of 1.
      }
 
    #+end_src
+**** Adding to main:
+#+begin_src c
+
+  if (get_file (argv[1], &fd) == FAIL_OPEN_FD)
+    return (FAIL_OPEN_FD);
+
+#+end_src
 
 *** size of the file
 #+begin_src c :tangle file_validation.c
@@ -102,11 +92,30 @@ Compare if the nbr of params is distint of 1.
   }
 
 #+end_src
+**** Adding to main
+#+begin_src c
+  if (get_file_size(fd, &file_size) != SUCCESS)
+    {
+      close (fd);
+      return (FAIL_LSEEK);
+    }
+#+end_src
+*** Map the content of the file
+#+begin_src c
+  file_mmap = mmap (NULL, file_size, PROT_NONE | PROT_READ,
+                    NO_SHARE_CHANGES, fd, 0);
+  close(fd);
+  if (MAP_FAILED == file_mmap)
+    return (FAIL_MMAP);
+
+
+#+end_src
 
 #+begin_comment
 Once fail or not the mmap we don't have any use to the fd, we close it for that reason
 #+end_comment
-*** Detect the type of file between {ELF, PE, Mach O)
+
+*** Detect the type of file between {ELF, PE, Mach O}
 Solution Fast check Magic/Signature
 Cause:  ELF, PE and Mach O got Magic number/Signature
    #+begin_src c :tangle inject_code.h
@@ -124,41 +133,54 @@ Cause:  ELF, PE and Mach O got Magic number/Signature
      typedef enum e_file_type {
        FT_ELF,
        FT_MACH_O,
-       FT_PE,
+       FT_PE,  // FT_DOS?
        FT_UNKNOW
      }	t_file_type;
 #+end_src
 
-ELF Got a signature 4 bytes, MACH-O 32 and 64 got a signature 4 bytes each and PE and DOS got a Signature of the file of 2 Bytes.
+ELF Got a signature 4 bytes, MACH-O 32 and 64 got a signature 4 bytes each and PE and DOS got a Signature of the file of 2 Bytes and PE another inside one header.
 **** Warning:
-I just check the DOS Signature ( Could happend that is a DOS file and not PE should check later
+I just check the DOS Signature (Could happend that is a DOS file and not PE should check later on File Format Specific.)
 :LOGBOOK:
 - State "WAIT"       from              [2025-06-04 Wed 10:54]
 :END:
 #+begin_src c :tangle signature_check.c
-     t_file_type get_ftype(const char *file_content, const off_t *file_size)
-     {
-       if (ELF_MAGIC_SIZE < *file_size && !strncmp(file_content, ELF_MAGIC, ELF_MAGIC_SIZE))
-         return (FT_ELF);
-       if (MACH_O_MAGIC_SIZE < *file_size && !strncmp(file_content, MACH_O_64b_MAGIC, MACH_O_MAGIC_SIZE))
-         return (FT_MACH_O);
-       if (MACH_O_MAGIC_SIZE < *file_size && !strncmp(file_content, MACH_O_64b_MAGIC, MACH_O_MAGIC_SIZE))
-         return (FT_MACH_O);
-       if (DOS_SIGN_SIZE < *file_size && !strncmp(file_content, DOS_SIGN_SIZE)
-           return (FT_PE);
-       return (FT_UNKNOW);
-     }
+  t_file_type get_ftype(const char *file_content, const off_t *file_size)
+  {
+    if (ELF_MAGIC_SIZE < *file_size && !strncmp(file_content, ELF_MAGIC, ELF_MAGIC_SIZE))
+      return (FT_ELF);
+    if (MACH_O_MAGIC_SIZE < *file_size && !strncmp(file_content, MACH_O_64b_MAGIC, MACH_O_MAGIC_SIZE))
+      return (FT_MACH_O);
+    if (MACH_O_MAGIC_SIZE < *file_size && !strncmp(file_content, MACH_O_64b_MAGIC, MACH_O_MAGIC_SIZE))
+      return (FT_MACH_O);
+    if (DOS_SIGN_SIZE < *file_size && !strncmp(file_content, DOS_SIGN_SIZE)
+        return (FT_PE);
+    return (FT_UNKNOW);
+  }
 
 #+end_src
+**** Adding to main
+#+begin_src c
+  ftype = get_ftype (file_mmap, &file_size);
+  if (FT_UNKNOW == ftype)
+    return (UNRECOGNIZED_FILE);
+
+#+end_src
+
 *  File Format Specific:
 Ideally make a array of pointer function
  use
  #+begin src pseudocode
  validate_ftype[ftype](params....);
- if error
-	 whatever
+  if error
+   whatever
  #+end_src
 ** ELF Format:
 [[file:ELF.org][ELF]]
 ** PE Format:
 ** MACH-O Format:
+#+begin_src c
+
+  return (SUCCESS);
+}
+#+end_src
