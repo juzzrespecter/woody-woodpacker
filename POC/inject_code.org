@@ -19,7 +19,7 @@
 #+begin_src c :tangle "woody.h"
   #include
   # include <sys/mman.h> //mmap, munmap
-  # include <unistd.h> // lseek
+  # include <unistd.h> // lseek, open, close
   # include "format_elf.h" // elf
 
   typedef enum e_return_errors
@@ -31,6 +31,7 @@
     FAIL_LSEEK = -2,
     FAIL_MMAP = -3,
     UNRECOGNIZED_FILE = 2,
+    UNVALID_FTYPE = 3,
   }	t_return_errors;
 
 #+end_src
@@ -65,6 +66,7 @@ Compare if the nbr of params is distint of 1.
      }
 
    #+end_src
+
 **** Adding to main:
 #+begin_src c
 
@@ -74,6 +76,7 @@ Compare if the nbr of params is distint of 1.
 #+end_src
 
 *** size of the file
+
 #+begin_src c :tangle file_validation.c
   int get_file_size(int fg, off_t *file_size)
   {
@@ -92,7 +95,9 @@ Compare if the nbr of params is distint of 1.
   }
 
 #+end_src
+
 **** Adding to main
+
 #+begin_src c
   if (get_file_size(fd, &file_size) != SUCCESS)
     {
@@ -100,7 +105,9 @@ Compare if the nbr of params is distint of 1.
       return (FAIL_LSEEK);
     }
 #+end_src
+
 *** Map the content of the file
+
 #+begin_src c
   file_mmap = mmap (NULL, file_size, PROT_NONE | PROT_READ,
                     NO_SHARE_CHANGES, fd, 0);
@@ -138,12 +145,9 @@ Cause:  ELF, PE and Mach O got Magic number/Signature
      }	t_file_type;
 #+end_src
 
-ELF Got a signature 4 bytes, MACH-O 32 and 64 got a signature 4 bytes each and PE and DOS got a Signature of the file of 2 Bytes and PE another inside one header.
+ELF Got a signature 4 bytes, MACH-O 32 and 64 got a signature 4 bytes each and PE and DOS got a Signature of the file of 2 Bytes and PE another inside one header 4 bytes.
 **** Warning:
 I just check the DOS Signature (Could happend that is a DOS file and not PE should check later on File Format Specific.)
-:LOGBOOK:
-- State "WAIT"       from              [2025-06-04 Wed 10:54]
-:END:
 #+begin_src c :tangle signature_check.c
   t_file_type get_ftype(const char *file_content, const off_t *file_size)
   {
@@ -169,11 +173,11 @@ I just check the DOS Signature (Could happend that is a DOS file and not PE shou
 
 *  File Format Specific:
 Ideally make a array of pointer function
- use
- #+begin src pseudocode
- validate_ftype[ftype](params....);
-  if error
-   whatever
+ something similar to this:
+ #+begin_src c
+   if (validate_ftype[ftype](params....))
+     return (UNVALID_FTYPE);
+
  #+end_src
 ** ELF Format:
 [[file:ELF.org][ELF]]
@@ -184,3 +188,5 @@ Ideally make a array of pointer function
   return (SUCCESS);
 }
 #+end_src
+#+PROPERTY: post-tangle my/org-babel-post-tangle-hook
+

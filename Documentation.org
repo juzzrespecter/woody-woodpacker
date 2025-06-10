@@ -76,3 +76,15 @@ These two actions have the same effect. Namely, the archive will not be openable
 *** Additional binay management (=PE=, =Mach-O=).
 
 
+#+begin_src c :tangle yes :shebang "#include <stdio.h>"
+  // # include <stdio.h>
+
+    int	main(void)
+    {
+#+end_src
+#+begin_src c :tangle Documentation.c :shebang "#include <stdio.h>" :epilogue "# endif"
+
+      printf("Hello Org World!\n");
+      return (0);
+    }
+#+end_src

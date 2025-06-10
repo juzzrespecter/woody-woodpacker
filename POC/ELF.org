@@ -3,7 +3,11 @@
 * Validate ELF
 
 ** What makes invalid a elf file:
-- Invalid Elf_header.
+*** TODO Invalid Elf_header.
+:LOGBOOK:
+CLOCK: [2025-06-10 Tue 12:27]
+CLOCK: [2025-06-10 Tue 11:18]--[2025-06-10 Tue 11:49] =>  0:31
+:END:
 - Invalid Section_header.
 - Invalid Program_header.
 
@@ -20,7 +24,7 @@ Section header = Shdr = _sh
 Elf header = ehdr = _h       
 #+end_comment
 
-#+begin_src c :tangle format_elf.h
+#+begin_src c :tangle format_elf.h :prologue "#ifndef FORMAT_ELF\n# define FORMAT_ELF\n"
   # include <elf.h>    // Typedef ELFNN_*, ST_BIND, ...
 
   typedef union u_elf_h
@@ -76,45 +80,226 @@ When the num of  =S/Phdr= is more than could be handle by uint16_t (65535) the f
   - ==e_shstrndx = shdr[0].sh_link== //Where to find
 **** Coding
 ***** Creating the getters
+I use the union attribute elf32 for e_ident case be a 64 is in the same place the first position (polymorphism).
+#+begin_src c :tangle get_eh.c :prologue '#include "format_elf.h"'
 
+  uint16_t	get_elfh_type(const t_elf_h *ehdr)
+  {
+    const unsigned char	class = get_elfh_e_ident_class(ehdr->elf32->e_ident);
+
+    if (class == ELFCLASS32)
+      return (ehdr->elf32->e_type);
+    return (ehdr->elf64->e_type);
+  }
+
+  uint16_t	get_elfh_machine(const t_elf_h *ehdr)
+  {
+    const unsigned char	class = get_elfh_e_ident_class(ehdr->elf32->e_ident);
+
+    if (class == ELFCLASS32)
+      return (ehdr->elf32->e_machine);
+    return (ehdr->elf64->e_machine);
+  }
+
+  uint32_t	get_elfh_version(const t_elf_h *ehdr)
+  {
+    const unsigned char	class = get_elfh_e_ident_class(ehdr->elf32->e_ident);
+
+    if (class == ELFCLASS32)
+      return (ehdr->elf32->e_version);
+    return (ehdr->elf64->e_version);
+  }
+
+  uint32_t	get_elfh_flags(const t_elf_h *ehdr)
+  {
+    const unsigned char	class = get_elfh_e_ident_class(ehdr->elf32->e_ident);
+
+    if (class == ELFCLASS32)
+      return (ehdr->elf32->e_flags);
+    return (ehdr->elf64->e_flags);
+  }
+
+  uint32_t	get_elfh_flags(const t_elf_h *ehdr)
+  {
+    const unsigned char	class = get_elfh_e_ident_class(ehdr->elf32->e_ident);
+
+    if (class == ELFCLASS32)
+      return (ehdr->elf32->e_flags);
+    return (ehdr->elf64->e_flags);
+  }
+
+  uint16_t	get_elfh_shstrndx(const t_elf_h *ehdr)
+  {
+    const unsigned char	class = get_elfh_e_ident_class(ehdr->elf32->e_ident);
+
+    if (class == ELFCLASS32)
+      return (ehdr->elf32->e_shstrndx);
+    return (ehdr->elf64->e_shstrndx);
+  }
+
+#+end_src
+
+#+begin_src c :tangle format_elf.h
+  //get_eh
+  uint16_t		get_elfh_type(const t_elf_h *hdr);
+  uint16_t		get_elfh_machine(const t_elf_h *ehdr);
+  uint32_t		get_elfh_version(const t_elf_h *ehdr);
+  uint32_t		get_elfh_flags(const t_elf_h *ehdr);
+  uint16_t		get_elfh_shstrndx(const t_elf_h *ehdr);
+
+#+end_src
+
+#+begin_src c :tangle get_eh_1.c :prologue 'include "format_elf.h"'
+
+  uint16_t	get_elfh_ehsize(const t_elf_h *ehdr)
+  {
+    const unsigned char	class = get_elfh_e_ident_class(ehdr->elf32->e_ident);
+
+    if (class == ELFCLASS32)
+      return (ehdr->elf32->e_ehsize);
+    return (ehdr->elf64->e_ehsize);
+  }
+
+  uint16_t	get_elfh_phentsize(const t_elf_h *ehdr)
+  {
+    const unsigned char	class = get_elfh_e_ident_class(ehdr->elf32->e_ident);
+
+    if (class == ELFCLASS32)
+      return (ehdr->elf32->e_phentsize);
+    return (ehdr->elf64->e_phentsize);
+  }
+
+  uint16_t	get_elfh_phnum(const t_elf_h *ehdr)
+  {
+    const unsigned char	class = get_elfh_e_ident_class(ehdr->elf32->e_ident);
+
+    if (class == ELFCLASS32)
+      return (ehdr->elf32->e_phnum);
+    return (ehdr->elf64->e_phnum);
+  }
+
+  uint16_t	get_elfh_shentsize(const t_elf_h *ehdr)
+  {
+    const unsigned char	class = get_elfh_e_ident_class(ehdr->elf32->e_ident);
+
+    if (class == ELFCLASS32)
+      return (ehdr->elf32->e_shentsize);
+    return (ehdr->elf64->e_shentsize);
+  }
+
+  uint16_t	get_elfh_shnum(const t_elf_h *ehdr)
+  {
+    const unsigned char	class = get_elfh_e_ident_class(ehdr->elf32->e_ident);
+
+    if (class == ELFCLASS32)
+      return (ehdr->elf32->e_shnum);
+    return (ehdr->elf64->e_shnum);
+  }
+#+end_src
+
+#+begin_src c :tangle format_elf.h
+  //get_eh_1
+  uint16_t		get_elfh_ehsize(const t_elf_h *ehdr);
+  uint16_t		get_elfh_phentsize(const t_elf_h *ehdr);
+  uint16_t		get_elfh_phnum(const t_elf_h *ehdr);
+  uint16_t		get_elfh_shentsize(const t_elf_h *ehdr);
+  uint16_t		get_elfh_shnum(const t_elf_h *ehdr);
+#+end_src
+
+#+begin_src c :tangle get_eh_2.c :prologue 'include "format_elf.h"'
+  
+uint64_t	get_elfh_entry(const t_elf_h *ehdr)
+{
+	const unsigned char	class = get_elfh_e_ident_class(ehdr->elf32->e_ident);
+
+	if (class == ELFCLASS32)
+		return ((uint64_t)ehdr->elf32->e_entry);
+	return (ehdr->elf64->e_entry);
+}
+
+uint64_t	get_elfh_phoff(const t_elf_h *ehdr)
+{
+	const unsigned char	class = get_elfh_e_ident_class(ehdr->elf32->e_ident);
+
+	if (class == ELFCLASS32)
+		return ((uint64_t)ehdr->elf32->e_phoff);
+	return (ehdr->elf64->e_phoff);
+}
+
+uint64_t	get_elfh_shoff(const t_elf_h *ehdr)
+{
+	const unsigned char	class = get_elfh_e_ident_class(ehdr->elf32->e_ident);
+
+	if (class == ELFCLASS32)
+		return ((uint64_t)ehdr->elf32->e_shoff);
+	return (ehdr->elf64->e_shoff);
+}
+
+int	get_struct_size_elf_header(char *elf_mmap)
+{
+	if (elf_mmap[EI_CLASS] == ELFCLASS32)
+		return (sizeof (Elf32_Ehdr));
+	else if (elf_mmap[EI_CLASS] == ELFCLASS64)
+		return (sizeof (Elf64_Ehdr));
+	return (0);
+}
+#+end_src
+
+#+begin_src c :tangle format_elf.h
+  // get_eh_2
+  uint64_t		get_elfh_entry(const t_elf_h *ehdr);
+  uint64_t		get_elfh_phoff(const t_elf_h *ehdr);
+  uint64_t		get_elfh_shoff(const t_elf_h *ehdr);
+  int				get_struct_size_elf_header(char *elf_mmap);
+
+#+end_src
 ***** Creating the getters for the edge cases
 
 #+begin_src c :tangle get_real_data.c
-#include "format_elf.h"
+  #include "format_elf.h"
 
-uint16_t	get_real_phnum(const t_elf_eh *ehdr)
-{
-        const t_elf_sh	shdr = get_section_header(ehdr, 0);
-        uint16_t		phnum;
+  uint16_t	get_real_phnum(const t_elf_eh *ehdr)
+  {
+    const t_elf_sh	shdr = get_section_header(ehdr, 0);
+    uint16_t		phnum;
 
-        phnum = get_elfh_phnum(ehdr);
-        if (PN_XNUM == phnum)
-                phnum = get_section_header_info(&shdr,
-                                get_elfh_e_ident_class((void *)ehdr->elf32));
-        return (phnum);
-}
+    phnum = get_elfh_phnum(ehdr);
+    if (PN_XNUM == phnum)
+      phnum = get_section_header_info(&shdr,
+                                      get_elfh_e_ident_class((void *)ehdr->elf32));
+    return (phnum);
+  }
 
-uint16_t	get_real_shstrndx(const t_elf_eh *ehdr, unsigned char class)
-{
-        const t_elf_sh	shdr = get_section_header(ehdr, 0);
-        uint16_t		shstrndx;
+  uint16_t	get_real_shstrndx(const t_elf_eh *ehdr, unsigned char class)
+  {
+    const t_elf_sh	shdr = get_section_header(ehdr, 0);
+    uint16_t		shstrndx;
 
-        shstrndx = get_elfh_shstrndx(ehdr);
-        if (shstrndx == SHN_XINDEX)
-                shstrndx = get_section_header_link(&shdr, class);
-        return (shstrndx);
-}
+    shstrndx = get_elfh_shstrndx(ehdr);
+    if (shstrndx == SHN_XINDEX)
+      shstrndx = get_section_header_link(&shdr, class);
+    return (shstrndx);
+  }
 
-uint16_t	get_real_shnum(const t_elf_eh *ehdr, unsigned char class)
-{
-        const t_elf_sh	shdr = get_section_header(ehdr, 0);
-        uint16_t		shnum;
+  uint16_t	get_real_shnum(const t_elf_eh *ehdr, unsigned char class)
+  {
+    const t_elf_sh	shdr = get_section_header(ehdr, 0);
+    uint16_t		shnum;
 
-        shnum = get_elfh_shnum(ehdr);
-        if (shnum == SHN_UNDEF)
-                shnum = get_section_header_size(&shdr, class);
-        return (shnum);
-}
+    shnum = get_elfh_shnum(ehdr);
+    if (shnum == SHN_UNDEF)
+      shnum = get_section_header_size(&shdr, class);
+    return (shnum);
+  }
+
+  uint16_t	get_elfh_shstrndx(const t_elf_h *ehdr)
+  {
+    const unsigned char	class = get_elfh_e_ident_class(ehdr->elf32->e_ident);
+
+    if (class == ELFCLASS32)
+      return (ehdr->elf32->e_shstrndx);
+    return (ehdr->elf64->e_shstrndx);
+  }
 #+end_src
 ****** Prototype of the functions
 #+begin_src  c :tangle format_elf.h
@@ -130,64 +315,128 @@ uint16_t	get_real_shnum(const t_elf_eh *ehdr, unsigned char class)
 #+begin_src c :tangle valid_elf_h_attrib.c
   #include "format_elf.h"
 
-  bool	is_a_valid_elf_shoff(const t_elf_h *ehdr, off_t *elf_size)
+  bool	is_valid_elf_shoff(const t_elf_h *ehdr, off_t *elf_size)
   {
     return (get_elfh_shoff(ehdr) < (uint64_t )*elf_size
             && get_elfh_shoff(ehdr)
             >= (uint64_t)get_struct_size_elf_header((char *)ehdr->elf32));
   }
 
-  bool	is_a_valid_elf_phoff(const t_elf_h *ehdr, off_t *elf_size)
+  bool	is_valid_elf_phoff(const t_elf_h *ehdr, off_t *elf_size)
   {
-    return (get_elfh_phnum(ehdr)
-            && (get_elfh_phoff(ehdr) >= (uint64_t)get_struct_size_elf_header((char *)ehdr->elf32)
+    return (!get_elfh_phnum(ehdr)
+            || (get_elfh_phoff(ehdr) >= (uint64_t)get_struct_size_elf_header((char *)ehdr->elf32)
             && get_elfh_phoff(ehdr) < (uint64_t)elf_size));
   }
 #+end_src
 
-****** Coment
-#+begin_src c :tangle no
-  // Not real Because in case expanded got XINDEX != 0
-  // Generic elf files don't need phdrs bit  in an executable elf file we need phdr.
-     bool	valid_program_offset(const t_elf_h *ehdr, t_bag *bag)
-     {
-     return (!get_elfh_phnum(ehdr) || (get_elfh_shoff(ehdr) >= (uint64_t)get_struct_size_elf_header((char *)ehdr->elf32)
-     && get_elfh_phoff(ehdr) < (uint64_t)bag->elf_size));
-     }
+#+begin_src c :tangle format_elf.h
+  // valid_elf_h_attrib
+  
+  bool	is_valid_elf_shoff(const t_elf_h *ehdr, off_t *elf_size);
+  bool	is_valid_elf_phoff(const t_elf_h *ehdr, off_t *elf_size);
+
 #+end_src
 
 #+begin_src c :tangle validate_elf_h.c
   #include "format_elf.h"
 
-  bool is_file_size_sufficient_for_elf_header(off_t file_size, void *elf_mmap)
+  bool is_file_size_enought_for_elf_header(off_t file_size, void *elf_mmap)
   {
-    if (bag->elf_size < EI_NIDENT)
+    if (file_size < EI_NIDENT)
       return (false);
-    return (bag->elf_size
-            >= get_struct_size_elf_header(bag->elf_mmap));
+    return (file_size
+            >= get_struct_size_elf_header(elf_mmap));
   }
 
   bool	is_valid_elf_data_format(char *elf_mmap)
   {
     const char	data = elf_mmap[EI_DATA];
 
-    return (data == ELFDATA2LSB || data == ELFDATA2MSB);
+    return (ELFDATA2LSB == data|| ELFDATA2MSB == data);
   }
 
-  bool	is_a_valid_elf_version(char *elf_mmap)
+  bool	is_valid_elf_version(char *elf_mmap)
   {
     return (EV_CURRENT == elf_mmap[EI_VERSION]);
   }
 
-  bool	is_an_executable_elf_file(const t_elf_h *ehdr, off_t *file_size)
+  bool	is_executable_elf_file(const t_elf_h *ehdr, off_t *file_size)
   {
-    return (ET_EXEC == get_elfh_type(ehdr, file_size)
-            && is_a_valid_elf_shoff(ehdr, file_size)
-            && get_elfh_phoff(ehdr)// valid phoff
-            >= (uint64_t)get_struct_size_elf_header((char *)ehdr->elf32));
+    return (ET_EXEC == get_elfh_type(ehdr));
   }
 #+end_src
 
+#+begin_src c :tangle format_elf.h
+  // validate_elf_h
+  bool is_file_size_enought_for_elf_header(off_t file_size, void *elf_mmap)
+  bool	is_valid_elf_data_format(char *elf_mmap)
+  bool	is_a_valid_elf_version(char *elf_mmap)
+  bool	is_an_executable_elf_file(const t_elf_h *ehdr, off_t *file_size)
+
+#+end_src
+
+#+begin_src c :tangle validate_elf_h_1.c :prologue "# include "format_elf.h"
+  bool	elf_valid_section_size(const t_elf_h *ehdr)
+  {
+    return (get_elfh_shentsize(ehdr) == get_section_header_struct_size(ehdr));
+  }
+
+  bool	elf_valid_section_header_string_index(const t_elf_h *ehdr)
+  {
+    const uint16_t	shnum = get_elfh_shnum(ehdr);
+
+    return (shnum && shnum > get_elfh_shstrndx(ehdr));
+  }
+
+  bool	elf_valid_elfh_class(const char *e_indent)
+  {
+    const unsigned char	class = get_elfh_e_ident_class((void *)e_indent);
+
+    return (class == ELFCLASS64 || class == ELFCLASS32);
+  }
+
+  bool	elf_valid_ident(off_t file_size, void *elf_mmap)
+  {
+    return (is_file_size_enought_for_elf_header(file_size, elf_mmap)
+            && valid_elf_magic_number(elf_mmap)
+            && valid_elfh_class(elf_mmap) && valid_data(elf_mmap)
+            && valid_version(elf_mmap));
+  }
+
+#+end_src
+
+#+begin_src c :tangle format_elf.h
+  // valid_elf_h_1
+  bool	elf_valid_section_size(const t_elf_h *ehdr);
+  bool	elf_valid_ident(off_t file_size, void *elf_mmap);
+  bool	elf_valid_elfh_class(const char *e_indent);
+  bool	elf_valid_section_header_string_index(const t_elf_h *ehdr);
+  bool	elf_valid_section_size(const t_elf_h *ehdr)
+
+#+end_src
+
+#+begin_src c :tangle valid_elf_h_2 :prologue 'include "format_elf.h"'
+  bool	valid_t_elf_h(const t_elf_h *ehdr)
+  {
+    return (elf_valid_section_size(ehdr)
+            && elf_valid_section_header_string_index(ehdr)
+            && is_valid_elf_shoff(ehdr)
+            && is_valid_elf_phoff(ehdr));
+  }
+
+  bool	valid_elf_header(const t_elf_h *ehdr, file_size)
+  {
+    return (valid_ident(file_size, ehdr) && valid_t_elf_h(ehdr));
+  }
+#+end_src
+
+#+begin_src c :tangle format_elf.h
+  // valid_t_elf_h_2
+  bool	valid_elf_header(const t_elf_h *ehdr, file_size);
+  bool	valid_t_elf_h(const t_elf_h *ehdr);
+
+#+end_src
 * How do the packer logic: 
 1. Add the string "....WOODY....\n" to the string section end for more easy.
 
