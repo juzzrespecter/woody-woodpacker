@@ -5,7 +5,7 @@
 ** What makes invalid a elf file:
 *** TODO Invalid Elf_header.
 :LOGBOOK:
-CLOCK: [2025-06-10 Tue 12:27]
+CLOCK: [2025-06-10 Tue 12:27]--[2025-06-10 Tue 13:29] =>  1:02
 CLOCK: [2025-06-10 Tue 11:18]--[2025-06-10 Tue 11:49] =>  0:31
 :END:
 - Invalid Section_header.
@@ -149,7 +149,7 @@ I use the union attribute elf32 for e_ident case be a 64 is in the same place th
 
 #+end_src
 
-#+begin_src c :tangle get_eh_1.c :prologue 'include "format_elf.h"'
+#+begin_src c :tangle get_eh_1.c :prologue '#include "format_elf.h"'
 
   uint16_t	get_elfh_ehsize(const t_elf_h *ehdr)
   {
@@ -206,7 +206,7 @@ I use the union attribute elf32 for e_ident case be a 64 is in the same place th
   uint16_t		get_elfh_shnum(const t_elf_h *ehdr);
 #+end_src
 
-#+begin_src c :tangle get_eh_2.c :prologue 'include "format_elf.h"'
+#+begin_src c :tangle get_eh_2.c :prologue '#include "format_elf.h"'
   
 uint64_t	get_elfh_entry(const t_elf_h *ehdr)
 {
@@ -376,7 +376,7 @@ int	get_struct_size_elf_header(char *elf_mmap)
 
 #+end_src
 
-#+begin_src c :tangle validate_elf_h_1.c :prologue "# include "format_elf.h"
+#+begin_src c :tangle validate_elf_h_1.c :prologue "#include "format_elf.h"
   bool	elf_valid_section_size(const t_elf_h *ehdr)
   {
     return (get_elfh_shentsize(ehdr) == get_section_header_struct_size(ehdr));
@@ -416,7 +416,7 @@ int	get_struct_size_elf_header(char *elf_mmap)
 
 #+end_src
 
-#+begin_src c :tangle valid_elf_h_2 :prologue 'include "format_elf.h"'
+#+begin_src c :tangle valid_elf_h_2 :prologue '#include "format_elf.h"'
   bool	valid_t_elf_h(const t_elf_h *ehdr)
   {
     return (elf_valid_section_size(ehdr)
@@ -437,6 +437,283 @@ int	get_struct_size_elf_header(char *elf_mmap)
   bool	valid_t_elf_h(const t_elf_h *ehdr);
 
 #+end_src
+
+*** TODO Validation ELF_Sections.
+change =t_bag=  struct to =size= and =class= add things as needed.
+
+**** Getters Section Headers
+#+begin_src c :tangle  get_elfsh_data.c :prologue '#include "format_elf.h"'
+
+uint64_t	get_section_header_struct_size(const t_elf_h *ehdr)
+{
+	const unsigned char	class = get_elfh_e_ident_class(ehdr->elf32->e_ident);
+
+	if (class == ELFCLASS32)
+		return (sizeof (Elf32_Shdr));
+	else if (class == ELFCLASS64)
+		return (sizeof (Elf64_Shdr));
+	ft_printf("Exit Failure section header size\n");
+	exit(EXIT_FAILURE);
+}
+
+bool	is_special_section_index(uint16_t index)
+{
+	static const uint16_t	special_section_index[] = {SHN_COMMON, SHN_ABS,
+		SHN_XINDEX};
+	int						i;
+
+	if (SHN_LOPROC <= index && index >= SHN_HIOS)
+		return (true);
+	i = 0;
+	while (i < SPECIAL_SECTION_INDEX_SIZE && index != special_section_index[i])
+		i++;
+	return (i != SPECIAL_SECTION_INDEX_SIZE);
+}
+
+t_elf_sh	get_section_header(const t_elf_h *ehdr, uint16_t index)
+{
+	const uint64_t			sh_offset = get_elfh_shoff(ehdr);
+	const uint64_t			sh_size = get_section_header_struct_size(ehdr);
+	const void				*base = (void*)ehdr->elf32;
+	t_elf_sh				shdr;
+
+	if (!sh_offset || index >= get_elfh_shnum(ehdr)
+		|| is_special_section_index(index))
+	{
+		shdr.elf32 = NULL;
+		return (shdr);
+	}
+	shdr.elf64 = base + sh_offset + index * sh_size;
+	return (shdr);
+}
+
+uint64_t	get_section_header_offset(const t_elf_sh *shdr, unsigned char class)
+{
+	if (!shdr->elf32)
+	{
+		ft_printf("section header Invalid\n");
+		return (0);
+	}
+	if (class == ELFCLASS32)
+		return ((uint64_t)shdr->elf32->sh_offset);
+	else if (class == ELFCLASS64)
+		return (shdr->elf64->sh_offset);
+	ft_printf("Exit Failure section header offset\n");
+	exit(EXIT_FAILURE);
+}
+
+bool	valid_null_end_string_table(const t_elf_sh *shstrtab,
+			unsigned char class, char *ptr)
+{
+	const uint64_t	size = get_section_header_size(shstrtab, class);
+
+	if (!ptr || !size)
+		return (false);
+	return (!ptr[size - 1]);
+}
+
+#+end_src
+
+#+begin_src c :tangle get_elfsh_data_1.c :prologue '#include "format_elf.h"'
+uint32_t	get_section_header_type(const t_elf_sh *shdr, unsigned char class)
+{
+	if (class == ELFCLASS32)
+		return (shdr->elf32->sh_type);
+	else if (class == ELFCLASS64)
+		return (shdr->elf64->sh_type);
+	ft_printf("Exit Failure section header type\n");
+	exit(EXIT_FAILURE);
+}
+
+uint32_t	get_section_header_flags(const t_elf_sh *shdr, unsigned char class)
+{
+	if (class == ELFCLASS32)
+		return (shdr->elf32->sh_flags);
+	else if (class == ELFCLASS64)
+		return (shdr->elf64->sh_flags);
+	ft_printf("Exit Failure section header flags\n");
+	exit(EXIT_FAILURE);
+}
+
+uint64_t	get_section_header_size(const t_elf_sh *shdr, unsigned char class)
+{
+	if (class == ELFCLASS32)
+		return (shdr->elf32->sh_size);
+	else if (class == ELFCLASS64)
+		return (shdr->elf64->sh_size);
+	ft_printf("Exit Failure section header size\n");
+	exit(EXIT_FAILURE);
+}
+
+uint32_t	get_section_header_link(const t_elf_sh *shdr, unsigned char class)
+{
+	if (class == ELFCLASS32)
+		return (shdr->elf32->sh_link);
+	else if (class == ELFCLASS64)
+		return (shdr->elf64->sh_link);
+	ft_printf("Exit Failure section header link\n");
+	exit(EXIT_FAILURE);
+}
+
+uint32_t	get_section_header_info(const t_elf_sh *shdr, unsigned char class)
+{
+	if (class == ELFCLASS32)
+		return (shdr->elf32->sh_info);
+	else if (class == ELFCLASS64)
+		return (shdr->elf64->sh_info);
+	ft_printf("Exit Failure section header info\n");
+	exit(EXIT_FAILURE);
+}
+#+end_src
+
+#+begin_src c :tangle get_elfsh_data_2.c :prologue '#include "format_elf.h"'
+
+uint64_t	get_section_header_addralign(const t_elf_sh *shdr,
+		unsigned char class)
+{
+	if (class == ELFCLASS32)
+		return ((uint64_t)shdr->elf32->sh_addralign);
+	return (shdr->elf64->sh_addralign);
+}
+
+uint32_t	get_section_header_entsize(const t_elf_sh *shdr,
+			unsigned char class)
+{
+	if (class == ELFCLASS32)
+		return (shdr->elf32->sh_entsize);
+	return (shdr->elf64->sh_entsize);
+}
+
+uint32_t	get_section_header_addr(const t_elf_sh *shdr, unsigned char class)
+{
+	if (class == ELFCLASS32)
+		return (shdr->elf32->sh_addr);
+	return (shdr->elf64->sh_addr);
+}
+#+end_src
+
+#+begin_src c :tangle get_elfsh_data_3.c :prologue '#include "format_elf.h"'
+
+const char	*get_section_string_table(const t_elf_h *ehdr)
+{
+	const uint16_t	sh_str_index = get_elfh_shstrndx(ehdr);
+	const t_elf_sh	shstrtab_shdr = get_section_header(ehdr, sh_str_index);
+	const uint64_t	shstr_tab_offset = get_section_header_offset(&shstrtab_shdr,
+			get_elfh_e_ident_class(ehdr->elf32->e_ident));
+	char			*ptr;
+
+	if (!shstr_tab_offset && !shstrtab_shdr.elf32)
+		return (NULL);
+	ptr = (char *)ehdr->elf32 + shstr_tab_offset;
+	if (!valid_null_end_string_table(&shstrtab_shdr,
+			get_elfh_e_ident_class((void *)ehdr->elf32), ptr))
+		return (NULL);
+	return (ptr);
+}
+
+uint32_t	get_section_header_name(const t_elf_sh *shdr, unsigned char class)
+{
+	if (!shdr || !shdr->elf32)
+		return (0);
+	if (class == ELFCLASS32)
+		return (shdr->elf32->sh_name);
+	if (class == ELFCLASS64)
+		return (shdr->elf32->sh_name);
+	ft_printf("Exit Failure section header name\n");
+	exit(EXIT_FAILURE);
+}
+
+const char	*get_section_name(const char *str_tab, uint16_t index_str_tab)
+{
+	if (!str_tab)
+		return (NULL);
+	return (str_tab + index_str_tab);
+}
+
+uint16_t	get_elfh_shstrndx(const t_elf_h *ehdr)
+{
+	const unsigned char	class = get_elfh_e_ident_class(ehdr->elf32->e_ident);
+
+	if (class == ELFCLASS32)
+		return (ehdr->elf32->e_shstrndx);
+	else if (class == ELFCLASS64)
+		return (ehdr->elf64->e_shstrndx);
+	exit(EXIT_FAILURE);
+}
+#+end_src
+
+**** Validation Functions
+
+#+begin_src c :tangle valid_section_header.c :prologue '#include "format_elf.h"'
+
+bool	valid_elf_section_header_symtab_shndx(t_bag *bag, const t_elf_h *ehdr)
+{
+	const t_elf_sh	shdr = get_section_header_by_type(ehdr, SHT_SYMTAB_SHNDX);
+
+	if (!shdr.elf32)
+		return (false);
+	return (get_section_header_link(&shdr, bag->elf_class)
+		== bag->symtab_index);
+}
+
+bool	valid_elf_section_headers(t_bag *bag, const t_elf_h *ehdr)
+{
+	const uint16_t	eh_shnum = get_real_shnum(ehdr, bag->elf_class);
+	uint16_t		id;
+
+	bag->real_shstrndx = get_real_shstrndx(ehdr, bag->elf_class);
+	if (!eh_shnum && bag->real_shstrndx)
+		return (false);
+	id = 0;
+	while (id < eh_shnum && valid_elf_section_header(bag, ehdr, id))
+		id++;
+	if (id < eh_shnum)
+		return (false);
+	if (bag->real_shstrndx >= eh_shnum
+		|| get_section_header_type_by_index(ehdr, bag->real_shstrndx)
+		!= SHT_STRTAB)
+		return (false);
+	return (!bag->symtab_shndx
+		|| valid_elf_section_header_symtab_shndx(bag, ehdr));
+}
+#+end_src
+
+#+begin_src c :tangle valid_elf_section_header_2.c :prologue '#include "format_elf.h"'
+
+bool	valid_elf_section_header_symtab_shndx(t_bag *bag, const t_elf_h *ehdr)
+{
+	const t_elf_sh	shdr = get_section_header_by_type(ehdr, SHT_SYMTAB_SHNDX);
+
+	if (!shdr.elf32)
+		return (false);
+	return (get_section_header_link(&shdr, bag->elf_class)
+		== bag->symtab_index);
+}
+
+bool	valid_elf_section_headers(t_bag *bag, const t_elf_h *ehdr)
+{
+	const uint16_t	eh_shnum = get_real_shnum(ehdr, bag->elf_class);
+	uint16_t		id;
+
+	bag->real_shstrndx = get_real_shstrndx(ehdr, bag->elf_class);
+	if (!eh_shnum && bag->real_shstrndx)
+		return (false);
+	id = 0;
+	while (id < eh_shnum && valid_elf_section_header(bag, ehdr, id))
+		id++;
+	if (id < eh_shnum)
+		return (false);
+	if (bag->real_shstrndx >= eh_shnum
+		|| get_section_header_type_by_index(ehdr, bag->real_shstrndx)
+		!= SHT_STRTAB)
+		return (false);
+	return (!bag->symtab_shndx
+		|| valid_elf_section_header_symtab_shndx(bag, ehdr));
+}
+
+#+end_src
+*** Validation ELF_Programs.
+
 * How do the packer logic: 
 1. Add the string "....WOODY....\n" to the string section end for more easy.
 
