@@ -5,6 +5,8 @@
 ** What makes invalid a elf file:
 *** TODO Invalid Elf.
 :LOGBOOK:
+CLOCK: [2025-06-19 Thu 17:15]--[2025-06-19 Thu 17:38] =>  0:23
+CLOCK: [2025-06-19 Thu 14:41]--[2025-06-19 Thu 15:03] =>  0:22
 CLOCK: [2025-06-18 Wed 15:49]--[2025-06-18 Wed 15:51] =>  0:02
 CLOCK: [2025-06-18 Wed 14:23]--[2025-06-18 Wed 15:14] =>  0:51
 CLOCK: [2025-06-18 Wed 13:51]--[2025-06-18 Wed 14:06] =>  0:15
@@ -29,32 +31,37 @@ Section header = Shdr = _sh
 Elf header = ehdr = _h       
 #+end_comment
 
-#+begin_src c :tangle format_elf.h :prologue "#ifndef FORMAT_ELF\n# define FORMAT_ELF\n"
-  # include <elf.h>    // Typedef ELFNN_*, ST_BIND, ...
+#+begin_src c :tangle format_elf.h 
+#ifndef FORMAT_ELF_H
+# define FORMAT_ELF_H
+# include <elf.h>    // Typedef ELFNN_*, ST_BIND, ...
+# include <stdint.h> // uint64_t
+# include <stdbool.h> // bool
+# include <unistd.h> // off_t
 
-  typedef union u_elf_h
-  {
-    const Elf32_Ehdr	*elf32;
-    const Elf64_Ehdr	*elf64;
-  }	t_elf_h;
+   typedef union u_elf_h
+   {
+     const Elf32_Ehdr	*elf32;
+     const Elf64_Ehdr	*elf64;
+   }	t_elf_h;
 
-  typedef union u_elf_ph
-  {
-    const Elf32_Phdr	*elf32;
-    const Elf64_Phdr	*elf64;
-  }	t_elf_ph;
+   typedef union u_elf_ph
+   {
+     const Elf32_Phdr	*elf32;
+     const Elf64_Phdr	*elf64;
+   }	t_elf_ph;
 
-  typedef union u_elf_sh
-  {
-    const Elf32_Shdr	*elf32;
-    const Elf64_Shdr	*elf64;
-  }	t_elf_sh;
+   typedef union u_elf_sh
+   {
+     const Elf32_Shdr	*elf32;
+     const Elf64_Shdr	*elf64;
+   }	t_elf_sh;
 
-  typedef union u_elf_sym
-  {
-    const Elf32_Sym	*elf32;
-    const Elf64_Sym	*elf64;
-  }	t_elf_sym;
+   typedef union u_elf_sym
+   {
+     const Elf32_Sym	*elf32;
+     const Elf64_Sym	*elf64;
+   }	t_elf_sym;
 #+end_src
 
 *** Validation ELF_header
@@ -86,7 +93,8 @@ When the num of  =S/Phdr= is more than could be handle by uint16_t (65535) the f
 **** Coding
 ***** Creating the getters
 I use the union attribute elf32 for e_ident case be a 64 is in the same place the first position (polymorphism).
-#+begin_src c :tangle get_eh.c :prologue '#include "format_elf.h"'
+#+begin_src c :tangle get_eh.c 
+  #include "format_elf.h"
 
   uint16_t	get_elfh_type(const t_elf_h *ehdr)
   {
@@ -154,7 +162,8 @@ I use the union attribute elf32 for e_ident case be a 64 is in the same place th
 
 #+end_src
 
-#+begin_src c :tangle get_eh_1.c :prologue '#include "format_elf.h"'
+#+begin_src c :tangle get_eh_1.c 
+  #include "format_elf.h"
 
   uint16_t	get_elfh_ehsize(const t_elf_h *ehdr)
   {
@@ -211,7 +220,8 @@ I use the union attribute elf32 for e_ident case be a 64 is in the same place th
   uint16_t		get_elfh_shnum(const t_elf_h *ehdr);
 #+end_src
 
-#+begin_src c :tangle get_eh_2.c :prologue '#include "format_elf.h"'
+#+begin_src c :tangle get_eh_2.c 
+  #include "format_elf.h"
   
 uint64_t	get_elfh_entry(const t_elf_h *ehdr)
 {
@@ -374,14 +384,16 @@ int	get_struct_size_elf_header(char *elf_mmap)
 
 #+begin_src c :tangle format_elf.h
   // validate_elf_h
-  bool is_file_size_enought_for_elf_header(off_t file_size, void *elf_mmap)
-  bool	is_valid_elf_data_format(char *elf_mmap)
-  bool	is_a_valid_elf_version(char *elf_mmap)
-  bool	is_an_executable_elf_file(const t_elf_h *ehdr, off_t *file_size)
+  bool is_file_size_enought_for_elf_header(off_t file_size, void *elf_mmap);
+  bool	is_valid_elf_data_format(char *elf_mmap);
+  bool	is_a_valid_elf_version(char *elf_mmap);
+  bool	is_an_executable_elf_file(const t_elf_h *ehdr, off_t *file_size);
 
 #+end_src
 
-#+begin_src c :tangle validate_elf_h_1.c :prologue "#include "format_elf.h"
+#+begin_src c :tangle validate_elf_h_1.c 
+  #include "format_elf.h"
+
   bool	elf_valid_section_size(const t_elf_h *ehdr)
   {
     return (get_elfh_shentsize(ehdr) == get_section_header_struct_size(ehdr));
@@ -417,11 +429,12 @@ int	get_struct_size_elf_header(char *elf_mmap)
   bool	elf_valid_ident(off_t file_size, void *elf_mmap);
   bool	elf_valid_elfh_class(const char *e_indent);
   bool	elf_valid_section_header_string_index(const t_elf_h *ehdr);
-  bool	elf_valid_section_size(const t_elf_h *ehdr)
 
 #+end_src
 
-#+begin_src c :tangle valid_elf_h_2 :prologue '#include "format_elf.h"'
+#+begin_src c :tangle valid_elf_h_2.c
+  #include "format_elf.h"
+
   bool	valid_t_elf_h(const t_elf_h *ehdr)
   {
     return (elf_valid_section_size(ehdr)
@@ -430,7 +443,7 @@ int	get_struct_size_elf_header(char *elf_mmap)
             && is_valid_elf_phoff(ehdr));
   }
 
-  bool	valid_elf_header(const t_elf_h *ehdr, file_size)
+  bool	valid_elf_header(const t_elf_h *ehdr, off_t file_size)
   {
     return (valid_ident(file_size, ehdr) && valid_t_elf_h(ehdr));
   }
@@ -438,7 +451,7 @@ int	get_struct_size_elf_header(char *elf_mmap)
 
 #+begin_src c :tangle format_elf.h
   // valid_t_elf_h_2
-  bool	valid_elf_header(const t_elf_h *ehdr, file_size);
+  bool	valid_elf_header(const t_elf_h *ehdr, off_t file_size);
   bool	valid_t_elf_h(const t_elf_h *ehdr);
 
 #+end_src
@@ -448,7 +461,7 @@ change =t_bag=  struct to =size= and =class= add things as needed.
 
 **** Validation Functions
 
-#+begin_src c :tangle valid_section_header.c :prologue '#include "format_elf.h"'
+#+begin_src c :tangle valid_section_header.c
 
   bool	valid_elf_section_header_symtab_shndx(unsigned char class, const uint64_t symtab_index, const t_elf_h *ehdr)
   {
@@ -490,7 +503,7 @@ change =t_bag=  struct to =size= and =class= add things as needed.
 
 #+end_src
 
-#+begin_src c :tangle valid_elf_section_header_2.c :prologue '#include "format_elf.h"'
+#+begin_src c :tangle valid_elf_section_header_2.c 
   bool	elf_valid_section_header(unsigned char elf_class, const t_elf_sh *shdr, uint16_t index)
   {
           const uint32_t	type = get_section_header_type(shdr, elf_class);
@@ -585,7 +598,7 @@ CLOSED: [2025-06-18 Wed 15:51]
 :LOGBOOK:
 - State "DONE"       from              [2025-06-18 Wed 15:51]
 :END:
-#+begin_src c :tangle  get_elfsh_data.c :prologue '#include "format_elf.h"'
+#+begin_src c :tangle  get_elfsh_data.c
 
 uint64_t	get_section_header_struct_size(const t_elf_h *ehdr)
 {
@@ -668,7 +681,7 @@ bool	valid_null_end_string_table(const t_elf_sh *shstrtab,
 
 #+end_src
 
-#+begin_src c :tangle get_elfsh_data_1.c :prologue '#include "format_elf.h"'
+#+begin_src c :tangle get_elfsh_data_1.c 
   uint32_t	get_section_header_type(const t_elf_sh *shdr, unsigned char class)
   {
           if (class == ELFCLASS32)
@@ -714,7 +727,7 @@ uint32_t	get_section_header_link(const t_elf_sh *shdr, unsigned char class);
 uint32_t	get_section_header_info(const t_elf_sh *shdr, unsigned char class);
 #+end_src
 
-#+begin_src c :tangle get_elfsh_data_2.c :prologue '#include "format_elf.h"'
+#+begin_src c :tangle get_elfsh_data_2.c 
 
 uint64_t	get_section_header_addralign(const t_elf_sh *shdr,
 		unsigned char class)
@@ -746,12 +759,12 @@ uint32_t	get_section_header_addr(const t_elf_sh *shdr, unsigned char class)
                       unsigned char class);
   uint32_t	get_section_header_entsize(const t_elf_sh *shdr,
                       unsigned char class);
-  uint32_t	get_section_header_addr(const t_elf_sh *shdr, unsigned char class)
+  uint32_t	get_section_header_addr(const t_elf_sh *shdr, 
                       unsigned char class);
 
 #+end_src
 
-#+begin_src c :tangle get_elfsh_data_3.c :prologue '#include "format_elf.h"'
+#+begin_src c :tangle get_elfsh_data_3.c 
 
   const char	*get_section_string_table(const t_elf_h *ehdr)
   {
@@ -810,16 +823,272 @@ uint32_t	get_section_header_addr(const t_elf_sh *shdr, unsigned char class)
   uint16_t	get_elfh_shstrndx(const t_elf_h *ehdr);
 #+end_src
 
-*** Validation ELF_Programs.
+*** DONE Validation ELF_Programs.
+CLOSED: [2025-06-19 Thu 17:46]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-06-19 Thu 17:46]
+:END:
 
+#+begin_src c :tangle  valid_program_header.c 
+
+  static bool	valid_elf_ph(unsigned char elf_class, off_t elf_size, const t_elf_h *ehdr,
+                          uint16_t index)
+  {
+          const t_elf_ph	phdr = get_program_header(ehdr, index);
+          const uint16_t	size = get_struct_size_elf_ph(elf_class);
+          unsigned char	p_align;
+
+          if (!phdr.elf32 || !ehdr->elf32
+                  || (void *)phdr.elf32 + size >= (void *)ehdr->elf32 + elf_size)
+                  return (false);
+          p_align = get_program_header_align(&phdr, elf_class);
+          if (p_align != (p_align & -p_align))
+                  return (false);
+          if ((off_t)(get_program_header_offset(&phdr, elf_class)
+                  + get_program_header_filesz(&phdr, elf_class)) >= elf_size)
+                  return (false);
+          return (true);
+  }
+
+  bool	valid_elf_phs(off_t elf_size, const t_elf_h *ehdr)
+  {
+          const uint64_t		real_phnum	= get_real_phnum(ehdr);
+          const unsigned char	class		= get_elfh_e_ident_class((void *)ehdr->elf32);
+          uint16_t			index;
+
+          if (!real_phnum)
+                  return (true);
+          if (get_struct_size_elf_ph(class) != get_elfh_phentsize(ehdr))
+                  return (false);
+          if (signed_overflow_limit (real_phnum, get_struct_size_elf_ph(class), elf_size))
+                  return (false);
+          index = 0;
+          while (index < real_phnum
+                  && valid_elf_ph(class, elf_size, ehdr, index))
+                  index++;
+          return (index >= real_phnum);
+  }
+#+end_src
+
+#+begin_src c :tangle format_elf.h
+  // valid_elf_ph
+  bool	valid_elf_phs(off_t elf_size, const t_elf_h *ehdr);
+#+end_src
+
+
+#+begin_src c :tangle  valid_program_header_2.c 
+
+  uint64_t	get_struct_size_elf_ph(unsigned char class)
+  {
+          if (class == ELFCLASS32)
+                  return (sizeof(Elf32_Phdr));
+          return (sizeof(Elf64_Phdr));
+  }
+
+  t_elf_ph	get_program_header(const t_elf_h *ehdr, uint16_t index)
+  {
+          const uint64_t	offset = get_elfh_phoff(ehdr);
+          const uint64_t	size = get_struct_size_elf_ph(
+                          get_elfh_e_ident_class((void *)ehdr->elf32));
+
+          if (unsigned_int_mult_overflow(size, index, sizeof(size) * 8))
+                  return ((t_elf_ph){.elf32 = NULL});
+          return ((t_elf_ph){.elf32 = (void *)ehdr->elf32 + offset
+                  + size * index});
+  }
+
+  unsigned char	get_program_header_align(const t_elf_ph *phdr,
+                          unsigned char class)
+  {
+          if (class == ELFCLASS32)
+                  return (phdr->elf32->p_align);
+          return (phdr->elf64->p_align);
+  }
+
+  uint32_t	get_program_header_offset(const t_elf_ph *phdr,
+                          unsigned char class)
+  {
+          if (class == ELFCLASS32)
+                  return (phdr->elf32->p_offset);
+          return (phdr->elf64->p_offset);
+  }
+
+  uint64_t	get_program_header_filesz(const t_elf_ph *phdr,
+                          unsigned char class)
+  {
+          if (class == ELFCLASS32)
+                  return (phdr->elf32->p_filesz);
+          return (phdr->elf64->p_filesz);
+  }
+#+end_src
+
+#+begin_src c :tangle format_elf.h
+
+// valid_program_header_2
+  uint64_t	get_struct_size_elf_ph(unsigned char class);
+  t_elf_ph	get_program_header(const t_elf_h *ehdr, uint16_t index);
+  uint32_t	get_program_header_offset(const t_elf_ph *phdr,
+                          unsigned char class);
+  uint64_t	get_program_header_filesz(const t_elf_ph *phdr,
+                          unsigned char class);
+#+end_src
+
+**** DONE Add overflow functs.
+CLOSED: [2025-06-19 Thu 17:45]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-06-19 Thu 17:45]
+:END:
+#+begin_src c :tangle  overflow.c 
+  #include <stdint.h>
+  #include <stdbool.h>
+
+  bool	unsigned_overflow_limit(uint64_t times, uint64_t size, uint64_t limit)
+  {
+          if (!size || !times)
+                  return (false);
+          return (times > limit / size);
+  }
+
+  bool	signed_overflow_limit(int64_t times, int64_t size, int64_t limit)
+  {
+          int64_t	result;
+
+          if (!times || !size)
+                  return (false);
+          result = limit / size;
+          if (result < 0)
+                  return (times < result);
+          return (times > result);
+  }
+
+  bool	unsigned_int_mult_overflow(uint64_t times, uint64_t size,
+                          uint64_t size_bits)
+  {
+          uint64_t	limit;
+
+          if (!times || !size)
+                  return (false);
+          if (!size_bits || size_bits > 64)
+                  return (true);
+          limit = 0;
+          while (--size_bits)
+                  limit = limit << 1 | 1;
+          return (unsigned_overflow_limit(times, size, limit));
+  }
+
+  bool	int_mult_overflow(int64_t times, int64_t size, uint64_t size_bits)
+  {
+          int64_t	limit;
+          int64_t	bit_mask;
+
+          if (!times || !size)
+                  return (false);
+          if (!size_bits || size_bits > 64)
+                  return (true);
+          limit = 1 << (size_bits - 1);
+          bit_mask = 1;
+          while (--size_bits)
+                  bit_mask = bit_mask << 1 | 1;
+          if ((limit == size && times == -1) || (limit == times && -1 == size))
+                  return (true);
+          return (signed_overflow_limit(times, size, limit) // Negative min
+                  || signed_overflow_limit(times, size, ~limit & bit_mask));// Positive Max
+  }
+
+  bool	uint_mult_overflow(unsigned int times, unsigned int size)
+  {
+          return (unsigned_int_mult_overflow(times, size, sizeof(size) * 8));
+  }
+
+#+end_src
+
+**** TODO Check that compile and work succesfully
+
+***** Makefile
+
+#+begin_src  :tangle Makefile
+MAKEFLAGS				:=	--no-print-directory
+SHELL					:=	/bin/sh
+INCLUDE-DIR				:=	./include/
+SRCS-DIR				:=	.//
+BUILD-DIR				:=	./.build/
+NAME					:=	test_elf
+SRC					:=	get_eh_1 \
+						get_eh_2 \
+						get_eh \
+						get_elfsh_data_1 \
+						get_elfsh_data_2 \
+						get_elfsh_data_3 \
+						get_elfsh_data \
+						get_real_data \
+						overflow \
+						validate_elf_h_1 \
+						validate_elf_h \
+						valide_elf_h_2 \
+						valid_elf_h_attrib \
+						valid_elf_section_header_2 \
+						valid_program_header_2 \
+						valid_program_header \
+						valid_section_header \
+
+
+BUILD					:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(SRC)))
+CC						:= cc
+CFLAGS					:= -Wall -Werror -Wextra -g3# -fsanitize=address
+INCLUDEFLAGS			:= -I $(INCLUDE-DIR) -I lib/include/
+LINKINGFLAGS			:= -L lib -l ft
+RM						:=	rm -rf
+LIB-DIR					:= lib
+LIB						:= $(LIB-DIR)/libft.a
+
+# For create directory and print
+DIR_DUP					=	mkdir -p $(@D)
+# RULES
+
+all: $(NAME)
+
+#$(LIB): $(LIB-DIR)
+#	$(MAKE) -C $<
+
+$(NAME): $(BUILD) $(LIB)
+	$(CC) $(CFLAGS) -o $@ $(BUILD) $(LINKINGFLAGS)
+
+$(BUILD-DIR)%.o:        $(SRCS-DIR)%.c
+	@$(DIR_DUP)
+	$(CC) $(CFLAGS) $(INCLUDEFLAGS) -c $< -o $@
+
+clean:
+	@$(RM) $(BUILD-DIR)
+	$(MAKE) $@ -C $(LIB-DIR)
+
+fclean: clean
+	@$(RM) $(NAME)
+	$(MAKE) $@ -C $(LIB-DIR)
+
+re: fclean all
+
+info-%:
+	@$(MAKE) --dry-run --always-make $* | grep -v "info"
+
+print-%:
+	@$(info '$*'='$($*)')
+
+.PHONY: all clean fclean re info-% print-%
+
+#+end_src
+
+***** TODO  Fix errors.
+#+begin_src :tangle no
+get_elfh_e_ident_class(ehdr->elf32->e_ident);
+
+#+end_src
 * How do the packer logic: 
-1. Add the string "....WOODY....\n" to the string section end for more easy.
-
+1. Add the string "....WOODY....\n" to the string section end.
    1. Go Section header =.rodata=
       1. Increment =sh_size= as needed.
       2. write the content u want.
          1. *Warning* Null ended.
-      3. Test with =readelf -r .rodata= for check is al fine, and that the executable still working with *64b * and *32b*.
+      3. Test with =readelf -r .rodata= for check is all fine, and that the executable still working with *64b * and *32b*.
   
 2. Add instruction to the program:
    Choice:
@@ -856,3 +1125,7 @@ uint32_t	get_section_header_addr(const t_elf_sh *shdr, unsigned char class)
     3. Check the program executed fine for both arch =./program=
 
        
+#+begin_src c :tangle format_elf.h
+ #endif 
+
+#+end_src
