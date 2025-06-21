@@ -17,9 +17,12 @@
 * Generic Logic
 ** Handling errors:
 #+begin_src c :tangle "woody.h"
-  #include
+  #ifndef WOODY_H
+    # define WOODY_H
   # include <sys/mman.h> //mmap, munmap
-  # include <unistd.h> // lseek, open, close
+  # include <unistd.h> // lseek
+  # include <fcntl.h> // open, close
+  # include <stdio.h> // perror
   # include "format_elf.h" // elf
 
   typedef enum e_return_errors
@@ -32,13 +35,14 @@
     FAIL_MMAP = -3,
     UNRECOGNIZED_FILE = 2,
     UNVALID_FTYPE = 3,
+        UNVALID_FILE = 4,
   }	t_return_errors;
 
 #+end_src
 
 *** check the parameter.
 Compare if the nbr of params is distint of 1.
-   #+begin_src c :tangle main.c
+   #+begin_src c
      #include "woody.h"
 
      int main(int argc, char **argv)
@@ -55,17 +59,19 @@ Compare if the nbr of params is distint of 1.
 *** open the file.
 
    #+begin_src c :tangle file_validation.c
-     
-     int	get_file(const char *filename, int *fd)
-     {
-       open(filename, O_RDONLY);
+     #include "woody.h"
 
-       if (fd < 0)
-         return (FAIL_OPEN_FD);
-       return (SUCCESS);
-     }
+     int	get_file(const char *filename, int *fd)
+      {
+        ,*fd = open(filename, O_RDONLY);
+
+        if (*fd < 0)
+          return (FAIL_OPEN_FD);
+        return (SUCCESS);
+      }
 
    #+end_src
+
 
 **** Adding to main:
 #+begin_src c
@@ -78,9 +84,9 @@ Compare if the nbr of params is distint of 1.
 *** size of the file
 
 #+begin_src c :tangle file_validation.c
-  int get_file_size(int fg, off_t *file_size)
-  {
-    *file_size = lseek(fd, 0, SEEK_END);
+  int get_file_size(int fd, off_t *file_size)
+    {
+    ,*file_size = lseek(fd, 0, SEEK_END);
     if (*file_size == ERROR_STDL)
     {
         perror("Failed to seek the end of file");
@@ -110,7 +116,7 @@ Compare if the nbr of params is distint of 1.
 
 #+begin_src c
   file_mmap = mmap (NULL, file_size, PROT_NONE | PROT_READ,
-                    NO_SHARE_CHANGES, fd, 0);
+                    MAP_PRIVATE, fd, 0);
   close(fd);
   if (MAP_FAILED == file_mmap)
     return (FAIL_MMAP);
@@ -125,8 +131,8 @@ Once fail or not the mmap we don't have any use to the fd, we close it for that 
 *** Detect the type of file between {ELF, PE, Mach O}
 Solution Fast check Magic/Signature
 Cause:  ELF, PE and Mach O got Magic number/Signature
-   #+begin_src c :tangle inject_code.h
-     # define ELF_MAGIC "\x7FELF"
+   #+begin_src c :tangle woody.h
+     # define ELF_MAGIC ELFMAG
      # define MACH_O_32b_MAGIC "\xfeedface"
      # define MACH_O_64b_MAGIC "\xfeedfacf"
      # define MACH_O_MAGIC_SIZE 4
@@ -135,7 +141,7 @@ Cause:  ELF, PE and Mach O got Magic number/Signature
      # define NT_HEADER_OFFSET 0x3C // Below this line the defines are ignored
      # define PE_SIGN "PE\0\0" // 0x50450000 is the signature on NT_HEADER
      # define PE_SIGN_SIZE 4
-     # define ELF_MAGIC_SIZE 4      // Below this line end the ignored defines
+     # define ELF_MAGIC_SIZE SELFMAG      // Below this line end the ignored defines
 
      typedef enum e_file_type {
        FT_ELF,
@@ -149,20 +155,33 @@ ELF Got a signature 4 bytes, MACH-O 32 and 64 got a signature 4 bytes each and P
 **** Warning:
 I just check the DOS Signature (Could happend that is a DOS file and not PE should check later on File Format Specific.)
 #+begin_src c :tangle signature_check.c
+  #include "woody.h"
+
   t_file_type get_ftype(const char *file_content, const off_t *file_size)
   {
-    if (ELF_MAGIC_SIZE < *file_size && !strncmp(file_content, ELF_MAGIC, ELF_MAGIC_SIZE))
+
+    if (ELF_MAGIC_SIZE < *file_size && !memcmp(file_content, ELFMAG, SELFMAG))
       return (FT_ELF);
-    if (MACH_O_MAGIC_SIZE < *file_size && !strncmp(file_content, MACH_O_64b_MAGIC, MACH_O_MAGIC_SIZE))
-      return (FT_MACH_O);
-    if (MACH_O_MAGIC_SIZE < *file_size && !strncmp(file_content, MACH_O_64b_MAGIC, MACH_O_MAGIC_SIZE))
-      return (FT_MACH_O);
-    if (DOS_SIGN_SIZE < *file_size && !strncmp(file_content, DOS_SIGN_SIZE)
-        return (FT_PE);
+    //if (MACH_O_MAGIC_SIZE < *file_size && !memcmp(file_content, MACH_O_64b_MAGIC, MACH_O_MAGIC_SIZE))
+    //  return (FT_MACH_O);
+    //if (MACH_O_MAGIC_SIZE < *file_size && !memcmp(file_content, MACH_O_64b_MAGIC, MACH_O_MAGIC_SIZE))
+    //  return (FT_MACH_O);
+    //if (DOS_SIGN_SIZE < *file_size && !memcmp(file_content, DOS_SIGN, DOS_SIGN_SIZE))
+    //    return (FT_PE);
     return (FT_UNKNOW);
   }
 
 #+end_src
+
+   #+begin_src c :tangle woody.h
+     //file_validation
+     int	get_file(const char *filename, int *fd);
+     int get_file_size(int fg, off_t *file_size);
+
+     // signature_check
+  t_file_type get_ftype(const char *file_content, const off_t *file_size);
+     
+   #+end_src
 **** Adding to main
 #+begin_src c
   ftype = get_ftype (file_mmap, &file_size);
@@ -175,8 +194,9 @@ I just check the DOS Signature (Could happend that is a DOS file and not PE shou
 Ideally make a array of pointer function
  something similar to this:
  #+begin_src c
-   if (validate_ftype[ftype](params....))
-     return (UNVALID_FTYPE);
+   if (valid_elf_file(file_mmap, file_size) && is_executable_elf_file(file_mmap))
+     return (SUCCESS);
+    // return (UNVALID_FTYPE);
 
  #+end_src
 ** ELF Format:
@@ -185,8 +205,10 @@ Ideally make a array of pointer function
 ** MACH-O Format:
 #+begin_src c
 
-  return (SUCCESS);
+  return (UNVALID_FILE);
 }
 #+end_src
-#+PROPERTY: post-tangle my/org-babel-post-tangle-hook
 
+#+begin_src c :tangle woody.h
+# endif
+#+end_src

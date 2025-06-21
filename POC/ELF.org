@@ -363,9 +363,11 @@ int	get_struct_size_elf_header(char *elf_mmap)
     return (EV_CURRENT == elf_mmap[EI_VERSION]);
   }
 
-  bool	is_executable_elf_file(const t_elf_h *ehdr)
+  bool	is_executable_elf_file(void *elf_mmap)
   {
-    return (ET_EXEC == get_elfh_type(ehdr));
+    const t_elf_h ehdr = (t_elf_h){.elf32 = elf_mmap};
+
+    return (ET_EXEC == get_elfh_type(&ehdr));
   }
 #+end_src
 
@@ -374,7 +376,7 @@ int	get_struct_size_elf_header(char *elf_mmap)
   bool is_file_size_enought_for_elf_header(off_t file_size, void *elf_mmap);
   bool	is_valid_elf_data_format(char *elf_mmap);
   bool	is_valid_elf_version(char *elf_mmap);
-  bool	is_executable_elf_file(const t_elf_h *ehdr);
+  bool	is_executable_elf_file(void *elf_mmap);
 
 #+end_src
 
