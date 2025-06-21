@@ -1176,7 +1176,9 @@ uint32_t	get_section_header_addr(const t_elf_sh *shdr, unsigned char class)
      1. Detect how to jmp to the original entrypoint:
      2. Write the instructions.
      3. Check the program executed fine for both arch =./program=
-3.  Encrypt and compress no idea of how to do it for now.
+3. Encrypt and compress
+   1. Encrypt n sections
+      1. I will choose =.rodata and .text=  maybe variants with prefix =s= just for =data= and  =bss= i don't think that will worth encrypt that sections for global and static var (=initialized= or =not initialized= respectively)
 
        
 #+begin_src c :tangle format_elf.h
