@@ -5,7 +5,9 @@
 ** What makes invalid a elf file:
 *** TODO Invalid Elf.
 :LOGBOOK:
-CLOCK: [2025-06-20 Fri 17:32]
+CLOCK: [2025-06-21 Sat 11:20]--[2025-06-21 Sat 12:25] =>  1:05
+CLOCK: [2025-06-21 Sat 10:32]--[2025-06-21 Sat 10:59] =>  0:27
+CLOCK: [2025-06-20 Fri 17:32]--[2025-06-20 Fri 19:46] =>  2:14
 CLOCK: [2025-06-19 Thu 17:50]--[2025-06-19 Thu 18:38] =>  0:48
 CLOCK: [2025-06-19 Thu 17:15]--[2025-06-19 Thu 17:38] =>  0:23
 CLOCK: [2025-06-19 Thu 14:41]--[2025-06-19 Thu 15:03] =>  0:22
@@ -40,6 +42,7 @@ Elf header = ehdr = _h
 # include <stdint.h> // uint64_t
 # include <stdbool.h> // bool
 # include <unistd.h> // off_t
+# include <string.h> // memcmp
 
    typedef union u_elf_h
    {
@@ -299,15 +302,6 @@ int	get_struct_size_elf_header(char *elf_mmap)
       shnum = get_section_header_size(&shdr, class);
     return (shnum);
   }
-
-  uint16_t	get_elfh_shstrndx(const t_elf_h *ehdr)
-  {
-    const unsigned char	class = get_elfh_e_ident_class(ehdr->elf32->e_ident);
-
-    if (class == ELFCLASS32)
-      return (ehdr->elf32->e_shstrndx);
-    return (ehdr->elf64->e_shstrndx);
-  }
 #+end_src
 ****** Prototype of the functions
 #+begin_src  c :tangle format_elf.h
@@ -379,8 +373,8 @@ int	get_struct_size_elf_header(char *elf_mmap)
   // validate_elf_h
   bool is_file_size_enought_for_elf_header(off_t file_size, void *elf_mmap);
   bool	is_valid_elf_data_format(char *elf_mmap);
-  bool	is_a_valid_elf_version(char *elf_mmap);
-  bool	is_an_executable_elf_file(const t_elf_h *ehdr);
+  bool	is_valid_elf_version(char *elf_mmap);
+  bool	is_executable_elf_file(const t_elf_h *ehdr);
 
 #+end_src
 
@@ -411,7 +405,7 @@ int	get_struct_size_elf_header(char *elf_mmap)
     return (is_file_size_enought_for_elf_header(file_size, elf_mmap)
             && valid_elf_magic_number(elf_mmap)
             && elf_valid_elfh_class(elf_mmap) && is_valid_elf_data_format(elf_mmap)
-            && is_a_valid_elf_version(elf_mmap));
+            && is_valid_elf_version(elf_mmap));
   }
 
 #+end_src
@@ -428,24 +422,24 @@ int	get_struct_size_elf_header(char *elf_mmap)
 #+begin_src c :tangle valid_elf_h_2.c
   #include "format_elf.h"
 
-  bool	valid_t_elf_h(const t_elf_h *ehdr)
+  bool	valid_t_elf_h(const t_elf_h *ehdr, off_t file_size)
   {
     return (elf_valid_section_size(ehdr)
             && elf_valid_section_header_string_index(ehdr)
-            && is_valid_elf_shoff(ehdr)
-            && is_valid_elf_phoff(ehdr));
+            && is_valid_elf_shoff(ehdr, &file_size)
+            && is_valid_elf_phoff(ehdr, &file_size));
   }
 
   bool	valid_elf_header(const t_elf_h *ehdr, off_t file_size)
   {
-    return (valid_ident(file_size, ehdr) && valid_t_elf_h(ehdr));
+    return (elf_valid_ident(file_size, (void *)ehdr->elf32) && valid_t_elf_h(ehdr, file_size));
   }
 #+end_src
 
 #+begin_src c :tangle format_elf.h
   // valid_t_elf_h_2
   bool	valid_elf_header(const t_elf_h *ehdr, off_t file_size);
-  bool	valid_t_elf_h(const t_elf_h *ehdr);
+  bool	valid_t_elf_h(const t_elf_h *ehdr, off_t file_size);
 
 #+end_src
 
@@ -791,20 +785,11 @@ uint32_t	get_section_header_addr(const t_elf_sh *shdr, unsigned char class)
             return (0);
     }
 
-    const char	*get_section_name(const char *str_tab, uint16_t index_str_tab)
+    const char	*get_section_name(const char *str_tab, uint64_t index_str_tab)
     {
             if (!str_tab)
                     return (NULL);
             return (str_tab + index_str_tab);
-    }
-
-    uint16_t	get_elfh_shstrndx(const t_elf_h *ehdr)
-    {
-            const unsigned char	class = get_elfh_e_ident_class(ehdr->elf32->e_ident);
-
-            if (class == ELFCLASS32)
-                    return (ehdr->elf32->e_shstrndx);
-            return (ehdr->elf64->e_shstrndx);
     }
 #+end_src
 
@@ -813,8 +798,7 @@ uint32_t	get_section_header_addr(const t_elf_sh *shdr, unsigned char class)
 
   const char	*get_section_string_table(const t_elf_h *ehdr);
   uint32_t	get_section_header_name(const t_elf_sh *shdr, unsigned char class);
-  const char	*get_section_name(const char *str_tab, uint16_t index_str_tab);
-  uint16_t	get_elfh_shstrndx(const t_elf_h *ehdr);
+  const char	*get_section_name(const char *str_tab, uint64_t index_str_tab);
 #+end_src
 
 *** DONE Validation ELF_Programs.
@@ -1014,7 +998,7 @@ CLOSED: [2025-06-19 Thu 17:45]
 
 ***** Makefile
 
-#+begin_src  :tangle Makefile
+#+begin_src  Makefile :tangle Makefile
 MAKEFLAGS				:=	--no-print-directory
 SHELL					:=	/bin/sh
 INCLUDE-DIR				:=	./include/
@@ -1038,13 +1022,15 @@ SRC					:=	get_eh_1 \
 						valid_program_header \
 						valid_section_header \
 						get_elfh_e_ident \
+						valid_elfh \
+						valid_elf_h_2 \
 
 
 BUILD					:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(SRC)))
 CC						:= cc
 CFLAGS					:= -Wall -Werror -Wextra -g3# -fsanitize=address
 INCLUDEFLAGS			:= -I $(INCLUDE-DIR) -I lib/include/
-LINKINGFLAGS			:= -L lib -l ft
+LINKINGFLAGS			:= #-L lib -l ft
 RM						:=	rm -rf
 LIB-DIR					:= lib
 LIB						:= $(LIB-DIR)/libft.a
@@ -1067,11 +1053,11 @@ $(BUILD-DIR)%.o:        $(SRCS-DIR)%.c
 
 clean:
 	@$(RM) $(BUILD-DIR)
-	$(MAKE) $@ -C $(LIB-DIR)
+#	$(MAKE) $@ -C $(LIB-DIR)
 
 fclean: clean
 	@$(RM) $(NAME)
-	$(MAKE) $@ -C $(LIB-DIR)
+#	$(MAKE) $@ -C $(LIB-DIR)
 
 re: fclean all
 
@@ -1082,7 +1068,6 @@ print-%:
 	@$(info '$*'='$($*)')
 
 .PHONY: all clean fclean re info-% print-%
-
 #+end_src
 
 ***** TODO  Fix errors.
@@ -1128,17 +1113,30 @@ print-%:
 #+begin_src c :tangle valid_elfh.c
   #include "format_elf.h"
 
-    bool	valid_elf_magic_number(void *elf_mmap)
+  bool	valid_elf_magic_number(void *elf_mmap)
   {
-          return (!memcmp(elf_mmap, ELFMAG, SELFMAG));
+          return (!memcmp(elf_mmap, ELFMAG, (size_t)SELFMAG));
+  }
+
+  bool valid_elf_file(void *elf_mmap, off_t elf_size)
+  {
+    const t_elf_h ehdr = (t_elf_h){.elf32 = elf_mmap};
+    const unsigned char class = get_elfh_e_ident_class(elf_mmap);
+
+    if (valid_elf_header(&ehdr, elf_size)
+        && valid_elf_section_headers(class, &ehdr)
+        && valid_elf_phs(elf_size, &ehdr))
+        return (true);
+    return (false);
   }
 
 #+end_src
 
 #+begin_src c :tangle format_elf.h
-  // valid_elfh
+    // valid_elfh
 
-    bool	valid_elf_magic_number(void *elf_mmap);
+  bool	valid_elf_magic_number(void *elf_mmap);
+  bool	valid_elf_file(void *elf_mmap, off_t elf_size);
 
 #+end_src
 
