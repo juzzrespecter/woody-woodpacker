@@ -3,8 +3,12 @@
 * Validate ELF
 
 ** What makes invalid a elf file:
-*** TODO Invalid Elf.
+*** DONE Invalid Elf.
+CLOSED: [2025-06-21 Sat 16:08]
 :LOGBOOK:
+- State "DONE"       from "TODO"       [2025-06-21 Sat 16:08]
+CLOCK: [2025-06-21 Sat 15:31]--[2025-06-21 Sat 16:06] =>  0:35
+CLOCK: [2025-06-21 Sat 13:21]--[2025-06-21 Sat 14:30] =>  1:09 
 CLOCK: [2025-06-21 Sat 11:20]--[2025-06-21 Sat 12:25] =>  1:05
 CLOCK: [2025-06-21 Sat 10:32]--[2025-06-21 Sat 10:59] =>  0:27
 CLOCK: [2025-06-20 Fri 17:32]--[2025-06-20 Fri 19:46] =>  2:14
@@ -366,8 +370,9 @@ int	get_struct_size_elf_header(char *elf_mmap)
   bool	is_executable_elf_file(void *elf_mmap)
   {
     const t_elf_h ehdr = (t_elf_h){.elf32 = elf_mmap};
+    const uint16_t type = get_elfh_type(&ehdr);
 
-    return (ET_EXEC == get_elfh_type(&ehdr));
+    return (ET_EXEC == type || ET_DYN == type);
   }
 #+end_src
 
@@ -445,6 +450,346 @@ int	get_struct_size_elf_header(char *elf_mmap)
 
 #+end_src
 
+*** DONE Validation ELF_Programs.
+CLOSED: [2025-06-19 Thu 17:46]
+
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-06-19 Thu 17:46]
+:END:
+
+#+begin_src c :tangle  valid_program_header.c 
+  #include "format_elf.h"
+
+    static bool	valid_elf_ph(unsigned char elf_class, off_t elf_size, const t_elf_h *ehdr,
+                            uint16_t index)
+    {
+            const t_elf_ph	phdr = get_program_header(ehdr, index);
+            const uint16_t	size = get_struct_size_elf_ph(elf_class);
+            unsigned char	p_align;
+
+            if (!phdr.elf32 || !ehdr->elf32
+                    || (void *)phdr.elf32 + size >= (void *)ehdr->elf32 + elf_size)
+                    return (false);
+            p_align = get_program_header_align(&phdr, elf_class);
+            if (p_align != (p_align & -p_align))
+                    return (false);
+            if ((off_t)(get_program_header_offset(&phdr, elf_class)
+                    + get_program_header_filesz(&phdr, elf_class)) >= elf_size)
+                    return (false);
+            return (true);
+    }
+
+    bool	valid_elf_phs(off_t elf_size, const t_elf_h *ehdr)
+    {
+            const uint64_t		real_phnum	= elf_get_real_phnum(ehdr);
+            const unsigned char	class		= get_elfh_e_ident_class((void *)ehdr->elf32);
+            uint64_t			index;
+
+            if (!real_phnum)
+                    return (true);
+            if (get_struct_size_elf_ph(class) != get_elfh_phentsize(ehdr))
+                    return (false);
+            if (signed_overflow_limit (real_phnum, get_struct_size_elf_ph(class), elf_size))
+                    return (false);
+            index = 0;
+            while (index < real_phnum
+                    && valid_elf_ph(class, elf_size, ehdr, index))
+                    index++;
+            return (index >= real_phnum);
+    }
+#+end_src
+
+#+begin_src c :tangle format_elf.h
+  // valid_elf_ph
+  bool	valid_elf_phs(off_t elf_size, const t_elf_h *ehdr);
+#+end_src
+
+
+#+begin_src c :tangle  valid_program_header_2.c 
+  #include "format_elf.h"
+
+  uint64_t	get_struct_size_elf_ph(unsigned char class)
+  {
+          if (class == ELFCLASS32)
+                  return (sizeof(Elf32_Phdr));
+          return (sizeof(Elf64_Phdr));
+  }
+
+  t_elf_ph	get_program_header(const t_elf_h *ehdr, uint16_t index)
+  {
+          const uint64_t	offset = get_elfh_phoff(ehdr);
+          const uint64_t	size = get_struct_size_elf_ph(
+                          get_elfh_e_ident_class((void *)ehdr->elf32));
+
+          if (unsigned_int_mult_overflow(size, index, sizeof(size) * 8))
+                  return ((t_elf_ph){.elf32 = NULL});
+          return ((t_elf_ph){.elf32 = (void *)ehdr->elf32 + offset
+                  + size * index});
+  }
+
+  unsigned char	get_program_header_align(const t_elf_ph *phdr,
+                          unsigned char class)
+  {
+          if (class == ELFCLASS32)
+                  return (phdr->elf32->p_align);
+          return (phdr->elf64->p_align);
+  }
+
+  uint32_t	get_program_header_offset(const t_elf_ph *phdr,
+                          unsigned char class)
+  {
+          if (class == ELFCLASS32)
+                  return (phdr->elf32->p_offset);
+          return (phdr->elf64->p_offset);
+  }
+
+  uint64_t	get_program_header_filesz(const t_elf_ph *phdr,
+                          unsigned char class)
+  {
+          if (class == ELFCLASS32)
+                  return (phdr->elf32->p_filesz);
+          return (phdr->elf64->p_filesz);
+  }
+#+end_src
+
+#+begin_src c :tangle format_elf.h
+
+// valid_program_header_2
+  uint64_t	get_struct_size_elf_ph(unsigned char class);
+  t_elf_ph	get_program_header(const t_elf_h *ehdr, uint16_t index);
+  uint32_t	get_program_header_offset(const t_elf_ph *phdr,
+                          unsigned char class);
+  uint64_t	get_program_header_filesz(const t_elf_ph *phdr,
+                          unsigned char class);
+  unsigned char	get_program_header_align(const t_elf_ph *phdr,
+                          unsigned char class);
+#+end_src
+
+**** DONE Add overflow functs.
+CLOSED: [2025-06-19 Thu 17:45]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-06-19 Thu 17:45]
+:END:
+#+begin_src c :tangle  overflow.c 
+  #include <stdint.h>
+  #include <stdbool.h>
+
+  bool	unsigned_overflow_limit(uint64_t times, uint64_t size, uint64_t limit)
+  {
+          if (!size || !times)
+                  return (false);
+          return (times > limit / size);
+  }
+
+  bool	signed_overflow_limit(int64_t times, int64_t size, int64_t limit)
+  {
+          int64_t	result;
+
+          if (!times || !size)
+                  return (false);
+          result = limit / size;
+          if (result < 0)
+                  return (times < result);
+          return (times > result);
+  }
+
+  bool	unsigned_int_mult_overflow(uint64_t times, uint64_t size,
+                          uint64_t size_bits)
+  {
+          uint64_t	limit;
+
+          if (!times || !size)
+                  return (false);
+          if (!size_bits || size_bits > 64)
+                  return (true);
+          limit = 0;
+          while (--size_bits)
+                  limit = limit << 1 | 1;
+          return (unsigned_overflow_limit(times, size, limit));
+  }
+
+  bool	int_mult_overflow(int64_t times, int64_t size, uint64_t size_bits)
+  {
+          int64_t	limit;
+          int64_t	bit_mask;
+
+          if (!times || !size)
+                  return (false);
+          if (!size_bits || size_bits > 64)
+                  return (true);
+          limit = 1 << (size_bits - 1);
+          bit_mask = 1;
+          while (--size_bits)
+                  bit_mask = bit_mask << 1 | 1;
+          if ((limit == size && times == -1) || (limit == times && -1 == size))
+                  return (true);
+          return (signed_overflow_limit(times, size, limit) // Negative min
+                  || signed_overflow_limit(times, size, ~limit & bit_mask));// Positive Max
+  }
+
+  bool	uint_mult_overflow(unsigned int times, unsigned int size)
+  {
+          return (unsigned_int_mult_overflow(times, size, sizeof(size) * 8));
+  }
+
+#+end_src
+
+#+begin_src c :tangle format_elf.h
+  // overflow 
+  bool	unsigned_overflow_limit(uint64_t times, uint64_t size, uint64_t limit);
+  bool	signed_overflow_limit(int64_t times, int64_t size, int64_t limit);
+  bool	int_mult_overflow(int64_t times, int64_t size, uint64_t size_bits);
+  bool	uint_mult_overflow(unsigned int times, unsigned int size);
+  bool	unsigned_int_mult_overflow(uint64_t times, uint64_t size, uint64_t size_bits);
+
+#+end_src
+
+**** TODO Check that compile and work succesfully
+
+***** Makefile
+
+#+begin_src  Makefile :tangle Makefile
+MAKEFLAGS				:=	--no-print-directory
+SHELL					:=	/bin/sh
+INCLUDE-DIR				:=	./include/
+SRCS-DIR				:=	.//
+BUILD-DIR				:=	./.build/
+NAME					:=	test_elf
+SRC					:=	get_eh_1 \
+						get_eh_2 \
+						get_eh \
+						get_elfsh_data_1 \
+						get_elfsh_data_2 \
+						get_elfsh_data_3 \
+						get_elfsh_data \
+						get_real_data \
+						overflow \
+						validate_elf_h_1 \
+						validate_elf_h \
+						valid_elf_h_attrib \
+						valid_elf_section_header_2 \
+						valid_program_header_2 \
+						valid_program_header \
+						valid_section_header \
+						get_elfh_e_ident \
+						valid_elfh \
+						valid_elf_h_2 \
+
+
+BUILD					:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(SRC)))
+CC						:= cc
+CFLAGS					:= -Wall -Werror -Wextra -g3# -fsanitize=address
+INCLUDEFLAGS			:= -I $(INCLUDE-DIR) -I lib/include/
+LINKINGFLAGS			:= #-L lib -l ft
+RM						:=	rm -rf
+LIB-DIR					:= lib
+LIB						:= $(LIB-DIR)/libft.a
+
+# For create directory and print
+DIR_DUP					=	mkdir -p $(@D)
+# RULES
+
+all: $(NAME)
+
+#$(LIB): $(LIB-DIR)
+#	$(MAKE) -C $<
+
+$(NAME): $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $(BUILD) $(LINKINGFLAGS)
+
+$(BUILD-DIR)%.o:        $(SRCS-DIR)%.c
+	@$(DIR_DUP)
+	$(CC) $(CFLAGS) $(INCLUDEFLAGS) -c $< -o $@
+
+clean:
+	@$(RM) $(BUILD-DIR)
+#	$(MAKE) $@ -C $(LIB-DIR)
+
+fclean: clean
+	@$(RM) $(NAME)
+#	$(MAKE) $@ -C $(LIB-DIR)
+
+re: fclean all
+
+info-%:
+	@$(MAKE) --dry-run --always-make $* | grep -v "info"
+
+print-%:
+	@$(info '$*'='$($*)')
+
+.PHONY: all clean fclean re info-% print-%
+#+end_src
+
+***** TODO  Fix errors.
+#+begin_src  c :tangle get_elfh_e_ident.c
+#include "format_elf.h"
+
+  unsigned char	get_elfh_e_ident_class(const unsigned char *e_ident)
+  {
+          return (e_ident[EI_CLASS]);
+  }
+
+  unsigned char	get_elfh_e_ident_data(const unsigned char *e_ident)
+  {
+          return (e_ident[EI_DATA]);
+  }
+
+  unsigned char	get_elfh_e_ident_version(const unsigned char *e_ident)
+  {
+          return (e_ident[EI_VERSION]);
+  }
+
+  unsigned char	get_elfh_e_ident_osabi(const unsigned char *e_ident)
+  {
+          return (e_ident[EI_OSABI]);
+  }
+
+  unsigned char	get_elfh_e_ident_abiversion(const unsigned char *e_ident)
+  {
+          return (e_ident[EI_ABIVERSION]);
+  }
+#+end_src
+
+#+begin_src c :tangle format_elf.h
+
+// get_elfh_e_ident
+  unsigned char	get_elfh_e_ident_data(const unsigned char *e_ident);
+  unsigned char	get_elfh_e_ident_class(const unsigned char *e_ident);
+  unsigned char	get_elfh_e_ident_version(const unsigned char *e_ident);
+  unsigned char	get_elfh_e_ident_osabi(const unsigned char *e_ident);
+  unsigned char	get_elfh_e_ident_abiversion(const unsigned char *e_ident);
+#+end_src
+
+#+begin_src c :tangle valid_elfh.c
+  #include "format_elf.h"
+
+  bool	valid_elf_magic_number(void *elf_mmap)
+  {
+          return (!memcmp(elf_mmap, ELFMAG, (size_t)SELFMAG));
+  }
+
+  bool valid_elf_file(void *elf_mmap, off_t elf_size)
+  {
+    const t_elf_h ehdr = (t_elf_h){.elf32 = elf_mmap};
+    const unsigned char class = get_elfh_e_ident_class(elf_mmap);
+
+    if (valid_elf_header(&ehdr, elf_size)
+        && valid_elf_section_headers(class, &ehdr)
+        && valid_elf_phs(elf_size, &ehdr))
+        return (true);
+    return (false);
+  }
+
+#+end_src
+
+#+begin_src c :tangle format_elf.h
+    // valid_elfh
+
+  bool	valid_elf_magic_number(void *elf_mmap);
+  bool	valid_elf_file(void *elf_mmap, off_t elf_size);
+
+#+end_src
+
 *** TODO Validation ELF_Sections.
 change =t_bag=  struct to =size= and =class= add things as needed.
 
@@ -476,6 +821,7 @@ CLOSED: [2025-06-20 Fri 19:31]
             if (!eh_shnum || !real_shstrndx)
                     return (false);
             id = 0;
+            bzero(symtab_shndx, sizeof (symtab_shndx));
             while (id < eh_shnum && valid_elf_section_header_handler(elf_class, &symtab_shndx[0], ehdr, id))
                     id++;
             if (id < eh_shnum)
@@ -801,345 +1147,6 @@ uint32_t	get_section_header_addr(const t_elf_sh *shdr, unsigned char class)
   const char	*get_section_string_table(const t_elf_h *ehdr);
   uint32_t	get_section_header_name(const t_elf_sh *shdr, unsigned char class);
   const char	*get_section_name(const char *str_tab, uint64_t index_str_tab);
-#+end_src
-
-*** DONE Validation ELF_Programs.
-CLOSED: [2025-06-19 Thu 17:46]
-:LOGBOOK:
-- State "DONE"       from "TODO"       [2025-06-19 Thu 17:46]
-:END:
-
-#+begin_src c :tangle  valid_program_header.c 
-  #include "format_elf.h"
-
-    static bool	valid_elf_ph(unsigned char elf_class, off_t elf_size, const t_elf_h *ehdr,
-                            uint16_t index)
-    {
-            const t_elf_ph	phdr = get_program_header(ehdr, index);
-            const uint16_t	size = get_struct_size_elf_ph(elf_class);
-            unsigned char	p_align;
-
-            if (!phdr.elf32 || !ehdr->elf32
-                    || (void *)phdr.elf32 + size >= (void *)ehdr->elf32 + elf_size)
-                    return (false);
-            p_align = get_program_header_align(&phdr, elf_class);
-            if (p_align != (p_align & -p_align))
-                    return (false);
-            if ((off_t)(get_program_header_offset(&phdr, elf_class)
-                    + get_program_header_filesz(&phdr, elf_class)) >= elf_size)
-                    return (false);
-            return (true);
-    }
-
-    bool	valid_elf_phs(off_t elf_size, const t_elf_h *ehdr)
-    {
-            const uint64_t		real_phnum	= elf_get_real_phnum(ehdr);
-            const unsigned char	class		= get_elfh_e_ident_class((void *)ehdr->elf32);
-            uint16_t			index;
-
-            if (!real_phnum)
-                    return (true);
-            if (get_struct_size_elf_ph(class) != get_elfh_phentsize(ehdr))
-                    return (false);
-            if (signed_overflow_limit (real_phnum, get_struct_size_elf_ph(class), elf_size))
-                    return (false);
-            index = 0;
-            while (index < real_phnum
-                    && valid_elf_ph(class, elf_size, ehdr, index))
-                    index++;
-            return (index >= real_phnum);
-    }
-#+end_src
-
-#+begin_src c :tangle format_elf.h
-  // valid_elf_ph
-  bool	valid_elf_phs(off_t elf_size, const t_elf_h *ehdr);
-#+end_src
-
-
-#+begin_src c :tangle  valid_program_header_2.c 
-  #include "format_elf.h"
-
-  uint64_t	get_struct_size_elf_ph(unsigned char class)
-  {
-          if (class == ELFCLASS32)
-                  return (sizeof(Elf32_Phdr));
-          return (sizeof(Elf64_Phdr));
-  }
-
-  t_elf_ph	get_program_header(const t_elf_h *ehdr, uint16_t index)
-  {
-          const uint64_t	offset = get_elfh_phoff(ehdr);
-          const uint64_t	size = get_struct_size_elf_ph(
-                          get_elfh_e_ident_class((void *)ehdr->elf32));
-
-          if (unsigned_int_mult_overflow(size, index, sizeof(size) * 8))
-                  return ((t_elf_ph){.elf32 = NULL});
-          return ((t_elf_ph){.elf32 = (void *)ehdr->elf32 + offset
-                  + size * index});
-  }
-
-  unsigned char	get_program_header_align(const t_elf_ph *phdr,
-                          unsigned char class)
-  {
-          if (class == ELFCLASS32)
-                  return (phdr->elf32->p_align);
-          return (phdr->elf64->p_align);
-  }
-
-  uint32_t	get_program_header_offset(const t_elf_ph *phdr,
-                          unsigned char class)
-  {
-          if (class == ELFCLASS32)
-                  return (phdr->elf32->p_offset);
-          return (phdr->elf64->p_offset);
-  }
-
-  uint64_t	get_program_header_filesz(const t_elf_ph *phdr,
-                          unsigned char class)
-  {
-          if (class == ELFCLASS32)
-                  return (phdr->elf32->p_filesz);
-          return (phdr->elf64->p_filesz);
-  }
-#+end_src
-
-#+begin_src c :tangle format_elf.h
-
-// valid_program_header_2
-  uint64_t	get_struct_size_elf_ph(unsigned char class);
-  t_elf_ph	get_program_header(const t_elf_h *ehdr, uint16_t index);
-  uint32_t	get_program_header_offset(const t_elf_ph *phdr,
-                          unsigned char class);
-  uint64_t	get_program_header_filesz(const t_elf_ph *phdr,
-                          unsigned char class);
-  unsigned char	get_program_header_align(const t_elf_ph *phdr,
-                          unsigned char class);
-#+end_src
-
-**** DONE Add overflow functs.
-CLOSED: [2025-06-19 Thu 17:45]
-:LOGBOOK:
-- State "DONE"       from "TODO"       [2025-06-19 Thu 17:45]
-:END:
-#+begin_src c :tangle  overflow.c 
-  #include <stdint.h>
-  #include <stdbool.h>
-
-  bool	unsigned_overflow_limit(uint64_t times, uint64_t size, uint64_t limit)
-  {
-          if (!size || !times)
-                  return (false);
-          return (times > limit / size);
-  }
-
-  bool	signed_overflow_limit(int64_t times, int64_t size, int64_t limit)
-  {
-          int64_t	result;
-
-          if (!times || !size)
-                  return (false);
-          result = limit / size;
-          if (result < 0)
-                  return (times < result);
-          return (times > result);
-  }
-
-  bool	unsigned_int_mult_overflow(uint64_t times, uint64_t size,
-                          uint64_t size_bits)
-  {
-          uint64_t	limit;
-
-          if (!times || !size)
-                  return (false);
-          if (!size_bits || size_bits > 64)
-                  return (true);
-          limit = 0;
-          while (--size_bits)
-                  limit = limit << 1 | 1;
-          return (unsigned_overflow_limit(times, size, limit));
-  }
-
-  bool	int_mult_overflow(int64_t times, int64_t size, uint64_t size_bits)
-  {
-          int64_t	limit;
-          int64_t	bit_mask;
-
-          if (!times || !size)
-                  return (false);
-          if (!size_bits || size_bits > 64)
-                  return (true);
-          limit = 1 << (size_bits - 1);
-          bit_mask = 1;
-          while (--size_bits)
-                  bit_mask = bit_mask << 1 | 1;
-          if ((limit == size && times == -1) || (limit == times && -1 == size))
-                  return (true);
-          return (signed_overflow_limit(times, size, limit) // Negative min
-                  || signed_overflow_limit(times, size, ~limit & bit_mask));// Positive Max
-  }
-
-  bool	uint_mult_overflow(unsigned int times, unsigned int size)
-  {
-          return (unsigned_int_mult_overflow(times, size, sizeof(size) * 8));
-  }
-
-#+end_src
-
-#+begin_src c :tangle format_elf.h
-  // overflow 
-  bool	unsigned_overflow_limit(uint64_t times, uint64_t size, uint64_t limit);
-  bool	signed_overflow_limit(int64_t times, int64_t size, int64_t limit);
-  bool	int_mult_overflow(int64_t times, int64_t size, uint64_t size_bits);
-  bool	uint_mult_overflow(unsigned int times, unsigned int size);
-  bool	unsigned_int_mult_overflow(uint64_t times, uint64_t size, uint64_t size_bits);
-
-#+end_src
-
-**** TODO Check that compile and work succesfully
-
-***** Makefile
-
-#+begin_src  Makefile :tangle Makefile
-MAKEFLAGS				:=	--no-print-directory
-SHELL					:=	/bin/sh
-INCLUDE-DIR				:=	./include/
-SRCS-DIR				:=	.//
-BUILD-DIR				:=	./.build/
-NAME					:=	test_elf
-SRC					:=	get_eh_1 \
-						get_eh_2 \
-						get_eh \
-						get_elfsh_data_1 \
-						get_elfsh_data_2 \
-						get_elfsh_data_3 \
-						get_elfsh_data \
-						get_real_data \
-						overflow \
-						validate_elf_h_1 \
-						validate_elf_h \
-						valid_elf_h_attrib \
-						valid_elf_section_header_2 \
-						valid_program_header_2 \
-						valid_program_header \
-						valid_section_header \
-						get_elfh_e_ident \
-						valid_elfh \
-						valid_elf_h_2 \
-
-
-BUILD					:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(SRC)))
-CC						:= cc
-CFLAGS					:= -Wall -Werror -Wextra -g3# -fsanitize=address
-INCLUDEFLAGS			:= -I $(INCLUDE-DIR) -I lib/include/
-LINKINGFLAGS			:= #-L lib -l ft
-RM						:=	rm -rf
-LIB-DIR					:= lib
-LIB						:= $(LIB-DIR)/libft.a
-
-# For create directory and print
-DIR_DUP					=	mkdir -p $(@D)
-# RULES
-
-all: $(NAME)
-
-#$(LIB): $(LIB-DIR)
-#	$(MAKE) -C $<
-
-$(NAME): $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $(BUILD) $(LINKINGFLAGS)
-
-$(BUILD-DIR)%.o:        $(SRCS-DIR)%.c
-	@$(DIR_DUP)
-	$(CC) $(CFLAGS) $(INCLUDEFLAGS) -c $< -o $@
-
-clean:
-	@$(RM) $(BUILD-DIR)
-#	$(MAKE) $@ -C $(LIB-DIR)
-
-fclean: clean
-	@$(RM) $(NAME)
-#	$(MAKE) $@ -C $(LIB-DIR)
-
-re: fclean all
-
-info-%:
-	@$(MAKE) --dry-run --always-make $* | grep -v "info"
-
-print-%:
-	@$(info '$*'='$($*)')
-
-.PHONY: all clean fclean re info-% print-%
-#+end_src
-
-***** TODO  Fix errors.
-#+begin_src  c :tangle get_elfh_e_ident.c
-#include "format_elf.h"
-
-  unsigned char	get_elfh_e_ident_class(const unsigned char *e_ident)
-  {
-          return (e_ident[EI_CLASS]);
-  }
-
-  unsigned char	get_elfh_e_ident_data(const unsigned char *e_ident)
-  {
-          return (e_ident[EI_DATA]);
-  }
-
-  unsigned char	get_elfh_e_ident_version(const unsigned char *e_ident)
-  {
-          return (e_ident[EI_VERSION]);
-  }
-
-  unsigned char	get_elfh_e_ident_osabi(const unsigned char *e_ident)
-  {
-          return (e_ident[EI_OSABI]);
-  }
-
-  unsigned char	get_elfh_e_ident_abiversion(const unsigned char *e_ident)
-  {
-          return (e_ident[EI_ABIVERSION]);
-  }
-#+end_src
-
-#+begin_src c :tangle format_elf.h
-
-// get_elfh_e_ident
-  unsigned char	get_elfh_e_ident_data(const unsigned char *e_ident);
-  unsigned char	get_elfh_e_ident_class(const unsigned char *e_ident);
-  unsigned char	get_elfh_e_ident_version(const unsigned char *e_ident);
-  unsigned char	get_elfh_e_ident_osabi(const unsigned char *e_ident);
-  unsigned char	get_elfh_e_ident_abiversion(const unsigned char *e_ident);
-#+end_src
-
-#+begin_src c :tangle valid_elfh.c
-  #include "format_elf.h"
-
-  bool	valid_elf_magic_number(void *elf_mmap)
-  {
-          return (!memcmp(elf_mmap, ELFMAG, (size_t)SELFMAG));
-  }
-
-  bool valid_elf_file(void *elf_mmap, off_t elf_size)
-  {
-    const t_elf_h ehdr = (t_elf_h){.elf32 = elf_mmap};
-    const unsigned char class = get_elfh_e_ident_class(elf_mmap);
-
-    if (valid_elf_header(&ehdr, elf_size)
-        && valid_elf_section_headers(class, &ehdr)
-        && valid_elf_phs(elf_size, &ehdr))
-        return (true);
-    return (false);
-  }
-
-#+end_src
-
-#+begin_src c :tangle format_elf.h
-    // valid_elfh
-
-  bool	valid_elf_magic_number(void *elf_mmap);
-  bool	valid_elf_file(void *elf_mmap, off_t elf_size);
-
 #+end_src
 
 * How do the packer logic: 
