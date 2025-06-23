@@ -76,3 +76,11 @@ These two actions have the same effect. Namely, the archive will not be openable
 *** Additional binay management (=PE=, =Mach-O=).
 
 
+** Bibliography:
+# How to make a packer
+https://fasterthanli.me/series/making-our-own-executable-packer
+# PE format
+https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-image_dos_header
+# MACH-O format
+https://gpanders.com/blog/exploring-mach-o-part-1/
+https://developer.apple.com/library/archive/documentation/Performance/Conceptual/CodeFootprint/Articles/MachOOverview.html#//apple_ref/doc/uid/20001860-BAJGJEJ
