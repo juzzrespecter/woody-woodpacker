@@ -75,6 +75,42 @@ These two actions have the same effect. Namely, the archive will not be openable
 
 *** Additional binay management (=PE=, =Mach-O=).
 
+** Not asked But interesting to Watchout.
+Anti-Debugging Techniques
+
+Anti-debugging techniques are methods used to detect and prevent debugging tools from analyzing your executable. Here are some common techniques:
+
+    Check for Debugger Presence:
+        You can check if a debugger is attached to your process. For example, in Windows, you can use the IsDebuggerPresent() function to determine if a debugger is running. If it is, you can terminate the process or alter its behavior.
+
+    Timing Checks:
+        Debuggers often slow down the execution of a program. You can implement timing checks to measure how long certain operations take. If the execution time exceeds a certain threshold, it may indicate that a debugger is present.
+
+    Exception Handling:
+        You can intentionally cause exceptions and check how they are handled. Debuggers often handle exceptions differently than normal execution. If the behavior deviates from the expected, you can take action.
+
+    Code Integrity Checks:
+        Implement checksums or hashes of your code sections. If a debugger modifies the code, the integrity check will fail, allowing you to take protective measures.
+
+    Environment Checks:
+        Check for the presence of common debugging tools or environments (like specific processes or files). If detected, you can alter the program's behavior or exit.
+
+Obfuscation Methods
+
+    Control Flow Obfuscation:
+        Alter the control flow of your program to make it less predictable. This can involve adding unnecessary jumps, loops, or conditional statements that do not affect the program's outcome but complicate the analysis.
+
+    Variable and Function Renaming:
+        Rename variables and functions to meaningless names. This makes it harder for someone analyzing the code to understand its purpose.
+
+    String Encryption:
+        Encrypt strings used in your program (like error messages or configuration data) and decrypt them at runtime. This prevents easy access to sensitive information.
+
+    Dead Code Insertion:
+        Add code that does not affect the program's functionality (dead code). This can confuse reverse engineers as they try to determine which parts of the code are relevant.
+
+    Dynamic Code Generation:
+        Generate parts of your code at runtime instead of having them statically defined. This can make static analysis much more difficult.
 
 ** Bibliography:
 # How to make a packer
