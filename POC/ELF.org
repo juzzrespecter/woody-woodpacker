@@ -1178,7 +1178,28 @@ uint32_t	get_section_header_addr(const t_elf_sh *shdr, unsigned char class)
      3. Check the program executed fine for both arch =./program=
 3. Encrypt and compress
    1. Encrypt n sections
-      1. I will choose =.rodata and .text=  maybe variants with prefix =s= just for =data= and  =bss= i don't think that will worth encrypt that sections for global and static var (=initialized= or =not initialized= respectively)
+      1. I will choose =.rodata and .text=  maybe variants with prefix =s= just for =data= and  =bss= i don't think that will worth encrypt that sections for global and static var (=initialized= or =not initialized= respectively).
+      2. maybe would be better use relocations table for .rodata info ....
+         1. ELF (Executable and Linkable Format):
+ELF files use a relocation table that specifies how to adjust addresses in the code and data sections when the executable is loaded into memory. This table contains entries that indicate which addresses need to be modified and how.
+    Relocation Types: ELF supports various relocation types, such as R_X86_64_RELATIVE for relative addressing. You will need to parse the ELF headers to find the relocation section and apply the necessary adjustments.
+
+         2. Mach-O:
+         3. PE (Portable Executable):
+         Import Address Table (IAT): In PE files, the IAT is crucial for dynamic linking. It contains addresses of imported functions that need to be resolved at runtime.
+    Relocation Table: PE files have a relocation table that specifies which addresses need to be adjusted when the executable is loaded. This is particularly important if the executable is not loaded at its preferred base address.
+
+* How
+     implement the relocation logic in your unpacking code. This code will read the relocation table, determine the necessary adjustments, and apply them to the relevant sections of the executable.
+
+
+
+
+           
+        
+        
+     
+
 
        
 #+begin_src c :tangle format_elf.h
