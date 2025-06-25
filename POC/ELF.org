@@ -570,7 +570,11 @@ CLOSED: [2025-06-24 Tue 19:26]
 - State "DONE"       from "TODO"       [2025-06-24 Tue 19:26]
 :END:
 
-***** TODO  Fix errors.
+***** DONE Fix errors.
+CLOSED: [2025-06-25 Wed 13:07]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-06-25 Wed 13:07]
+:END:
 #+begin_src  c :tangle get_elfh_e_ident.c
 #include "format_elf.h"
 
@@ -1003,13 +1007,16 @@ CLOSED: [2025-06-20 Fri 19:31]
   bool	elf_valid_elf_section_header_handler(unsigned char elf_class,  uint64_t *symtab, const t_elf_h *ehdr, uint64_t index);
 
 #+end_src
+
+
 * How do the packer logic: 
-1. Add the string "....WOODY....\n" to the string section end.
+1. Add the string "....WOODY....\n" to the string section end. Kind of inecesary would be better for image size, performance, let's cues, don't add info in .rodata this way ~const char woody_str[] = {'.','.','.','.','W','O','O','D','Y','.','.','.','.',0}~
    1. Go Section header =.rodata=
       1. Increment =sh_size= as needed.
       2. write the content u want.
          1. *Warning* Null ended.
       3. Test with =readelf -r .rodata= for check is all fine, and that the executable still working with *64b * and *32b*.
+
 2. Add instruction to the program:
    Choice:
    - [ ] Create a new section (Cleaner, less error prune, maybe could be suspect an unusual section)
