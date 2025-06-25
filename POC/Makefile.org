@@ -1,0 +1,87 @@
+#+title: Makefile
+
+* DONE Makefile POC complete
+CLOSED: [2025-06-25 Wed 12:53]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-06-25 Wed 12:53]
+CLOCK: [2025-06-25 Wed 12:00]--[2025-06-25 Wed 12:53] =>  0:53
+:END:
+* Makefile
+
+#+begin_src  Makefile :tangle Makefile
+MAKEFLAGS				:=	--no-print-directory
+SHELL					:=	/bin/sh
+INCLUDE-DIR				:=	./include/
+SRCS-DIR				:=	.//
+BUILD-DIR				:=	./.build/
+NAME					:=	test_elf
+SRC					:=	get_eh_1 \
+						get_eh_2 \
+						get_eh \
+						get_elfsh_data_1 \
+						get_elfsh_data_2 \
+						get_elfsh_data_3 \
+						get_elfsh_data \
+						get_real_data \
+						validate_elf_h_1 \
+						validate_elf_h \
+						valid_elf_h_attrib \
+						valid_elf_section_header_2 \
+						valid_program_header_2 \
+						valid_program_header \
+						valid_section_header \
+						get_elfh_e_ident \
+						valid_elfh \
+						valid_elf_h_2 \
+						overflow \
+						file_validation\
+						inject_code\
+						signature_check\
+
+
+
+
+BUILD					:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(SRC)))
+CC						:= cc
+CFLAGS					:= -Wall -Werror -Wextra -g3# -fsanitize=address
+INCLUDEFLAGS			:= -I $(INCLUDE-DIR) -I lib/include/
+LINKINGFLAGS			:= #-L lib -l ft
+RM						:=	rm -rf
+LIB-DIR					:= lib
+LIB						:= $(LIB-DIR)/libft.a
+
+# For create directory and print
+DIR_DUP					=	mkdir -p $(@D)
+# RULES
+
+all: $(NAME)
+
+#$(LIB): $(LIB-DIR)
+#	$(MAKE) -C $<
+
+$(NAME): $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $(BUILD) $(LINKINGFLAGS)
+
+$(BUILD-DIR)%.o:        $(SRCS-DIR)%.c
+	@$(DIR_DUP)
+	$(CC) $(CFLAGS) $(INCLUDEFLAGS) -c $< -o $@
+
+clean:
+	@$(RM) $(BUILD-DIR)
+#	$(MAKE) $@ -C $(LIB-DIR)
+
+fclean: clean
+	@$(RM) $(NAME)
+#	$(MAKE) $@ -C $(LIB-DIR)
+
+re: fclean all
+
+info-%:
+	@$(MAKE) --dry-run --always-make $* | grep -v "info"
+
+print-%:
+	@$(info '$*'='$($*)')
+
+.PHONY: all clean fclean re info-% print-%
+#+end_src
+

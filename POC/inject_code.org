@@ -35,7 +35,7 @@
     FAIL_MMAP = -3,
     UNRECOGNIZED_FILE = 2,
     UNVALID_FTYPE = 3,
-        UNVALID_FILE = 4,
+    UNVALID_FILE = 4,
   }	t_return_errors;
 
 #+end_src
@@ -194,7 +194,7 @@ I just check the DOS Signature (Could happend that is a DOS file and not PE shou
 Ideally make a array of pointer function
  something similar to this:
  #+begin_src c
-   if (valid_elf_file(file_mmap, file_size) && is_executable_elf_file(file_mmap))
+   if (elf_valid_elf_file(file_mmap, file_size) && elf_is_executable_elf_file(file_mmap))
      return (SUCCESS);
     // return (UNVALID_FTYPE);
 

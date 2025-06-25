@@ -1,0 +1,93 @@
+#+title: Common functions.
+* TODO Modify makefile to create a test program and add directory and subdirectories for srcs/cmn,elf,pe,mach-o,cipher,compress, tangle in this subdirectories and org property to put each data in a directory and create it if doesn't exist.
+SCHEDULED: <2025-06-24 Tue>
+
+* DONE Add overflow functs.
+CLOSED: [2025-06-19 Thu 17:45]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-06-19 Thu 17:45]
+:END:
+#+begin_src c :tangle  overflow.c 
+  #include <stdint.h>
+  #include <stdbool.h>
+
+  bool	unsigned_overflow_limit(uint64_t times, uint64_t size, uint64_t limit)
+  {
+          if (!size || !times)
+                  return (false);
+          return (times > limit / size);
+  }
+
+  bool	signed_overflow_limit(int64_t times, int64_t size, int64_t limit)
+  {
+          int64_t	result;
+
+          if (!times || !size)
+                  return (false);
+          result = limit / size;
+          if (result < 0)
+                  return (times < result);
+          return (times > result);
+  }
+
+  bool	unsigned_int_mult_overflow(uint64_t times, uint64_t size,
+                          uint64_t size_bits)
+  {
+          uint64_t	limit;
+
+          if (!times || !size)
+                  return (false);
+          if (!size_bits || size_bits > 64)
+                  return (true);
+          limit = 0;
+          while (--size_bits)
+                  limit = limit << 1 | 1;
+          return (unsigned_overflow_limit(times, size, limit));
+  }
+
+  bool	int_mult_overflow(int64_t times, int64_t size, uint64_t size_bits)
+  {
+          int64_t	limit;
+          int64_t	bit_mask;
+
+          if (!times || !size)
+                  return (false);
+          if (!size_bits || size_bits > 64)
+                  return (true);
+          limit = 1 << (size_bits - 1);
+          bit_mask = 1;
+          while (--size_bits)
+                  bit_mask = bit_mask << 1 | 1;
+          if ((limit == size && times == -1) || (limit == times && -1 == size))
+                  return (true);
+          return (signed_overflow_limit(times, size, limit) // Negative min
+                  || signed_overflow_limit(times, size, ~limit & bit_mask));// Positive Max
+  }
+
+  bool	uint_mult_overflow(unsigned int times, unsigned int size)
+  {
+          return (unsigned_int_mult_overflow(times, size, sizeof(size) * 8));
+  }
+
+#+end_src
+
+#+begin_src c :tangle common.h
+  #ifndef COMMON_H
+  # define COMMON_H
+  # include <stdint.h>
+  # include <stdbool.h>
+
+  // overflow 
+  bool	unsigned_overflow_limit(uint64_t times, uint64_t size, uint64_t limit);
+  bool	signed_overflow_limit(int64_t times, int64_t size, int64_t limit);
+  bool	int_mult_overflow(int64_t times, int64_t size, uint64_t size_bits);
+  bool	uint_mult_overflow(unsigned int times, unsigned int size);
+  bool	unsigned_int_mult_overflow(uint64_t times, uint64_t size, uint64_t size_bits);
+
+#+end_src
+
+
+
+#+begin_src c :tangle common.h
+  # endif
+#+end_src
