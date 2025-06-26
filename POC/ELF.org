@@ -1,5 +1,5 @@
 #+title: ELF
-#+PROPERTY: header-args:c :tangle "inject_code.c" :mkdirp yes
+#+PROPERTY: header-args:c :tangle "srcs/elf/parser/inject_code.c :mkdirp yes" :mkdirp yes
 * Validate ELF
 
 ** What makes invalid a elf file:
@@ -37,7 +37,7 @@ Section header = Shdr = _sh
 Elf header = ehdr = _h       
 #+end_comment
 
-#+begin_src c :tangle format_elf.h 
+#+begin_src c :tangle include/format_elf.h 
 #ifndef FORMAT_ELF_H
 # define FORMAT_ELF_H
 # include <elf.h>    // Typedef ELFNN_*, ST_BIND, ...
@@ -101,7 +101,7 @@ When the num of  =S/Phdr= is more than could be handle by uint16_t (65535) the f
 **** Coding
 ***** Creating the getters
 I use the union attribute elf32 for e_ident case be a 64 is in the same place the first position (polymorphism).
-#+begin_src c :tangle get_eh.c 
+#+begin_src c :tangle srcs/elf/parser/get_eh.c :mkdirp yes 
     #include "format_elf.h"
 
     uint16_t	elf_get_elfh_type(const t_elf_h *ehdr)
@@ -151,7 +151,7 @@ I use the union attribute elf32 for e_ident case be a 64 is in the same place th
 
 #+end_src
 
-#+begin_src c :tangle format_elf.h
+#+begin_src c :tangle include/format_elf.h
   //get_eh
   uint16_t		elf_get_elfh_type(const t_elf_h *hdr);
   uint16_t		elf_get_elfh_machine(const t_elf_h *ehdr);// Unused
@@ -161,7 +161,7 @@ I use the union attribute elf32 for e_ident case be a 64 is in the same place th
 
 #+end_src
 ***** TODO add prefix elf_funcname to each exclusive elf function.
-#+begin_src c :tangle get_eh_1.c 
+#+begin_src c :tangle srcs/elf/parser/get_eh_1.c :mkdirp yes 
   #include "format_elf.h"
 
   uint16_t	elf_get_elfh_ehsize(const t_elf_h *ehdr)
@@ -210,7 +210,7 @@ I use the union attribute elf32 for e_ident case be a 64 is in the same place th
   }
 #+end_src
 
-#+begin_src c :tangle format_elf.h
+#+begin_src c :tangle include/format_elf.h
   //get_eh_1
   uint16_t		elf_get_elfh_ehsize(const t_elf_h *ehdr);
   uint16_t		elf_get_elfh_phentsize(const t_elf_h *ehdr);
@@ -219,7 +219,7 @@ I use the union attribute elf32 for e_ident case be a 64 is in the same place th
   uint16_t		elf_get_elfh_shnum(const t_elf_h *ehdr);
 #+end_src
 
-#+begin_src c :tangle get_eh_2.c 
+#+begin_src c :tangle srcs/elf/parser/get_eh_2.c :mkdirp yes 
   #include "format_elf.h"
   
 uint64_t	elf_get_elfh_entry(const t_elf_h *ehdr)
@@ -259,7 +259,7 @@ int	elf_get_struct_size_elf_header(char *elf_mmap)
 }
 #+end_src
 
-#+begin_src c :tangle format_elf.h
+#+begin_src c :tangle include/format_elf.h
   // get_eh_2
   uint64_t		elf_get_elfh_entry(const t_elf_h *ehdr);
   uint64_t		elf_get_elfh_phoff(const t_elf_h *ehdr);
@@ -269,7 +269,7 @@ int	elf_get_struct_size_elf_header(char *elf_mmap)
 #+end_src
 ***** Creating the getters for the edge cases
 
-#+begin_src c :tangle get_real_data.c
+#+begin_src c :tangle srcs/elf/parser/get_real_data.c :mkdirp yes
   #include "format_elf.h"
 
   uint64_t	elf_get_real_phnum(const t_elf_h *ehdr)
@@ -307,7 +307,7 @@ int	elf_get_struct_size_elf_header(char *elf_mmap)
   }
 #+end_src
 ****** Prototype of the functions
-#+begin_src  c :tangle format_elf.h
+#+begin_src  c :tangle include/format_elf.h
 
   //get_real_data
   uint64_t	elf_get_real_shnum(const t_elf_h *ehdr, unsigned char class);
@@ -317,7 +317,7 @@ int	elf_get_struct_size_elf_header(char *elf_mmap)
 #+end_src
 
 ***** Create the validation
-#+begin_src c :tangle valid_elf_h_attrib.c
+#+begin_src c :tangle srcs/elf/parser/valid_elf_h_attrib.c :mkdirp yes
   #include "format_elf.h"
 
   bool	elf_is_valid_elf_shoff(const t_elf_h *ehdr, off_t *elf_size)
@@ -335,7 +335,7 @@ int	elf_get_struct_size_elf_header(char *elf_mmap)
   }
 #+end_src
 
-#+begin_src c :tangle format_elf.h
+#+begin_src c :tangle include/format_elf.h
   // valid_elf_h_attrib
   
   bool	elf_is_valid_elf_shoff(const t_elf_h *ehdr, off_t *elf_size);
@@ -343,7 +343,7 @@ int	elf_get_struct_size_elf_header(char *elf_mmap)
 
 #+end_src
 
-#+begin_src c :tangle validate_elf_h.c
+#+begin_src c :tangle srcs/elf/parser/validate_elf_h.c :mkdirp yes
   #include "format_elf.h"
 
   bool elf_is_file_size_enought_for_elf_header(off_t file_size, void *elf_mmap)
@@ -375,7 +375,7 @@ int	elf_get_struct_size_elf_header(char *elf_mmap)
   }
 #+end_src
 
-#+begin_src c :tangle format_elf.h
+#+begin_src c :tangle include/format_elf.h
   // validate_elf_h
   bool elf_is_file_size_enought_for_elf_header(off_t file_size, void *elf_mmap);
   bool	elf_is_valid_elf_data_format(char *elf_mmap);
@@ -384,7 +384,7 @@ int	elf_get_struct_size_elf_header(char *elf_mmap)
 
 #+end_src
 
-#+begin_src c :tangle validate_elf_h_1.c 
+#+begin_src c :tangle srcs/elf/parser/validate_elf_h_1.c :mkdirp yes 
   #include "format_elf.h"
 
   bool	elf_valid_section_size(const t_elf_h *ehdr)
@@ -416,7 +416,7 @@ int	elf_get_struct_size_elf_header(char *elf_mmap)
 
 #+end_src
 
-#+begin_src c :tangle format_elf.h
+#+begin_src c :tangle include/format_elf.h
   // valid_elf_h_1
   bool	elf_valid_section_size(const t_elf_h *ehdr);
   bool	elf_valid_ident(off_t file_size, void *elf_mmap);
@@ -425,7 +425,7 @@ int	elf_get_struct_size_elf_header(char *elf_mmap)
 
 #+end_src
 
-#+begin_src c :tangle valid_elf_h_2.c
+#+begin_src c :tangle srcs/elf/parser/valid_elf_h_2.c :mkdirp yes
   #include "format_elf.h"
 
   bool	elf_valid_t_elf_h(const t_elf_h *ehdr, off_t file_size)
@@ -442,7 +442,7 @@ int	elf_get_struct_size_elf_header(char *elf_mmap)
   }
 #+end_src
 
-#+begin_src c :tangle format_elf.h
+#+begin_src c :tangle include/format_elf.h
   // elf_valid_t_elf_h_2
   bool	elf_valid_elf_header(const t_elf_h *ehdr, off_t file_size);
   bool	elf_valid_t_elf_h(const t_elf_h *ehdr, off_t file_size);
@@ -456,7 +456,7 @@ CLOSED: [2025-06-19 Thu 17:46]
 - State "DONE"       from "TODO"       [2025-06-19 Thu 17:46]
 :END:
 
-#+begin_src c :tangle  valid_program_header.c 
+#+begin_src c :tangle  srcs/elf/parser/valid_program_header.c :mkdirp yes 
   #include "format_elf.h"
 
     static bool	elf_valid_elf_ph(unsigned char elf_class, off_t elf_size, const t_elf_h *ehdr,
@@ -498,13 +498,13 @@ CLOSED: [2025-06-19 Thu 17:46]
     }
 #+end_src
 
-#+begin_src c :tangle format_elf.h
+#+begin_src c :tangle include/format_elf.h
   // elf_valid_elf_ph
   bool	elf_valid_elf_phs(off_t elf_size, const t_elf_h *ehdr);
 #+end_src
 
 
-#+begin_src c :tangle  valid_program_header_2.c 
+#+begin_src c :tangle  srcs/elf/parser/valid_program_header_2.c :mkdirp yes 
   #include "format_elf.h"
 
   uint64_t	elf_get_struct_size_elf_ph(unsigned char class)
@@ -551,7 +551,7 @@ CLOSED: [2025-06-19 Thu 17:46]
   }
 #+end_src
 
-#+begin_src c :tangle format_elf.h
+#+begin_src c :tangle include/format_elf.h
 
 // valid_program_header_2
   uint64_t	elf_get_struct_size_elf_ph(unsigned char class);
@@ -575,7 +575,7 @@ CLOSED: [2025-06-25 Wed 13:07]
 :LOGBOOK:
 - State "DONE"       from "TODO"       [2025-06-25 Wed 13:07]
 :END:
-#+begin_src  c :tangle get_elfh_e_ident.c
+#+begin_src  c :tangle srcs/elf/parser/get_elfh_e_ident.c :mkdirp yes
 #include "format_elf.h"
 
   unsigned char	elf_get_elfh_e_ident_class(const unsigned char *e_ident)
@@ -604,7 +604,7 @@ CLOSED: [2025-06-25 Wed 13:07]
   }
 #+end_src
 
-#+begin_src c :tangle format_elf.h
+#+begin_src c :tangle include/format_elf.h :mkdirp yes
 
 // elf_get_elfh_e_ident
   unsigned char	elf_get_elfh_e_ident_data(const unsigned char *e_ident);
@@ -614,7 +614,7 @@ CLOSED: [2025-06-25 Wed 13:07]
   unsigned char	elf_get_elfh_e_ident_abiversion(const unsigned char *e_ident);
 #+end_src
 
-#+begin_src c :tangle valid_elfh.c
+#+begin_src c :tangle srcs/elf/parser/valid_elfh.c :mkdirp yes
   #include "format_elf.h"
 
   bool	elf_valid_elf_magic_number(void *elf_mmap)
@@ -636,7 +636,7 @@ CLOSED: [2025-06-25 Wed 13:07]
 
 #+end_src
 
-#+begin_src c :tangle format_elf.h
+#+begin_src c :tangle include/format_elf.h :mkdirp yes
     // elf_valid_elfh
 
   bool	elf_valid_elf_magic_number(void *elf_mmap);
@@ -656,7 +656,7 @@ CLOSED: [2025-06-18 Wed 15:51]
 :LOGBOOK:
 - State "DONE"       from              [2025-06-18 Wed 15:51]
 :END:
-#+begin_src c :tangle  get_elfsh_data.c
+#+begin_src c :tangle  srcs/elf/parser/get_elfsh_data.c :mkdirp yes
     #include "format_elf.h"
 
     uint64_t	elf_elf_get_section_header_struct_size(const t_elf_h *ehdr)
@@ -723,7 +723,7 @@ CLOSED: [2025-06-18 Wed 15:51]
 
 #+end_src
 
-#+begin_src c :tangle format_elf.h
+#+begin_src c :tangle include/format_elf.h :mkdirp yes
   // get_elfsh_data
   uint64_t	elf_elf_get_section_header_struct_size(const t_elf_h *ehdr);
   bool	elf_is_special_section_index(uint16_t index);
@@ -734,7 +734,7 @@ CLOSED: [2025-06-18 Wed 15:51]
 
 #+end_src
 
-#+begin_src c :tangle get_elfsh_data_1.c 
+#+begin_src c :tangle srcs/elf/parser/get_elfsh_data_1.c :mkdirp yes 
   #include "format_elf.h"
 
    uint32_t	elf_elf_get_section_header_type(const t_elf_sh *shdr, unsigned char class)
@@ -773,7 +773,7 @@ CLOSED: [2025-06-18 Wed 15:51]
    }
 #+end_src
 
-#+begin_src c :tangle format_elf.h
+#+begin_src c :tangle include/format_elf.h :mkdirp yes
   // get_elfsh_data_1
 uint32_t	elf_elf_get_section_header_type(const t_elf_sh *shdr, unsigned char class);
 uint32_t	elf_elf_get_section_header_flags(const t_elf_sh *shdr, unsigned char class);
@@ -782,7 +782,7 @@ uint32_t	elf_elf_get_section_header_link(const t_elf_sh *shdr, unsigned char cla
 uint32_t	elf_elf_get_section_header_info(const t_elf_sh *shdr, unsigned char class);
 #+end_src
 
-#+begin_src c :tangle get_elfsh_data_2.c 
+#+begin_src c :tangle srcs/elf/parser/get_elfsh_data_2.c :mkdirp yes 
 #include "format_elf.h"
 
 uint64_t	elf_elf_get_section_header_addralign(const t_elf_sh *shdr,
@@ -808,7 +808,7 @@ uint32_t	elf_elf_get_section_header_addr(const t_elf_sh *shdr, unsigned char cla
 	return (shdr->elf64->sh_addr);
 }
 #+end_src
-#+begin_src c :tangle format_elf.h
+#+begin_src c :tangle include/format_elf.h :mkdirp yes
   // get_elfsh_data_2
 
   uint64_t	elf_elf_get_section_header_addralign(const t_elf_sh *shdr,
@@ -820,7 +820,7 @@ uint32_t	elf_elf_get_section_header_addr(const t_elf_sh *shdr, unsigned char cla
 
 #+end_src
 
-#+begin_src c :tangle get_elfsh_data_3.c 
+#+begin_src c :tangle srcs/elf/parser/get_elfsh_data_3.c :mkdirp yes 
   #include "format_elf.h"
 
     const char	*elf_get_section_string_table(const t_elf_h *ehdr)
@@ -859,7 +859,7 @@ uint32_t	elf_elf_get_section_header_addr(const t_elf_sh *shdr, unsigned char cla
     }
 #+end_src
 
-#+begin_src c :tangle format_elf.h
+#+begin_src c :tangle include/format_elf.h :mkdirp yes
   // get_elfsh_data_3
 
   const char	*elf_get_section_string_table(const t_elf_h *ehdr);
@@ -873,7 +873,7 @@ CLOSED: [2025-06-20 Fri 19:31]
 - State "DONE"       from "REVIEW"     [2025-06-20 Fri 19:31]
 :END:
 
-#+begin_src c :tangle valid_section_header.c
+#+begin_src c :tangle srcs/elf/parser/valid_section_header.c :mkdirp yes
   #include "format_elf.h"
 
     bool	elf_valid_elf_section_header_symtab_shndx(unsigned char class, const uint64_t symtab_index, const t_elf_h *ehdr)
@@ -910,14 +910,14 @@ CLOSED: [2025-06-20 Fri 19:31]
 #+end_src
 
 
-#+begin_src c :tangle format_elf.h
+#+begin_src c :tangle include/format_elf.h :mkdirp yes
   // elf_valid_elf_section_header
   bool	elf_valid_elf_section_header_symtab_shndx(unsigned char class, const uint64_t symtab_index, const t_elf_h *ehdr);
   bool	elf_valid_elf_section_headers(unsigned char elf_class, const t_elf_h *ehdr);
 
 #+end_src
 
-#+begin_src c :tangle valid_elf_section_header_2.c 
+#+begin_src c :tangle srcs/elf/parser/valid_elf_section_header_2.c :mkdirp yes 
   #include "format_elf.h"
 
   bool	elf_valid_section_header(unsigned char elf_class, const t_elf_sh *shdr, uint16_t index, const t_elf_h *ehdr, uint64_t *symtab)
@@ -995,7 +995,7 @@ CLOSED: [2025-06-20 Fri 19:31]
 
 #+end_src
 
-#+begin_src c :tangle format_elf.h
+#+begin_src c :tangle include/format_elf.h :mkdirp yes
 
   // elf_valid_elf_section_header_2
   bool	elf_valid_section_header(unsigned char elf_class, const t_elf_sh *shdr, uint16_t index, const t_elf_h *ehdr, uint64_t *symtab);
@@ -1053,7 +1053,7 @@ ELF files use a relocation table that specifies how to adjust addresses in the c
 * How
      implement the relocation logic in your unpacking code. This code will read the relocation table, determine the necessary adjustments, and apply them to the relevant sections of the executable.
        
-#+begin_src c :tangle format_elf.h
+#+begin_src c :tangle include/format_elf.h :mkdirp yes
  #endif 
 #+end_src
 

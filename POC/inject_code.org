@@ -1,7 +1,8 @@
 #+title: inject code in an elf file
-#+PROPERTY: header-args:c :tangle "inject_code.c" :mkdirp yes
+#+PROPERTY: header-args:c :tangle "srcs/inject_code.c" :mkdirp yes
+#+PROPERTY: header-args:asm :mkdirp yes
 
-#+begin_src c :tangle "target.c"
+#+begin_src c :tangle "target/example.c" :mkdirp yes
   #include <stdio.h>
 
   int main(int argc, char **argv)
@@ -9,14 +10,40 @@
     puts("Hello World!");
     return (0);
   }
-
 #+end_src
 
+#+begin_src c :tangle "target/entrypoint.c"
+#include <stdio.h>
+
+int main() {
+    printf("main is at %p\n", &main);
+}
+#+end_src
+
+#+begin_src asm :tangle target/hello.s :mkdirp yes
+global _start
+
+        section .text
+
+_start: mov rdi, 1      ; stdout fd
+        mov rsi, msg
+        mov rdx, 9      ; 8 chars + newline
+        mov rax, 1      ; write syscall
+        syscall
+
+        xor rdi, rdi    ; return code 0
+        mov rax, 60     ; exit syscall
+        syscall
+
+        section .data
+
+msg:    db "hi there", 10, 0
+#+end_src
 
 [[file:~/Documents/woody-woodpacker/Documentation.org][Refer]]
 * Generic Logic
 ** Handling errors:
-#+begin_src c :tangle "woody.h"
+#+begin_src c :tangle "include/woody.h" :mkdirp yes
   #ifndef WOODY_H
     # define WOODY_H
   # include <sys/mman.h> //mmap, munmap
@@ -42,7 +69,8 @@
 
 *** check the parameter.
 Compare if the nbr of params is distint of 1.
-   #+begin_src c
+   #+begin_src c :tangle "srcs/inject_code.c" :mkdirp yes
+
      #include "woody.h"
 
      int main(int argc, char **argv)
@@ -58,7 +86,7 @@ Compare if the nbr of params is distint of 1.
 
 *** open the file.
 
-   #+begin_src c :tangle file_validation.c
+   #+begin_src c :tangle srcs/file_validation.c
      #include "woody.h"
 
      int	get_file(const char *filename, int *fd)
@@ -74,7 +102,8 @@ Compare if the nbr of params is distint of 1.
 
 
 **** Adding to main:
-#+begin_src c
+#+begin_src c :tangle "srcs/inject_code.c" :mkdirp yes
+
 
   if (get_file (argv[1], &fd) == FAIL_OPEN_FD)
     return (FAIL_OPEN_FD);
@@ -83,7 +112,7 @@ Compare if the nbr of params is distint of 1.
 
 *** size of the file
 
-#+begin_src c :tangle file_validation.c
+#+begin_src c :tangle srcs/file_validation.c :mkdirp yes
   int get_file_size(int fd, off_t *file_size)
     {
     ,*file_size = lseek(fd, 0, SEEK_END);
@@ -104,7 +133,8 @@ Compare if the nbr of params is distint of 1.
 
 **** Adding to main
 
-#+begin_src c
+#+begin_src c :tangle "srcs/inject_code.c" :mkdirp yes
+
   if (get_file_size(fd, &file_size) != SUCCESS)
     {
       close (fd);
@@ -114,7 +144,8 @@ Compare if the nbr of params is distint of 1.
 
 *** Map the content of the file
 
-#+begin_src c
+#+begin_src c :tangle "srcs/inject_code.c" :mkdirp yes
+
   file_mmap = mmap (NULL, file_size, PROT_NONE | PROT_READ,
                     MAP_PRIVATE, fd, 0);
   close(fd);
@@ -131,7 +162,7 @@ Once fail or not the mmap we don't have any use to the fd, we close it for that 
 *** Detect the type of file between {ELF, PE, Mach O}
 Solution Fast check Magic/Signature
 Cause:  ELF, PE and Mach O got Magic number/Signature
-   #+begin_src c :tangle woody.h
+   #+begin_src c :tangle include/woody.h 
      # define ELF_MAGIC ELFMAG
      # define MACH_O_32b_MAGIC "\xfeedface"
      # define MACH_O_64b_MAGIC "\xfeedfacf"
@@ -154,7 +185,7 @@ Cause:  ELF, PE and Mach O got Magic number/Signature
 ELF Got a signature 4 bytes, MACH-O 32 and 64 got a signature 4 bytes each and PE and DOS got a Signature of the file of 2 Bytes and PE another inside one header 4 bytes.
 **** Warning:
 I just check the DOS Signature (Could happend that is a DOS file and not PE should check later on File Format Specific.)
-#+begin_src c :tangle signature_check.c
+#+begin_src c :tangle srcs/signature_check.c
   #include "woody.h"
 
   t_file_type get_ftype(const char *file_content, const off_t *file_size)
@@ -173,7 +204,7 @@ I just check the DOS Signature (Could happend that is a DOS file and not PE shou
 
 #+end_src
 
-   #+begin_src c :tangle woody.h
+   #+begin_src c :tangle include/woody.h
      //file_validation
      int	get_file(const char *filename, int *fd);
      int get_file_size(int fg, off_t *file_size);
@@ -183,7 +214,7 @@ I just check the DOS Signature (Could happend that is a DOS file and not PE shou
      
    #+end_src
 **** Adding to main
-#+begin_src c
+#+begin_src c :tangle "srcs/inject_code.c" :mkdirp yes
   ftype = get_ftype (file_mmap, &file_size);
   if (FT_UNKNOW == ftype)
     return (UNRECOGNIZED_FILE);
@@ -193,7 +224,7 @@ I just check the DOS Signature (Could happend that is a DOS file and not PE shou
 *  File Format Specific:
 Ideally make a array of pointer function
  something similar to this:
- #+begin_src c
+ #+begin_src c  :tangle "srcs/inject_code.c" :mkdirp yes
    if (elf_valid_elf_file(file_mmap, file_size) && elf_is_executable_elf_file(file_mmap))
      return (SUCCESS);
     // return (UNVALID_FTYPE);
@@ -203,12 +234,12 @@ Ideally make a array of pointer function
 [[file:ELF.org][ELF]]
 ** PE Format:
 ** MACH-O Format:
-#+begin_src c
+#+begin_src c :tangle "srcs/inject_code.c" :mkdirp yes
 
   return (UNVALID_FILE);
 }
 #+end_src
 
-#+begin_src c :tangle woody.h
+#+begin_src c :tangle include/woody.h 
 # endif
 #+end_src

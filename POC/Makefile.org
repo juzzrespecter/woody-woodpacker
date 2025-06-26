@@ -1,21 +1,15 @@
 #+title: Makefile
 
-* DONE Makefile POC complete
-CLOSED: [2025-06-25 Wed 12:53]
-:LOGBOOK:
-- State "DONE"       from "TODO"       [2025-06-25 Wed 12:53]
-CLOCK: [2025-06-25 Wed 12:00]--[2025-06-25 Wed 12:53] =>  0:53
-:END:
 * Makefile
 
 #+begin_src  Makefile :tangle Makefile
 MAKEFLAGS				:=	--no-print-directory
 SHELL					:=	/bin/sh
 INCLUDE-DIR				:=	./include/
-SRCS-DIR				:=	.//
+SRCS-DIR				:=	srcs/
 BUILD-DIR				:=	./.build/
 NAME					:=	test_elf
-SRC					:=	get_eh_1 \
+ELF_PARSER-SRC				:=	get_eh_1 \
 						get_eh_2 \
 						get_eh \
 						get_elfsh_data_1 \
@@ -33,10 +27,26 @@ SRC					:=	get_eh_1 \
 						get_elfh_e_ident \
 						valid_elfh \
 						valid_elf_h_2 \
-						overflow \
-						file_validation\
+
+ELF_PARSER-DIR                         :=      elf/parser/
+
+ELF_PARSER-SRCS			:=	$(addprefix $(ELF_PARSER-DIR), $(ELF_PARSER-SRC))
+
+CMN-SRC				:= 	overflow \
+
+CMN-DIR                                :=      cmn/
+
+CMN-SRCS				:=	$(addprefix $(CMN-DIR), $(CMN-SRC))
+
+PROGRAM-SRC				:=	file_validation\
 						inject_code\
 						signature_check\
+
+#PROGRAM-DIR                            := ./
+
+#PROGRAM-SRCS				:=	$(addprefix $(PROGRAM-DIR), $(PROGRAM-SRC))
+
+SRC					:= $(PROGRAM-SRC) $(CMN-SRCS) $(ELF_PARSER-SRCS)
 
 
 
@@ -62,6 +72,11 @@ all: $(NAME)
 $(NAME): $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $(BUILD) $(LINKINGFLAGS)
 
+$(BUILD): | $(BUILD-DIR)
+
+$(BUILD-DIR):
+	@mkdir -p $@
+
 $(BUILD-DIR)%.o:        $(SRCS-DIR)%.c
 	@$(DIR_DUP)
 	$(CC) $(CFLAGS) $(INCLUDEFLAGS) -c $< -o $@
@@ -85,3 +100,9 @@ print-%:
 .PHONY: all clean fclean re info-% print-%
 #+end_src
 
+* DONE Makefile POC complete
+CLOSED: [2025-06-25 Wed 12:53]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-06-25 Wed 12:53]
+CLOCK: [2025-06-25 Wed 12:00]--[2025-06-25 Wed 12:53] =>  0:53
+:END:
