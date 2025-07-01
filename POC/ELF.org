@@ -274,35 +274,35 @@ int	elf_get_struct_size_elf_header(char *elf_mmap)
 
   uint64_t	elf_get_real_phnum(const t_elf_h *ehdr)
   {
-    const t_elf_sh	shdr = elf_elf_get_section_header(ehdr, 0);
+    const t_elf_sh	shdr = elf_get_section_header(ehdr, 0);
     uint64_t		phnum;
 
     phnum = elf_get_elfh_phnum(ehdr);
     if (PN_XNUM == phnum)
-      phnum = elf_elf_get_section_header_info(&shdr,
+      phnum = elf_get_section_header_info(&shdr,
                                       elf_get_elfh_e_ident_class((void *)ehdr->elf32));
     return (phnum);
   }
 
   uint64_t	elf_get_real_shstrndx(const t_elf_h *ehdr, unsigned char class)
   {
-    const t_elf_sh	shdr = elf_elf_get_section_header(ehdr, 0);
+    const t_elf_sh	shdr = elf_get_section_header(ehdr, 0);
     uint64_t		shstrndx;
 
     shstrndx = elf_get_elfh_shstrndx(ehdr);
     if (shstrndx == SHN_XINDEX)
-      shstrndx = elf_elf_get_section_header_link(&shdr, class);
+      shstrndx = elf_get_section_header_link(&shdr, class);
     return (shstrndx);
   }
 
   uint64_t	elf_get_real_shnum(const t_elf_h *ehdr, unsigned char class)
   {
-    const t_elf_sh	shdr = elf_elf_get_section_header(ehdr, 0);
+    const t_elf_sh	shdr = elf_get_section_header(ehdr, 0);
     uint64_t		shnum;
 
     shnum = elf_get_elfh_shnum(ehdr);
     if (shnum == SHN_UNDEF)
-      shnum = elf_elf_get_section_header_size(&shdr, class);
+      shnum = elf_get_section_header_size(&shdr, class);
     return (shnum);
   }
 #+end_src
@@ -317,21 +317,38 @@ int	elf_get_struct_size_elf_header(char *elf_mmap)
 #+end_src
 
 ***** Create the validation
+
+****** Valid sh_off
+Don't point out of the file. (The section header location is at the end of the file)
+Don't point inside elf header struct (in case 0, a elf file must have section/s and should have an offset at least on executable files).
+Don't got a number of entries that pass the filesize.
+****** Valid ph_off
+May don't exist in not executable programs.
+Don't point out of the file. (The program header location is following the elf header)
+Don't point inside elf header struct.
+Don't got a number of entries that pass the filesize.
+
 #+begin_src c :tangle srcs/elf/parser/valid_elf_h_attrib.c :mkdirp yes
   #include "format_elf.h"
 
   bool	elf_is_valid_elf_shoff(const t_elf_h *ehdr, off_t *elf_size)
   {
-    return (elf_get_elfh_shoff(ehdr) < (uint64_t )*elf_size
-            && elf_get_elfh_shoff(ehdr)
-            >= (uint64_t)elf_get_struct_size_elf_header((char *)ehdr->elf32));
+    const uint64_t shoff = elf_get_elfh_shoff(ehdr);
+    const uint64_t elfhsize = (uint64_t)elf_get_struct_size_elf_header((char *)ehdr->elf32);
+   const uint64_t shsize = elf_get_section_header_struct_size (*ehdr);
+   const uint64_t shnum = elf_get_elfh_shnum(ehdr);
+
+    return (shoff < (uint64_t )*elf_size
+            && shoff >= elfhsize  && 
+            shoff + shnum * shsize < (uint64_t)*elf_size);
   }
 
   bool	elf_is_valid_elf_phoff(const t_elf_h *ehdr, off_t *elf_size)
   {
     return (!elf_get_elfh_phnum(ehdr)
             || (elf_get_elfh_phoff(ehdr) >= (uint64_t)elf_get_struct_size_elf_header((char *)ehdr->elf32)
-            && elf_get_elfh_phoff(ehdr) < (uint64_t)elf_size));
+            && elf_get_elfh_phoff(ehdr) < (uint64_t)elf_size
+                && elf_get_elfh_phoff(ehdr) + elf_get_elfh_phnum(ehdr) * elf_get_elfh_phentsize(ehdr) < (uint64_t)elf_size));
   }
 #+end_src
 
@@ -342,7 +359,7 @@ int	elf_get_struct_size_elf_header(char *elf_mmap)
   bool	elf_is_valid_elf_phoff(const t_elf_h *ehdr, off_t *elf_size);
 
 #+end_src
-
+******  An executable must be a exec or dyn and got PH and entrypoint.
 #+begin_src c :tangle srcs/elf/parser/validate_elf_h.c :mkdirp yes
   #include "format_elf.h"
 
@@ -371,25 +388,25 @@ int	elf_get_struct_size_elf_header(char *elf_mmap)
     const t_elf_h ehdr = (t_elf_h){.elf32 = elf_mmap};
     const uint16_t type = elf_get_elfh_type(&ehdr);
 
-    return (ET_EXEC == type || ET_DYN == type);
+    return ((ET_EXEC == type || ET_DYN == type) && elf_get_elfh_phnum(&ehdr) && elf_get_elfh_entry(ehdr));
   }
 #+end_src
 
 #+begin_src c :tangle include/format_elf.h
   // validate_elf_h
-  bool elf_is_file_size_enought_for_elf_header(off_t file_size, void *elf_mmap);
+  bool	elf_is_file_size_enought_for_elf_header(off_t file_size, void *elf_mmap);
   bool	elf_is_valid_elf_data_format(char *elf_mmap);
   bool	elf_is_valid_elf_version(char *elf_mmap);
   bool	elf_is_executable_elf_file(void *elf_mmap);
 
 #+end_src
-
+****** Check integrity in section size, not shstrndx upper shnum, a wrapper of the e_ident validation
 #+begin_src c :tangle srcs/elf/parser/validate_elf_h_1.c :mkdirp yes 
   #include "format_elf.h"
 
   bool	elf_valid_section_size(const t_elf_h *ehdr)
   {
-    return (elf_get_elfh_shentsize(ehdr) == elf_elf_get_section_header_struct_size(ehdr));
+    return (elf_get_elfh_shentsize(ehdr) == elf_get_section_header_struct_size(ehdr));
   }
 
   bool	elf_valid_section_header_string_index(const t_elf_h *ehdr)
@@ -424,7 +441,7 @@ int	elf_get_struct_size_elf_header(char *elf_mmap)
   bool	elf_valid_section_header_string_index(const t_elf_h *ehdr);
 
 #+end_src
-
+****** Wrapper validation rest elfheader attributes, wrapper of wrappers.
 #+begin_src c :tangle srcs/elf/parser/valid_elf_h_2.c :mkdirp yes
   #include "format_elf.h"
 
@@ -456,6 +473,7 @@ CLOSED: [2025-06-19 Thu 17:46]
 - State "DONE"       from "TODO"       [2025-06-19 Thu 17:46]
 :END:
 
+*** Check integrite struct size with elfheader, phnum not 0 cause this only work on executable, check alignment, check the content of a header + offset exceed file size
 #+begin_src c :tangle  srcs/elf/parser/valid_program_header.c :mkdirp yes 
   #include "format_elf.h"
 
@@ -614,6 +632,7 @@ CLOSED: [2025-06-25 Wed 13:07]
   unsigned char	elf_get_elfh_e_ident_abiversion(const unsigned char *e_ident);
 #+end_src
 
+*****  Wrapper of wrapper of wrappers xD
 #+begin_src c :tangle srcs/elf/parser/valid_elfh.c :mkdirp yes
   #include "format_elf.h"
 
@@ -656,10 +675,12 @@ CLOSED: [2025-06-18 Wed 15:51]
 :LOGBOOK:
 - State "DONE"       from              [2025-06-18 Wed 15:51]
 :END:
+
+**** Check for special section index, null char at the end of the section strtab.
 #+begin_src c :tangle  srcs/elf/parser/get_elfsh_data.c :mkdirp yes
     #include "format_elf.h"
 
-    uint64_t	elf_elf_get_section_header_struct_size(const t_elf_h *ehdr)
+    uint64_t	elf_get_section_header_struct_size(const t_elf_h *ehdr)
     {
             const unsigned char	class = elf_get_elfh_e_ident_class(ehdr->elf32->e_ident);
 
@@ -682,10 +703,10 @@ CLOSED: [2025-06-18 Wed 15:51]
     return (i != (sizeof (special_section_index) / sizeof (*special_section_index)));
   }
 
-    t_elf_sh	elf_elf_get_section_header(const t_elf_h *ehdr, uint16_t index)
+    t_elf_sh	elf_get_section_header(const t_elf_h *ehdr, uint16_t index)
     {
             const uint64_t			sh_offset = elf_get_elfh_shoff(ehdr);
-            const uint64_t			sh_size = elf_elf_get_section_header_struct_size(ehdr);
+            const uint64_t			sh_size = elf_get_section_header_struct_size(ehdr);
             const void				*base = (void*)ehdr->elf32;
             t_elf_sh				shdr;
 
@@ -699,7 +720,7 @@ CLOSED: [2025-06-18 Wed 15:51]
             return (shdr);
     }
 
-    uint64_t	elf_elf_get_section_header_offset(const t_elf_sh *shdr, unsigned char class)
+    uint64_t	elf_get_section_header_offset(const t_elf_sh *shdr, unsigned char class)
     {
             if (!shdr->elf32)
             {
@@ -714,7 +735,7 @@ CLOSED: [2025-06-18 Wed 15:51]
     bool	valid_null_end_string_table(const t_elf_sh *shstrtab,
                             unsigned char class, char *ptr)
     {
-            const uint64_t	size = elf_elf_get_section_header_size(shstrtab, class);
+            const uint64_t	size = elf_get_section_header_size(shstrtab, class);
 
             if (!ptr || !size)
                     return (false);
@@ -725,10 +746,10 @@ CLOSED: [2025-06-18 Wed 15:51]
 
 #+begin_src c :tangle include/format_elf.h :mkdirp yes
   // get_elfsh_data
-  uint64_t	elf_elf_get_section_header_struct_size(const t_elf_h *ehdr);
+  uint64_t	elf_get_section_header_struct_size(const t_elf_h *ehdr);
   bool	elf_is_special_section_index(uint16_t index);
-  t_elf_sh	elf_elf_get_section_header(const t_elf_h *ehdr, uint16_t index);
-  uint64_t	elf_elf_get_section_header_offset(const t_elf_sh *shdr, unsigned char class);
+  t_elf_sh	elf_get_section_header(const t_elf_h *ehdr, uint16_t index);
+  uint64_t	elf_get_section_header_offset(const t_elf_sh *shdr, unsigned char class);
   bool	valid_null_end_string_table(const t_elf_sh *shstrtab,
                                       unsigned char class, char *ptr);
 
@@ -737,35 +758,35 @@ CLOSED: [2025-06-18 Wed 15:51]
 #+begin_src c :tangle srcs/elf/parser/get_elfsh_data_1.c :mkdirp yes 
   #include "format_elf.h"
 
-   uint32_t	elf_elf_get_section_header_type(const t_elf_sh *shdr, unsigned char class)
+   uint32_t	elf_get_section_header_type(const t_elf_sh *shdr, unsigned char class)
    {
            if (class == ELFCLASS32)
                    return (shdr->elf32->sh_type);
            return (shdr->elf64->sh_type);
    }
 
-   uint32_t	elf_elf_get_section_header_flags(const t_elf_sh *shdr, unsigned char class)
+   uint32_t	elf_get_section_header_flags(const t_elf_sh *shdr, unsigned char class)
    {
            if (class == ELFCLASS32)
                    return (shdr->elf32->sh_flags);
            return (shdr->elf64->sh_flags);
    }
 
-   uint64_t	elf_elf_get_section_header_size(const t_elf_sh *shdr, unsigned char class)
+   uint64_t	elf_get_section_header_size(const t_elf_sh *shdr, unsigned char class)
    {
            if (class == ELFCLASS32)
                    return (shdr->elf32->sh_size);
            return (shdr->elf64->sh_size);
    }
 
-   uint32_t	elf_elf_get_section_header_link(const t_elf_sh *shdr, unsigned char class)
+   uint32_t	elf_get_section_header_link(const t_elf_sh *shdr, unsigned char class)
    {
            if (class == ELFCLASS32)
                    return (shdr->elf32->sh_link);
            return (shdr->elf64->sh_link);
    }
 
-   uint32_t	elf_elf_get_section_header_info(const t_elf_sh *shdr, unsigned char class)
+   uint32_t	elf_get_section_header_info(const t_elf_sh *shdr, unsigned char class)
    {
            if (class == ELFCLASS32)
                    return (shdr->elf32->sh_info);
@@ -775,17 +796,17 @@ CLOSED: [2025-06-18 Wed 15:51]
 
 #+begin_src c :tangle include/format_elf.h :mkdirp yes
   // get_elfsh_data_1
-uint32_t	elf_elf_get_section_header_type(const t_elf_sh *shdr, unsigned char class);
-uint32_t	elf_elf_get_section_header_flags(const t_elf_sh *shdr, unsigned char class);
-uint64_t	elf_elf_get_section_header_size(const t_elf_sh *shdr, unsigned char class);
-uint32_t	elf_elf_get_section_header_link(const t_elf_sh *shdr, unsigned char class);
-uint32_t	elf_elf_get_section_header_info(const t_elf_sh *shdr, unsigned char class);
+uint32_t	elf_get_section_header_type(const t_elf_sh *shdr, unsigned char class);
+uint32_t	elf_get_section_header_flags(const t_elf_sh *shdr, unsigned char class);
+uint64_t	elf_get_section_header_size(const t_elf_sh *shdr, unsigned char class);
+uint32_t	elf_get_section_header_link(const t_elf_sh *shdr, unsigned char class);
+uint32_t	elf_get_section_header_info(const t_elf_sh *shdr, unsigned char class);
 #+end_src
 
 #+begin_src c :tangle srcs/elf/parser/get_elfsh_data_2.c :mkdirp yes 
 #include "format_elf.h"
 
-uint64_t	elf_elf_get_section_header_addralign(const t_elf_sh *shdr,
+uint64_t	elf_get_section_header_addralign(const t_elf_sh *shdr,
 		unsigned char class)
 {
 	if (class == ELFCLASS32)
@@ -793,7 +814,7 @@ uint64_t	elf_elf_get_section_header_addralign(const t_elf_sh *shdr,
 	return (shdr->elf64->sh_addralign);
 }
 
-uint32_t	elf_elf_get_section_header_entsize(const t_elf_sh *shdr,
+uint32_t	elf_get_section_header_entsize(const t_elf_sh *shdr,
 			unsigned char class)
 {
 	if (class == ELFCLASS32)
@@ -801,7 +822,7 @@ uint32_t	elf_elf_get_section_header_entsize(const t_elf_sh *shdr,
 	return (shdr->elf64->sh_entsize);
 }
 
-uint32_t	elf_elf_get_section_header_addr(const t_elf_sh *shdr, unsigned char class)
+uint32_t	elf_get_section_header_addr(const t_elf_sh *shdr, unsigned char class)
 {
 	if (class == ELFCLASS32)
 		return (shdr->elf32->sh_addr);
@@ -811,11 +832,11 @@ uint32_t	elf_elf_get_section_header_addr(const t_elf_sh *shdr, unsigned char cla
 #+begin_src c :tangle include/format_elf.h :mkdirp yes
   // get_elfsh_data_2
 
-  uint64_t	elf_elf_get_section_header_addralign(const t_elf_sh *shdr,
+  uint64_t	elf_get_section_header_addralign(const t_elf_sh *shdr,
                       unsigned char class);
-  uint32_t	elf_elf_get_section_header_entsize(const t_elf_sh *shdr,
+  uint32_t	elf_get_section_header_entsize(const t_elf_sh *shdr,
                       unsigned char class);
-  uint32_t	elf_elf_get_section_header_addr(const t_elf_sh *shdr, 
+  uint32_t	elf_get_section_header_addr(const t_elf_sh *shdr, 
                       unsigned char class);
 
 #+end_src
@@ -826,8 +847,8 @@ uint32_t	elf_elf_get_section_header_addr(const t_elf_sh *shdr, unsigned char cla
     const char	*elf_get_section_string_table(const t_elf_h *ehdr)
     {
             const uint16_t	sh_str_index = elf_get_elfh_shstrndx(ehdr);
-            const t_elf_sh	shstrtab_shdr = elf_elf_get_section_header(ehdr, sh_str_index);
-            const uint64_t	shstr_tab_offset = elf_elf_get_section_header_offset(&shstrtab_shdr,
+            const t_elf_sh	shstrtab_shdr = elf_get_section_header(ehdr, sh_str_index);
+            const uint64_t	shstr_tab_offset = elf_get_section_header_offset(&shstrtab_shdr,
                             elf_get_elfh_e_ident_class(ehdr->elf32->e_ident));
             char			*ptr;
 
@@ -840,7 +861,7 @@ uint32_t	elf_elf_get_section_header_addr(const t_elf_sh *shdr, unsigned char cla
             return (ptr);
     }
 
-    uint32_t	elf_elf_get_section_header_name(const t_elf_sh *shdr, unsigned char class)
+    uint32_t	elf_get_section_header_name(const t_elf_sh *shdr, unsigned char class)
     {
             if (!shdr || !shdr->elf32)
                     return (0);
@@ -863,7 +884,7 @@ uint32_t	elf_elf_get_section_header_addr(const t_elf_sh *shdr, unsigned char cla
   // get_elfsh_data_3
 
   const char	*elf_get_section_string_table(const t_elf_h *ehdr);
-  uint32_t	elf_elf_get_section_header_name(const t_elf_sh *shdr, unsigned char class);
+  uint32_t	elf_get_section_header_name(const t_elf_sh *shdr, unsigned char class);
   const char	*elf_get_section_name(const char *str_tab, uint64_t index_str_tab);
 #+end_src
 
@@ -873,16 +894,17 @@ CLOSED: [2025-06-20 Fri 19:31]
 - State "DONE"       from "REVIEW"     [2025-06-20 Fri 19:31]
 :END:
 
+**** elf valid section header got a var for true or false and another for save the index.
 #+begin_src c :tangle srcs/elf/parser/valid_section_header.c :mkdirp yes
   #include "format_elf.h"
 
     bool	elf_valid_elf_section_header_symtab_shndx(unsigned char class, const uint64_t symtab_index, const t_elf_h *ehdr)
     {
-            const t_elf_sh	shdr = elf_elf_get_section_header_by_type(ehdr, SHT_SYMTAB_SHNDX);
+            const t_elf_sh	shdr = elf_get_section_header_by_type(ehdr, SHT_SYMTAB_SHNDX);
 
             if (!shdr.elf32)
                     return (false);
-            return (elf_elf_get_section_header_link(&shdr, class) == symtab_index);
+            return (elf_get_section_header_link(&shdr, class) == symtab_index);
     }
 
     bool	elf_valid_elf_section_headers(unsigned char elf_class, const t_elf_h *ehdr)
@@ -901,7 +923,7 @@ CLOSED: [2025-06-20 Fri 19:31]
             if (id < eh_shnum)
                     return (false);
             if (real_shstrndx >= eh_shnum
-                    || elf_elf_elf_get_section_header_type_by_index(ehdr, real_shstrndx)
+                    || elf_get_section_header_type_by_index(ehdr, real_shstrndx)
                     != SHT_STRTAB)
                     return (false);
             return (!symtab_shndx[0]
@@ -917,21 +939,22 @@ CLOSED: [2025-06-20 Fri 19:31]
 
 #+end_src
 
+****  wrapper case when link point to another section index for more info mustn't link with itself, and setter for symtab_ndx, check integrity that in case the first sh got the value of current sh, ph, strndx got a not zero value, check type overflow.
 #+begin_src c :tangle srcs/elf/parser/valid_elf_section_header_2.c :mkdirp yes 
   #include "format_elf.h"
 
   bool	elf_valid_section_header(unsigned char elf_class, const t_elf_sh *shdr, uint16_t index, const t_elf_h *ehdr, uint64_t *symtab)
   {
-          const uint32_t	type = elf_elf_get_section_header_type(shdr, elf_class);
-          const uint32_t	link = elf_elf_get_section_header_link(shdr, elf_class);
+          const uint32_t	type = elf_get_section_header_type(shdr, elf_class);
+          const uint32_t	link = elf_get_section_header_link(shdr, elf_class);
           const uint64_t	real_shnum = elf_get_real_shnum(ehdr, elf_class);
 
           if (real_shnum <= link)
                   return (false);
-          if ((elf_elf_get_section_header_flags(shdr, elf_class) & SHF_INFO_LINK
+          if ((elf_get_section_header_flags(shdr, elf_class) & SHF_INFO_LINK
                           || type == SHT_RELA || type == SHT_REL)
-                  && (elf_elf_get_section_header_info(shdr, elf_class) >= real_shnum
-                          || elf_elf_get_section_header_info(shdr, elf_class) == index))
+                  && (elf_get_section_header_info(shdr, elf_class) >= real_shnum
+                          || elf_get_section_header_info(shdr, elf_class) == index))
                   return (false);
           if (link == index)
                   return (false);
@@ -945,27 +968,26 @@ CLOSED: [2025-06-20 Fri 19:31]
   bool	elf_valid_first_section_header(unsigned char elf_class, const t_elf_h *ehdr,
                           const t_elf_sh *shdr)
   {
-          if (elf_get_elfh_shnum(ehdr) == SHN_UNDEF && !elf_elf_get_section_header_size(shdr, elf_class))
+          if (elf_get_elfh_shnum(ehdr) == SHN_UNDEF && !elf_get_section_header_size(shdr, elf_class))
             return (false);
-          if (elf_get_elfh_shstrndx(ehdr) == SHN_XINDEX && !elf_elf_get_section_header_link(shdr, elf_class))
+          if (elf_get_elfh_shstrndx(ehdr) == SHN_XINDEX && !elf_get_section_header_link(shdr, elf_class))
             return (false);
-          if (elf_get_elfh_phnum(ehdr) == PN_XNUM &&!elf_elf_get_section_header_info(shdr, elf_class))
+          if (elf_get_elfh_phnum(ehdr) == PN_XNUM &&!elf_get_section_header_info(shdr, elf_class))
             return (false);
-          //	bag->real_shnum = elf_get_real_shnum(ehdr, bag->elf_class);
           return (!uint_mult_overflow(elf_get_real_shnum(ehdr, elf_class),
-                          elf_elf_get_section_header_struct_size(ehdr)));
+                          elf_get_section_header_struct_size(ehdr)));
   }
 
-  uint32_t	elf_elf_elf_get_section_header_type_by_index(const t_elf_h *ehdr,
+  uint32_t	elf_get_section_header_type_by_index(const t_elf_h *ehdr,
                           uint16_t index)
   {
           const unsigned char	class = elf_get_elfh_e_ident_class((void *)ehdr->elf32);
-          const t_elf_sh		shdr = elf_elf_get_section_header(ehdr, index);
+          const t_elf_sh		shdr = elf_get_section_header(ehdr, index);
 
-          return (elf_elf_get_section_header_type(&shdr, class));
+          return (elf_get_section_header_type(&shdr, class));
   }
 
-  t_elf_sh	elf_elf_get_section_header_by_type(const t_elf_h *ehdr, uint32_t type)
+  t_elf_sh	elf_get_section_header_by_type(const t_elf_h *ehdr, uint32_t type)
   {
           const unsigned char	class = elf_get_elfh_e_ident_class((void *)ehdr->elf32);
           const uint16_t		shnum = elf_get_real_shnum(ehdr, class);
@@ -975,8 +997,8 @@ CLOSED: [2025-06-20 Fri 19:31]
           index = 0;
           while (index < shnum)
           {
-                  shdr = elf_elf_get_section_header(ehdr, index++);
-                  if (shdr.elf32 && elf_elf_get_section_header_type(&shdr, class) == type)
+                  shdr = elf_get_section_header(ehdr, index++);
+                  if (shdr.elf32 && elf_get_section_header_type(&shdr, class) == type)
                           return (shdr);
           }
           shdr.elf32 = NULL;
@@ -986,7 +1008,7 @@ CLOSED: [2025-06-20 Fri 19:31]
   bool	elf_valid_elf_section_header_handler(unsigned char elf_class, uint64_t *symtab, const t_elf_h *ehdr,
                           uint64_t index)
   {
-          const t_elf_sh	shdr = elf_elf_get_section_header(ehdr, index);
+          const t_elf_sh	shdr = elf_get_section_header(ehdr, index);
 
           if (!index)
                   return (elf_valid_first_section_header(elf_class, ehdr, &shdr));
@@ -1001,9 +1023,9 @@ CLOSED: [2025-06-20 Fri 19:31]
   bool	elf_valid_section_header(unsigned char elf_class, const t_elf_sh *shdr, uint16_t index, const t_elf_h *ehdr, uint64_t *symtab);
   bool	elf_valid_first_section_header(unsigned char elf_class, const t_elf_h *ehdr,
                           const t_elf_sh *shdr);
-  uint32_t	elf_elf_elf_get_section_header_type_by_index(const t_elf_h *ehdr,
+  uint32_t	elf_get_section_header_type_by_index(const t_elf_h *ehdr,
                           uint16_t index);
-  t_elf_sh	elf_elf_get_section_header_by_type(const t_elf_h *ehdr, uint32_t type);
+  t_elf_sh	elf_get_section_header_by_type(const t_elf_h *ehdr, uint32_t type);
   bool	elf_valid_elf_section_header_handler(unsigned char elf_class,  uint64_t *symtab, const t_elf_h *ehdr, uint64_t index);
 
 #+end_src
@@ -1011,12 +1033,6 @@ CLOSED: [2025-06-20 Fri 19:31]
 
 * How do the packer logic: 
 1. Add the string "....WOODY....\n" to the string section end. Kind of inecesary would be better for image size, performance, let's cues, don't add info in .rodata this way ~const char woody_str[] = {'.','.','.','.','W','O','O','D','Y','.','.','.','.',0}~
-   1. Go Section header =.rodata=
-      1. Increment =sh_size= as needed.
-      2. write the content u want.
-         1. *Warning* Null ended.
-      3. Test with =readelf -r .rodata= for check is all fine, and that the executable still working with *64b * and *32b*.
-
 2. Add instruction to the program:
    Choice:
    - [ ] Create a new section (Cleaner, less error prune, maybe could be suspect an unusual section)
@@ -1030,24 +1046,18 @@ CLOSED: [2025-06-20 Fri 19:31]
            1. *Carefull* alignment.
      4. Get Phdr
         1. Save =Shdr '.text'.sh_offset and original_sh_size=
-        2. Search on phdr for one where: p_offset == sh_offset && p_filesz == sh_size
+        2. Search on phdr for one where: p_offset == sh_offset && p_filesz == sh_size the point to the pointer of the file.
      5. Modify =Phdr= and increment =p_filesz= and =p_memz= should be same size as =sh_size=.
-     6. Check the set of instructions was added for both arch =objdump -D | tail=
+     6. Check the set of instructions was added for both arch =objdump -M intel -D | tail=
    - Change entrypoint to execute the new instructions
      1. Detect how to jmp to the original entrypoint:
      2. Write the instructions.
      3. Check the program executed fine for both arch =./program=
-3. Encrypt and compress
-   1. Encrypt n sections
+3. Compress and Encrypt
+   1. Compress and Encrypt n sections
       1. I will choose =.rodata and .text=  maybe variants with prefix =s= just for =data= and  =bss= i don't think that will worth encrypt that sections for global and static var (=initialized= or =not initialized= respectively).
       2. maybe would be better use relocations table for .rodata info ....
-         1. ELF (Executable and Linkable Format):
-ELF files use a relocation table that specifies how to adjust addresses in the code and data sections when the executable is loaded into memory. This table contains entries that indicate which addresses need to be modified and how.
-    Relocation Types: ELF supports various relocation types, such as R_X86_64_RELATIVE for relative addressing. You will need to parse the ELF headers to find the relocation section and apply the necessary adjustments.
 
-         2. Mach-O:
-         3. PE (Portable Executable):
-         Import Address Table (IAT): In PE files, the IAT is crucial for dynamic linking. It contains addresses of imported functions that need to be resolved at runtime.
     Relocation Table: PE files have a relocation table that specifies which addresses need to be adjusted when the executable is loaded. This is particularly important if the executable is not loaded at its preferred base address.
 
 * How
