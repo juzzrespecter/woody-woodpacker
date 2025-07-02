@@ -7,7 +7,7 @@
 
   int main(int argc, char **argv)
   {
-    puts("Hello World!");
+    puts("Hello World!\n");
     return (0);
   }
 #+end_src
@@ -20,7 +20,7 @@ int main() {
 }
 #+end_src
 
-#+begin_src asm :tangle target/hello.s :mkdirp yes
+#+begin_src asm :tangle target/hello_no_pie.s :mkdirp yes
 global _start
 
         section .text
@@ -40,6 +40,25 @@ _start: mov rdi, 1      ; stdout fd
 msg:    db "hi there", 10, 0
 #+end_src
 
+#+begin_src asm :tangle target/hello_pie.s :mkdirp yes
+global _start
+
+        section .text
+
+_start: mov rdi, 1      ; stdout fd
+        lea rsi, [rel + msg]
+        mov rdx, 9      ; 8 chars + newline
+        mov rax, 1      ; write syscall
+        syscall
+
+        xor rdi, rdi    ; return code 0
+        mov rax, 60     ; exit syscall
+        syscall
+
+        section .data
+
+msg:    db "hi there", 10, 0
+#+end_src
 [[file:~/Documents/woody-woodpacker/Documentation.org][Refer]]
 * Generic Logic
 ** Handling errors:
@@ -225,19 +244,29 @@ I just check the DOS Signature (Could happend that is a DOS file and not PE shou
 Ideally make a array of pointer function
  something similar to this:
  #+begin_src c  :tangle "srcs/inject_code.c" :mkdirp yes
-   if (elf_valid_elf_file(file_mmap, file_size) && elf_is_executable_elf_file(file_mmap))
-     return (SUCCESS);
-    // return (UNVALID_FTYPE);
+   if (!(elf_valid_elf_file(file_mmap, file_size) && elf_is_executable_elf_file(file_mmap)))
+     return (UNVALID_FTYPE);
 
  #+end_src
 ** ELF Format:
 [[file:ELF.org][ELF]]
+
+ #+begin_src c  :tangle "srcs/inject_code.c" :mkdirp yes
+   fd = open("woody", O_RDWR | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG |  S_IRWXO);
+   if (fd < 0)
+     return (FAIL_OPEN_FD);
+   // return (UNVALID_FTYPE);
+   write(fd, file_mmap, file_size);// Copy of the file
+   close(fd);
+
+ #+end_src
+
 ** PE Format:
 ** MACH-O Format:
 #+begin_src c :tangle "srcs/inject_code.c" :mkdirp yes
 
-  return (UNVALID_FILE);
-}
+  return (SUCCESS);
+  }
 #+end_src
 
 #+begin_src c :tangle include/woody.h 
