@@ -2,6 +2,29 @@
 #+PROPERTY: header-args:c :tangle "srcs/inject_code_elf.c" :mkdirp yes
 #+PROPERTY: header-args:asm :mkdirp yes
 
+*  WalkThrought
+Modify makefile to compile the differents targets and start testing with it.
+1. [X ]copy the hole file and get execution perm.
+   1. [X] Test that execute normally.
+2. [-] Add the function || code to execute at the end of the =.text= section.
+   1. [X] Get the assembly code to insert in the file.
+   2. [ ] update sh and ph sh_size and p_filesz p_mems,
+      1. [ ] Section in case size and align left free space in case increment, increment the rest of headers with greater offset and fill with 0x0 to reach align.
+      2. [ ] Programe header
+      3. [ ] Symbol tab modify 
+   3. [ ] check the code appear. ~objdump -M intel -D | tail~
+   4. [ ] In case a function add the symbol. // less cues if not function just inject the code.
+      1. [ ] In case append to a current function should update the current size of the symbol ...
+   5. [ ] move the entrypoint to your code.
+   6. [ ] Test that work.
+   7. [ ] from your code jmp to the OG address to execute.
+3. [ ] Start making the encrypt (rot13 for testing purpose)
+   1. [ ] Force to maps region of memory in to new places
+   2. [ ] Will see soon
+    
+ 
+     
+
 #+begin_src c :tangle srcs/elf/add_instructions.c
   //0:	48 31 ff             	xor    rdi,rdi 3 B increment
   // TODO May create a struct file with mmap and size ?
@@ -12,8 +35,8 @@
     int fd;
 
     fd = open(packed, O_RDWR | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG |  S_IRWXO);
-   if (fd < 0)
-     return (FAIL_OPEN_FD);
+    if (fd < 0)
+      return (FAIL_OPEN_FD);
    // return (UNVALID_FTYPE);
    // go to .text end and add the data, also change the value of every offset is greater than this, maybe need to check alignment.
    write(fd, file_mmap, file_size);// Copy of the file

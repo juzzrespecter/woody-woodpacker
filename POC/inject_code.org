@@ -59,6 +59,19 @@ _start: mov rdi, 1      ; stdout fd
 
 msg:    db "hi there", 10, 0
 #+end_src
+
+#+begin_src asm :tangle payload/test.s :mkdirp yes
+global _start
+
+        section .text
+
+_start: 
+        xor rdi, rdi    ; return code 0
+        mov rax, 60     ; exit syscall
+        syscall
+
+#+end_src
+
 [[file:~/Documents/woody-woodpacker/Documentation.org][Refer]]
 * Generic Logic
 ** Handling errors:
