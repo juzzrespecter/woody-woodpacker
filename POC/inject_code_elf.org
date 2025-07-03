@@ -1,0 +1,28 @@
+#+title: inject_code_elf
+#+PROPERTY: header-args:c :tangle "srcs/inject_code_elf.c" :mkdirp yes
+#+PROPERTY: header-args:asm :mkdirp yes
+
+#+begin_src c :tangle srcs/elf/add_instructions.c
+  //0:	48 31 ff             	xor    rdi,rdi 3 B increment
+  // TODO May create a struct file with mmap and size ?
+  int insert_instruction_in_elf(void *elf_mmap, size_t elf_size, const char *packed) // payload, payload_size (B)
+  {
+    char payload[] = {x48, x31, xff};
+    const size_t size_payload = sizeof(payload) / sizeof(*payload);
+    int fd;
+
+    fd = open(packed, O_RDWR | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG |  S_IRWXO);
+   if (fd < 0)
+     return (FAIL_OPEN_FD);
+   // return (UNVALID_FTYPE);
+   // go to .text end and add the data, also change the value of every offset is greater than this, maybe need to check alignment.
+   write(fd, file_mmap, file_size);// Copy of the file
+   close(fd);
+   return (SUCCESS);
+  }
+
+#+end_src
+#+begin_src c :tangle include/format_elf.h
+
+  //add_instructions
+#+end_src
