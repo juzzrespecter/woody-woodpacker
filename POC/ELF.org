@@ -335,7 +335,7 @@ Don't got a number of entries that pass the filesize.
   {
     const uint64_t shoff = elf_get_elfh_shoff(ehdr);
     const uint64_t elfhsize = (uint64_t)elf_get_struct_size_elf_header((char *)ehdr->elf32);
-   const uint64_t shsize = elf_get_section_header_struct_size (*ehdr);
+   const uint64_t shsize = elf_get_section_header_struct_size (ehdr);
    const uint64_t shnum = elf_get_elfh_shnum(ehdr);
 
     return (shoff < (uint64_t )*elf_size
@@ -388,7 +388,7 @@ Don't got a number of entries that pass the filesize.
     const t_elf_h ehdr = (t_elf_h){.elf32 = elf_mmap};
     const uint16_t type = elf_get_elfh_type(&ehdr);
 
-    return ((ET_EXEC == type || ET_DYN == type) && elf_get_elfh_phnum(&ehdr) && elf_get_elfh_entry(ehdr));
+    return ((ET_EXEC == type || ET_DYN == type) && elf_get_elfh_phnum(&ehdr) && elf_get_elfh_entry(&ehdr));
   }
 #+end_src
 
