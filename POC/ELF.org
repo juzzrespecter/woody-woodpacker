@@ -1033,6 +1033,11 @@ CLOSED: [2025-06-20 Fri 19:31]
 
 * How do the packer logic: 
 1. Add the string "....WOODY....\n" to the string section end. Kind of inecesary would be better for image size, performance, let's cues, don't add info in .rodata this way ~const char woody_str[] = {'.','.','.','.','W','O','O','D','Y','.','.','.','.',0}~
+   1. Go Section header =.rodata=
+      1. Increment =sh_size= as needed.
+      2. write the content u want.
+         1. *Warning* Null ended.
+      3. Test with =readelf -r .rodata= for check is all fine, and that the executable still working with *64b * and *32b*.
 2. Add instruction to the program:
    Choice:
    - [ ] Create a new section (Cleaner, less error prune, maybe could be suspect an unusual section)

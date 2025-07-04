@@ -48,10 +48,14 @@ PROGRAM-SRC				:=	file_validation\
 
 SRC					:= $(PROGRAM-SRC) $(CMN-SRCS) $(ELF_PARSER-SRCS)
 
+ADD_INSTRUCTION			:= test_add_instructions
+POC_ADD_INSTRUCTION			:= $(ELF_PARSER-SRCS) $(CMN-SRCS) elf/POC/add_instructions
 
 
 
 BUILD					:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(SRC)))
+
+BUILD-POC_ADD_INSTRUCTION		:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(POC_ADD_INSTRUCTION)))
 CC						:= cc
 CFLAGS					:= -Wall -Werror -Wextra -g3# -fsanitize=address
 INCLUDEFLAGS			:= -I $(INCLUDE-DIR) -I lib/include/
@@ -72,7 +76,9 @@ all: $(NAME)
 $(NAME): $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $(BUILD) $(LINKINGFLAGS)
 
-$(BUILD): | $(BUILD-DIR)
+$(ADD_INSTRUCTION): $(BUILD-POC_ADD_INSTRUCTION)
+	$(CC) $(CFLAGS) -o $@ $(BUILD-POC_ADD_INSTRUCTION) $(LINKINGFLAGS)
+
 
 $(BUILD-DIR):
 	@mkdir -p $@
