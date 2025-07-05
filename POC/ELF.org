@@ -49,26 +49,26 @@ Elf header = ehdr = _h
 
    typedef union u_elf_h
    {
-     const Elf32_Ehdr	*elf32;
-     const Elf64_Ehdr	*elf64;
+     Elf32_Ehdr	*elf32;
+     Elf64_Ehdr	*elf64;
    }	t_elf_h;
 
    typedef union u_elf_ph
    {
-     const Elf32_Phdr	*elf32;
-     const Elf64_Phdr	*elf64;
+     Elf32_Phdr	*elf32;
+     Elf64_Phdr	*elf64;
    }	t_elf_ph;
 
    typedef union u_elf_sh
    {
-     const Elf32_Shdr	*elf32;
-     const Elf64_Shdr	*elf64;
+     Elf32_Shdr	*elf32;
+     Elf64_Shdr	*elf64;
    }	t_elf_sh;
 
    typedef union u_elf_sym
    {
-     const Elf32_Sym	*elf32;
-     const Elf64_Sym	*elf64;
+     Elf32_Sym	*elf32;
+     Elf64_Sym	*elf64;
    }	t_elf_sym;
 #+end_src
 
@@ -716,7 +716,7 @@ CLOSED: [2025-06-18 Wed 15:51]
                     shdr.elf32 = NULL;
                     return (shdr);
             }
-            shdr.elf64 = base + sh_offset + index * sh_size;
+            shdr.elf64 = (void *) (base) + sh_offset + index * sh_size;
             return (shdr);
     }
 
@@ -868,7 +868,7 @@ uint32_t	elf_get_section_header_addr(const t_elf_sh *shdr, unsigned char class)
             if (class == ELFCLASS32)
                     return (shdr->elf32->sh_name);
             if (class == ELFCLASS64)
-                    return (shdr->elf32->sh_name);
+                    return (shdr->elf64->sh_name);
             return (0);
     }
 
@@ -1032,7 +1032,7 @@ CLOSED: [2025-06-20 Fri 19:31]
 
 
 * How do the packer logic: 
-1. Add the string "....WOODY....\n" to the string section end. Kind of inecesary would be better for image size, performance, let's cues, don't add info in .rodata this way ~const char woody_str[] = {'.','.','.','.','W','O','O','D','Y','.','.','.','.',0}~
+1. Add the string "....WOODY....\n" to the string section end. Kind of inecesary would be better for image size, performance, let's cues, don't add info in .rodata this way ~[const] char woody_str[] = {'.','.','.','.','W','O','O','D','Y','.','.','.','.',0}~
    1. Go Section header =.rodata=
       1. Increment =sh_size= as needed.
       2. write the content u want.

@@ -36,6 +36,7 @@ Modify makefile to compile the differents targets and start testing with it.
   #include <stdint.h>
   #include <fcntl.h>
   #include <sys/mman.h>
+  #include <stdlib.h> //Malloc
 
 
   uint64_t get_alignment_size(uint64_t alignment, uint64_t size)
@@ -43,6 +44,7 @@ Modify makefile to compile the differents targets and start testing with it.
     return (((size + alignment - 1) / alignment) * alignment);
   }
 
+  // Maybe paranoia
   bool is_little_endian_the_cpu(void)
   {
     uint32_t num = 1;
@@ -50,6 +52,7 @@ Modify makefile to compile the differents targets and start testing with it.
     return (*(uint8_t *)&num == 1);
   }
 
+  // Maybe paranoia
   uint64_t swap_endianess(uint64_t value)
   {
     uint64_t swapped;
@@ -65,19 +68,37 @@ Modify makefile to compile the differents targets and start testing with it.
     return swapped;
   }
 
-  uint64_t elf_distance_shdr_ptr_size(t_elf_sh *shdr, unsigned char class)
+  //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
+  // segfault for advice if i am doing something bad.
+  void elf_shdr_set_addr(t_elf_sh *shdr, uint64_t value, unsigned char class)
   {
-    if (class == ELFCLASS32)
-      return ((void *)shdr->elf32 - (void *)&shdr->elf32->sh_size);
-    return ((void *)shdr->elf64 - (void *)&shdr->elf64->sh_size);
+    if (class == ELFCLASS32) 
+      {
+        printf("elf32\n");
+        shdr->elf32->sh_addr = (uint32_t) value;
+      }
+    else
+      {
+        printf("elf64\n");
+        shdr->elf64->sh_addr = value;
+      }
   }
 
-  bool	write_to_fd_as_uint32_t(int fd, uint64_t value)
-    {
-      uint32_t value_32 = (uint32_t)(value & 0xFFFFFFFF);
-
-      return (write(fd, &value_32, sizeof (value_32)));
-    }
+  //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm
+  // segfault for advice if i am doing something bad.
+  void elf_shdr_set_size(t_elf_sh *shdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("elf32\n");
+        shdr->elf32->sh_size = (uint32_t) value;
+      }
+    else
+      {
+        printf("elf64\n");
+        shdr->elf64->sh_size = value;
+      }
+  }
 
   int main(int argc, char **argv)
   {
@@ -90,13 +111,13 @@ Modify makefile to compile the differents targets and start testing with it.
     //Open File
     int fd = open(argv[1], O_RDONLY); 
     if (fd < 0)
-      return (1);
+      return (2);
     // Get size file
-    off_t file_size = lseek(fd, 0, SEEK_END);
+    const off_t file_size = lseek(fd, 0, SEEK_END);
     if ((off_t) -1 == file_size || (off_t) -1 == lseek(fd, 0, SEEK_SET))
       {
         close(fd);
-        return (1);
+        return (3);
       }
     // Save on memory all the file
     void *elf_mmap = mmap(NULL, file_size, PROT_READ, MAP_SHARED, fd, 0);
@@ -108,19 +129,19 @@ Modify makefile to compile the differents targets and start testing with it.
     if (packed < 0)
       {
         munmap(elf_mmap, file_size);
-        return (1);
-      }
+        return (4);
+      } // not main part POC starting
     // Get the section to include the payload
     t_elf_sh		shdr;
-    char 		*name_str;
+    char 			*name_str;
     const t_elf_h 	ehdr = (t_elf_h){.elf32 = elf_mmap};
     const uint64_t 	shnum = elf_get_elfh_shnum(&ehdr);
-    const char 	*sh_str_tab = elf_get_section_string_table(&ehdr);
-    const unsigned char class = elf_get_elfh_e_ident_class(elf_mmap);
-    uint64_t 	i;
+    const char	 	*sh_str_tab = elf_get_section_string_table(&ehdr);
+    const unsigned char 	class = elf_get_elfh_e_ident_class(elf_mmap);
+    uint64_t 		i;
 
     i = 0;
-    while (i < shnum)
+    while (i < shnum) //run for each section_header
       {
         shdr = elf_get_section_header(&ehdr, i);
         name_str = (char *)elf_get_section_name(sh_str_tab, elf_get_section_header_name(&shdr, class));
@@ -128,63 +149,91 @@ Modify makefile to compile the differents targets and start testing with it.
           break ;
         i++;
       }
-    // In case find the section show relevant info
-    if (shnum > i)
+    // In case find the section show relevant info function.
+    if (shnum <= i)
+      return (5);
+    printf("We got '.text' section\n");
+    //Payload info
+    char payload[] = {'\x48', '\x31', '\xff'};
+    const size_t payload_size = sizeof(payload) / sizeof(*payload);
+    //Section header math.
+    uint64_t sh_addralign = elf_get_section_header_addralign(&shdr, class);
+    const uint64_t sh_size = elf_get_section_header_size(&shdr, class);
+    uint64_t sh_offset = elf_get_section_header_offset(&shdr, class);
+    uint64_t old_align_size = get_alignment_size(sh_addralign, sh_size);
+    uint64_t new_align_size = get_alignment_size(sh_addralign, sh_size + payload_size);
+    uint64_t sh_offset_payload = sh_offset + sh_size;
+    uint64_t sh_elf_offset = (void *)shdr.elf32 - (void *)ehdr.elf32;
+    uint64_t writed;
+    // Insert payload.
+    //2. [ ] I should change the elfh e_shoff i don't change it and i corrupt the file ;).
+
+    // Create copy to modify further
+    uint64_t shdr_struct_size = elf_get_section_header_struct_size (&ehdr);
+    t_elf_sh shdr_cp = (t_elf_sh){.elf32 = malloc(shdr_struct_size)};
+    if (!shdr_cp.elf32)
       {
-        printf("We got '.text' section\n");
-        //Payload info
-        char payload[] = {'\x48', '\x31', '\xff'};
-        const size_t payload_size = sizeof(payload) / sizeof(*payload);
-        //Section header math.
-        uint64_t sh_addralign = elf_get_section_header_addralign(&shdr, class);
-        uint64_t sh_size = elf_get_section_header_size(&shdr, class);
-        uint64_t sh_offset = elf_get_section_header_offset(&shdr, class);
-        uint64_t old_align_size = get_alignment_size(sh_addralign, sh_size);
-        uint64_t new_align_size = get_alignment_size(sh_addralign, sh_size + payload_size);
-        uint64_t sh_offset_payload = sh_offset + sh_size;
-        uint64_t sh_elf_offset = (void *)shdr.elf32 - (void *)ehdr.elf32;
-        uint64_t sh_distance_ptr_sh_size = elf_distance_shdr_ptr_size(&shdr, class);
-        // Insert payload.
-      //2. [ ] I should change the elfh e_shoff i don't change it and i corrupt the file ;).
-        if (old_align_size != new_align_size) // <
-          {
-            printf("Need to push the next offset at least on Shdr\n");
-            // Copy the file content until write payload i miss modify the offset
-            write(packed, elf_mmap, sh_offset_payload);
-        // Insert payload.
-            write(packed, payload, payload_size);
-            write(packed, elf_mmap + sh_offset_payload + payload_size, sh_elf_offset + sh_distance_ptr_sh_size - (sh_offset_payload + payload_size));
+        close (packed);
+        return (5);
+      }
+    memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); 
 
-          }
-        else
-          {
-            printf("Just need to take off the byte/s of the alignment\n");
-            write(packed, elf_mmap, sh_offset_payload);
-            write(packed, payload, payload_size);
-            write(packed, elf_mmap + sh_offset_payload + payload_size, sh_elf_offset + sh_distance_ptr_sh_size - (sh_offset_payload + payload_size));
-            uint64_t offset = sh_elf_offset + sh_distance_ptr_sh_size;
-            //setter sh_size.
-            if (class == ELFCLASS32) // call to a setter and avoid this.
-              {
-                printf("elf32\n");
-                write_to_fd_as_uint32_t(packed, sh_size + payload_size); // usefull
-                offset += sizeof (uint32_t); // this stuff use struct should be avoided
-                write(packed, elf_mmap + offset, file_size - offset);
-              }
-            else
-              {
-                printf("elf64\n");
-                sh_size += payload_size;
-                write(fd, &sh_size, sizeof (sh_size));
-                sh_size -= payload_size;
-                offset += sizeof (uint64_t); // this stuff using struct should be avoided is a messs
+    writed = 0;
+    if (old_align_size != new_align_size) // <
+      {
+        /* uint64_t unused_space = old_align_size - sh_size; */
+        uint64_t payload_unused_space = new_align_size - (sh_size + payload_size);
+        printf("Need to push the next offset at least on Shdr\n");
+        writed += write(packed, elf_mmap, sh_offset_payload);
 
-                write(packed, elf_mmap + offset, file_size - offset);
-              }
+        // Insert payload.
+        writed += write(packed, payload, payload_size);
+        while (payload_unused_space--) //Write alignment
+          writed += write(packed, "\0", 1);
+        payload_unused_space = new_align_size - (sh_size + payload_size); //Reset the value
+        writed += write(packed, elf_mmap + (writed - payload_size), sh_elf_offset - (writed - payload_size)); // Need to keep thinking.
+      }
+    else
+      {
+
+        if (sh_elf_offset > sh_offset_payload)
+          {
+            printf("Copy the file content until write payload i miss modify the offset -> %lu\n", sh_offset_payload);
+            writed += write(packed, elf_mmap, sh_offset_payload);
+            printf ("write elf og until payload offset. writed -> %lu\n", writed);
+            writed += write(packed, payload, payload_size);
+            printf ("write payload_size. writed ->  %lu\n", writed);
+            printf ("Cause i use the same elf alignment i don't need to fill the new. pointer move writed bytes %p need advance offset to '.data' section header. writed ->  %lu. sh_elf_offset -> %lu\n" , elf_mmap, writed, sh_elf_offset);
+            writed += write(packed, elf_mmap + writed, sh_elf_offset - writed);
+            printf("Go to the section header '.text' %lu\n", writed);
+            elf_shdr_set_size(&shdr_cp, sh_size + payload_size, class);//setter sh_size.
+            writed += write(packed, shdr_cp.elf32, shdr_struct_size);
+            printf("write shdr '.text' %lu\n", writed);
+            writed += write(packed, elf_mmap + writed, file_size - writed);
+            printf("write the rest of the elf file.\n");
           }
-        printf("sh_offset: %lu -> sh_size: %lu -> sh_addralign: %lu -> unused_space: %lu Bytes -> Payload size: %lu\n -> old_align_size: %lu -> new_align_size: %lu\n", elf_get_section_header_offset(&shdr, class), sh_size, sh_addralign, old_align_size - sh_size, payload_size, old_align_size, new_align_size);
+        else // At least for Object files.
+          {
+            printf("Copy the file content until section '.text' sh_elf_offset -> %lu\n", sh_elf_offset);
+            writed += write(packed, elf_mmap, sh_elf_offset);
+            elf_shdr_set_size(&shdr_cp, sh_size + payload_size, class);//setter sh_size.
+            printf("Write the modify shdr: writed -> %lu\n", writed);
+            writed += write(packed, shdr_cp.elf32, shdr_struct_size);
+            printf("Writed the modify shdr: writed -> %lu\n", writed);
+            printf ("write elf og until payload offset. writed -> %lu\n", writed);
+            writed += write(packed, elf_mmap + writed, sh_offset_payload - writed);
+            printf ("writed elf og until payload offset. writed -> %lu\n", writed);
+            writed += write(packed, payload, payload_size);
+            printf ("writed payload. writed -> %lu\n", writed);
+            printf ("write payload_size ->  %lu\n", payload_size);
+            printf("write the rest of the file '.text' %lu\n", writed);
+            writed += write(packed, elf_mmap + writed, file_size - writed);
+            printf("write the rest of the elf file.\n");
+          }
 
       }
+    free(shdr_cp.elf32);//Unused before this line.
+    printf("sh_offset: %lu -> sh_size: %lu -> sh_addralign: %lu -> unused_space: %lu Bytes -> Payload size: %lu\n -> old_align_size: %lu -> new_align_size: %lu\n", elf_get_section_header_offset(&shdr, class), sh_size, sh_addralign, old_align_size - sh_size, payload_size, old_align_size, new_align_size);
     munmap(elf_mmap, file_size);
     close(packed);
     return (0);
@@ -197,4 +246,3 @@ Modify makefile to compile the differents targets and start testing with it.
     //add_instructions
 #+end_src
 
-* Create setters for abstract the 64/32 b and then write the content of the struct.
