@@ -8,12 +8,19 @@ Modify makefile to compile the differents targets and start testing with it.
    1. [X] Test that execute normally.
 2. [-] Add the function || code to execute at the end of the =.text= section.
    1. [X] Get the assembly code to insert in the file.
-   2. [ ] update sh and ph sh_size and p_filesz p_mems,
+   2. [-] update sh and ph sh_size and p_filesz p_mems,
       1. [ ] In case the target file got different endianess that our machine we should swap the offset .... previous and later to update the data correctly.
-      2. [ ] I should change the elfh e_shoff i don't change it and i corrupt the file ;).
-      3. [ ]Section in case size and align left free space in case increment, increment the rest of headers with greater offset and fill with 0x0 to reach align.
-      4. [ ] Program header
-      5. [ ] Symbol tab modify.
+      2. [-] update Shdr  // check for get the info and go modified ehdr, phdr.
+         1. [X] sh_size
+         2. [ ] sh_offset I should change the elfh e_shoff When the payload need to increment the alignament_size.
+         3. [X] fill with 0x0 to reach align.      2. [ ] update Ehdr
+         4. [ ] I should change the e_entrypoint to the payload.
+         5. [ ] I case payload increment over alignment size we must modify sh_offset.
+      3. [ ] Program header
+         1. [ ] p_memsz, p_filesz
+         2. [ ] Validation  p_align         ~Values  of  zero  and one mean no alignment is required.  Other‐ wise, p_align should be a positive, integral power of  two,  and
+              p_vaddr should equal p_offset, modulo p_align.~
+
    3. [ ] check the code appear. ~objdump -M intel -D | tail~
    4. [ ] In case a function add the symbol. // less cues if not function just inject the code.
       1. [ ] In case append to a current function should update the current size of the symbol ...
@@ -152,7 +159,6 @@ Modify makefile to compile the differents targets and start testing with it.
     // In case find the section show relevant info function.
     if (shnum <= i)
       return (5);
-    printf("We got '.text' section\n");
     //Payload info
     char payload[] = {'\x48', '\x31', '\xff'};
     const size_t payload_size = sizeof(payload) / sizeof(*payload);
@@ -166,7 +172,7 @@ Modify makefile to compile the differents targets and start testing with it.
     uint64_t sh_elf_offset = (void *)shdr.elf32 - (void *)ehdr.elf32;
     uint64_t writed;
     // Insert payload.
-    //2. [ ] I should change the elfh e_shoff i don't change it and i corrupt the file ;).
+    //2. [ ] I should change the elfh e_shoff in case that increment the alignment.
 
     // Create copy to modify further
     uint64_t shdr_struct_size = elf_get_section_header_struct_size (&ehdr);
@@ -199,7 +205,7 @@ Modify makefile to compile the differents targets and start testing with it.
         if (sh_elf_offset > sh_offset_payload)
           {
             printf("Copy the file content until write payload i miss modify the offset -> %lu\n", sh_offset_payload);
-            writed += write(packed, elf_mmap, sh_offset_payload);
+            writed += write(packed, elf_mmap + writed, sh_offset_payload - writed);
             printf ("write elf og until payload offset. writed -> %lu\n", writed);
             writed += write(packed, payload, payload_size);
             printf ("write payload_size. writed ->  %lu\n", writed);
@@ -215,11 +221,11 @@ Modify makefile to compile the differents targets and start testing with it.
         else // At least for Object files.
           {
             printf("Copy the file content until section '.text' sh_elf_offset -> %lu\n", sh_elf_offset);
-            writed += write(packed, elf_mmap, sh_elf_offset);
-            elf_shdr_set_size(&shdr_cp, sh_size + payload_size, class);//setter sh_size.
+            writed += write(packed, elf_mmap + writed, sh_elf_offset - writed);
+            elf_shdr_set_size(&shdr_cp, sh_size + payload_size, class);
             printf("Write the modify shdr: writed -> %lu\n", writed);
             writed += write(packed, shdr_cp.elf32, shdr_struct_size);
-            printf("Writed the modify shdr: writed -> %lu\n", writed);
+            _printf("Writed the modify shdr: writed -> %lu\n", writed);
             printf ("write elf og until payload offset. writed -> %lu\n", writed);
             writed += write(packed, elf_mmap + writed, sh_offset_payload - writed);
             printf ("writed elf og until payload offset. writed -> %lu\n", writed);
@@ -232,8 +238,7 @@ Modify makefile to compile the differents targets and start testing with it.
           }
 
       }
-    free(shdr_cp.elf32);//Unused before this line.
-    printf("sh_offset: %lu -> sh_size: %lu -> sh_addralign: %lu -> unused_space: %lu Bytes -> Payload size: %lu\n -> old_align_size: %lu -> new_align_size: %lu\n", elf_get_section_header_offset(&shdr, class), sh_size, sh_addralign, old_align_size - sh_size, payload_size, old_align_size, new_align_size);
+    free(shdr_cp.elf32);
     munmap(elf_mmap, file_size);
     close(packed);
     return (0);
@@ -244,5 +249,32 @@ Modify makefile to compile the differents targets and start testing with it.
   include/format_elf.h
 
     //add_instructions
+
+
+
 #+end_src
 
+* Try to make more indepedience the code not that hardcoded.
+
+* make the jump to the entrypoint.
+#+begin_src c :tangle no
+  void create_jump_payload(uint64_t entry_point, char *payload) {
+    // Assuming payload has enough space
+    // Clear the payload
+    memset(payload, 0, 64); // Adjust size as needed
+
+    // Create a jump instruction
+    // For a near jump, we use the opcode 0xE9
+    payload[0] = 0xE9; // Opcode for JMP
+
+    // Calculate the relative address
+    // The address of the instruction following the jump
+    uint64_t next_instruction_address = (uint64_t)(payload + 5); // 5 bytes for the jump instruction
+
+    // Calculate the relative offset
+    int32_t offset = (int32_t)(entry_point - next_instruction_address);
+
+    // Copy the offset into the payload (little-endian)
+    memcpy(payload + 1, &offset, sizeof(offset));
+}
+#+end_src
