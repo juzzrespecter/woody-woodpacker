@@ -132,118 +132,25 @@ Modify makefile to compile the differents targets and start testing with it.
     shdr->elf64->sh_offset = value;
   }
 
-  int elf_insert_payload(void *elf_mmap, off_t file_size, int packed)
+  int elf_insert_payload(void *elf_mmap, off_t file_size, int packed);
+
+
+  uint64_t get_section_ndx_text(t_elf_h *ehdr, const char *sh_str_tab, unsigned char class, uint64_t shnum)
   {
-    t_elf_sh		shdr;
     char 			*name_str;
-    t_elf_h 		ehdr = (t_elf_h){.elf32 = elf_mmap};
-    const uint64_t	e_shoff = elf_get_elfh_shoff(&ehdr);
-    const uint64_t 	shnum = elf_get_elfh_shnum(&ehdr);
-    const char	 	*sh_str_tab = elf_get_section_string_table(&ehdr);
-    const unsigned char 	class = elf_get_elfh_e_ident_class(elf_mmap);
+    t_elf_sh		shdr;
     uint64_t 		i;
 
     i = 0;
     while (i < shnum) //run for each section_header
       {
-        shdr = elf_get_section_header(&ehdr, i);
+        shdr = elf_get_section_header(ehdr, i);
         name_str = (char *)elf_get_section_name(sh_str_tab, elf_get_section_header_name(&shdr, class));
         if (!strcmp(name_str, ".text"))
           break ;
         i++;
       }
-    if (shnum <= i)
-      return (5);
-    // In case find the section show relevant info function.
-    //Payload info   00001000  4831FF            xor rdi,rdi
-    char payload[] = {'\x48', '\x31', '\xff', '\x48', '\x31', '\xff', '\x48'};
-    const size_t payload_size = sizeof(payload) / sizeof(*payload);
-    //Section header math.
-    uint64_t sh_addralign = elf_get_section_header_addralign(&shdr, class);
-    const uint64_t sh_size = elf_get_section_header_size(&shdr, class);
-    uint64_t sh_offset = elf_get_section_header_offset(&shdr, class);
-    uint64_t sh_addr = elf_get_section_header_addr(&shdr, class);
-    uint64_t old_align_size = get_alignment_size(sh_addralign, sh_size);
-    uint64_t new_align_size = get_alignment_size(sh_addralign, sh_size + payload_size);
-    uint64_t sh_offset_payload = sh_offset + sh_size;
-    uint64_t sh_elf_offset = (void *)shdr.elf32 - (void *)ehdr.elf32;
-    uint64_t writed;
-    // Insert payload.
-
-    // Create copy to modify further
-    uint64_t shdr_struct_size = elf_get_section_header_struct_size (&ehdr);
-    t_elf_sh shdr_cp = (t_elf_sh){.elf32 = malloc(shdr_struct_size)};
-    if (!shdr_cp.elf32)
-      {
-        close (packed);
-        return (5);
-      }
-    memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); 
-
-    uint64_t elf_struct_size = elf_get_struct_size_elf_header(elf_mmap);
-    t_elf_h ehdr_cp = {.elf32 = malloc(elf_struct_size)};
-    if (!ehdr_cp.elf32)
-      {
-        return (6);
-      }
-    memcpy(ehdr_cp.elf32, ehdr.elf32, elf_struct_size); 
-    writed = 0;
-    if (old_align_size < new_align_size)
-      {
-        uint64_t modified_section_free_space = new_align_size - (sh_size + payload_size);
-        uint64_t original_section_free_space = old_align_size - sh_size;
-        if (old_align_size != new_align_size)
-        elf_ehdr_set_shoff(&ehdr_cp, e_shoff + (new_align_size - old_align_size), class);
-        writed += write(packed, ehdr_cp.elf32, elf_struct_size);
-
-        if (sh_elf_offset <= sh_offset_payload)
-          return (6);
-        printf("is first payload offset than shdr_s offset\n");
-        writed += write(packed, elf_mmap + writed, sh_offset_payload - writed);
-
-        write(packed, payload, payload_size);
-        while (modified_section_free_space--) //Write alignment
-          {
-            printf("fill alignment. modified_section_free_space -> %lu\n", modified_section_free_space);
-            write(packed, "\0", 1);
-          }
-        // Until here fine. all fine just need to change the e_shoff + diff_alignment.
-        printf("pre add original_section_free_space writed -> %lu\n", writed);
-        writed += original_section_free_space;
-        printf("post add original_section_free_space writed -> %lu\n", writed);
-        writed += write(packed, elf_mmap + writed, sh_elf_offset - writed);
-        printf("fill until sh_elf_offset. writed -> %lu\n", writed);
-        printf("sh_elf_offset -> %lu\n", sh_elf_offset);
-        elf_shdr_set_size(&shdr_cp, sh_size + payload_size, class);//setter sh_size.
-        writed += write(packed, shdr_cp.elf32, shdr_struct_size);
-        printf("write the content of the .text shdr. shdr_struct_size: -> %lu. writed -> %lu\n", shdr_struct_size, writed);
-        uint shcp_addr; // funcname write section headers.
-        uint shcp_offset;
-        printf("Begin the loop for modify the rest of following shdrs\n");
-        while (++i < shnum) //run for each section_header after '.text'
-          {
-            shdr = elf_get_section_header(&ehdr, i);
-            shcp_addr = elf_get_section_header_addr(&shdr, class);
-            shcp_offset = elf_get_section_header_offset(&shdr, class);
-            memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); 
-            if (shcp_offset > sh_offset || shcp_addr > sh_addr)
-              {
-                if (shcp_addr > sh_addr)
-                  elf_shdr_set_addr(&shdr_cp, shcp_addr + (new_align_size - old_align_size), class);
-                if (shcp_offset > sh_offset)
-                  elf_shdr_set_offset(&shdr_cp, shcp_offset + (new_align_size - old_align_size), class);
-              }
-            writed += write(packed, shdr_cp.elf32, shdr_struct_size);
-            printf("write the content of a shdr. shdr_struct_size: -> %lu. writed -> %lu\n", shdr_struct_size, writed);
-          }
-
-        printf("write the rest of file. writed -> %lu\n", writed);
-        writed += write(packed, elf_mmap + writed, file_size - writed);
-        printf("writed the rest of file. writed -> %lu\n", writed);
-      }
-    free(shdr_cp.elf32);
-    free(ehdr_cp.elf32);
-    return (0);
+    return (i);
   }
 
   int main(int argc, char **argv)
@@ -279,156 +186,104 @@ Modify makefile to compile the differents targets and start testing with it.
       } // not main part POC starting
     // Get the section to include the payload
     t_elf_sh		shdr;
-    char 			*name_str;
     t_elf_h 		ehdr = (t_elf_h){.elf32 = elf_mmap};
-    const uint64_t	e_shoff = elf_get_elfh_shoff(&ehdr);
     const uint64_t 	shnum = elf_get_elfh_shnum(&ehdr);
     const char	 	*sh_str_tab = elf_get_section_string_table(&ehdr);
     const unsigned char 	class = elf_get_elfh_e_ident_class(elf_mmap);
-    uint64_t 		i;
-
-    i = 0;
-    while (i < shnum) //run for each section_header
-      {
-        shdr = elf_get_section_header(&ehdr, i);
-        name_str = (char *)elf_get_section_name(sh_str_tab, elf_get_section_header_name(&shdr, class));
-        if (!strcmp(name_str, ".text"))
-          break ;
-        i++;
-      }
-    if (shnum <= i)
-      return (5);
     // In case find the section show relevant info function.
     //Payload info   00001000  4831FF            xor rdi,rdi
-    char payload[] = {'\x48', '\x31', '\xff', '\x48', '\x31', '\xff', '\x48'};
-    const size_t payload_size = sizeof(payload) / sizeof(*payload);
-    //Section header math.
-    uint64_t sh_addralign = elf_get_section_header_addralign(&shdr, class);
-    const uint64_t sh_size = elf_get_section_header_size(&shdr, class);
-    uint64_t sh_offset = elf_get_section_header_offset(&shdr, class);
-    uint64_t sh_addr = elf_get_section_header_addr(&shdr, class);
-    uint64_t old_align_size = get_alignment_size(sh_addralign, sh_size);
-    uint64_t new_align_size = get_alignment_size(sh_addralign, sh_size + payload_size);
-    uint64_t sh_offset_payload = sh_offset + sh_size;
-    uint64_t sh_elf_offset = (void *)shdr.elf32 - (void *)ehdr.elf32;
-    uint64_t writed;
     // Insert payload.
+    const char payload[] = {'\x48', '\x31', '\xff', '\x48', '\x31', '\xff', '\x48'};
+    const size_t payload_size = sizeof(payload) / sizeof(*payload);
+    uint64_t 		i;
+
+    i = get_section_ndx_text(&ehdr, sh_str_tab, class, shnum);
+    if (shnum <= i)
+      return (5);
+    shdr = elf_get_section_header(&ehdr, i);
+    // Don't go to refacto for now until got the complete logic cause would be messy.
+    //Section header math.
+    const uint64_t	e_shoff = elf_get_elfh_shoff(&ehdr);
+    const uint64_t sh_addralign = elf_get_section_header_addralign(&shdr, class);
+    const uint64_t sh_size = elf_get_section_header_size(&shdr, class);
+    const uint64_t sh_offset = elf_get_section_header_offset(&shdr, class);
+    const uint64_t sh_addr = elf_get_section_header_addr(&shdr, class);
+    const uint64_t old_align_size = get_alignment_size(sh_addralign, sh_size);
+    const uint64_t new_align_size = get_alignment_size(sh_addralign, sh_size + payload_size);
+    const uint64_t sh_offset_payload = sh_offset + sh_size;
+    const uint64_t sh_elf_offset = (void *)shdr.elf32 - (void *)ehdr.elf32;
+    uint64_t writed;
 
     // Create copy to modify further
     uint64_t shdr_struct_size = elf_get_section_header_struct_size (&ehdr);
     t_elf_sh shdr_cp = (t_elf_sh){.elf32 = malloc(shdr_struct_size)};
     if (!shdr_cp.elf32)
-      {
-        close (packed);
         return (5);
-      }
     memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); 
-
     uint64_t elf_struct_size = elf_get_struct_size_elf_header(elf_mmap);
     t_elf_h ehdr_cp = {.elf32 = malloc(elf_struct_size)};
     if (!ehdr_cp.elf32)
       {
+        free(shdr_cp.elf32);
         return (6);
       }
     memcpy(ehdr_cp.elf32, ehdr.elf32, elf_struct_size); 
     writed = 0;
+    printf("new_align_size > old_align_size\n");
+    uint64_t modified_section_free_space = new_align_size - (sh_size + payload_size);
+    uint64_t original_section_free_space = old_align_size - sh_size;
     if (old_align_size < new_align_size)
-      {
-        printf("new_align_size > old_align_size\n");
-        uint64_t modified_section_free_space = new_align_size - (sh_size + payload_size);
-        uint64_t original_section_free_space = old_align_size - sh_size;
-        elf_ehdr_set_shoff(&ehdr_cp, e_shoff + (new_align_size - old_align_size), class);
-        writed += write(packed, ehdr_cp.elf32, elf_struct_size);
-        if (sh_elf_offset > sh_offset_payload)
-          {
-            printf("is first payload offset than shdr_s offset\n");
-            /* uint64_t unused_space = old_align_size - sh_size; */
-            writed += write(packed, elf_mmap + writed, sh_offset_payload - writed);
-
-            printf("Writed previous payload. writed -> %lu\n" , writed);
-            printf("Insert payload. payload_size (written) -> %lu\n" , write(packed, payload, payload_size));
-            // Until here fine.
-            while (modified_section_free_space--) //Write alignment
-              {
-                printf("fill alignment. modified_section_free_space -> %lu\n", modified_section_free_space);
-                write(packed, "\0", 1);
-              }
-            // Until here fine. all fine just need to change the e_shoff + diff_alignment.
-            printf("pre add original_section_free_space writed -> %lu\n", writed);
-            writed += original_section_free_space;
-            printf("post add original_section_free_space writed -> %lu\n", writed);
-            writed += write(packed, elf_mmap + writed, sh_elf_offset - writed);
-            printf("fill until sh_elf_offset. writed -> %lu\n", writed);
-            printf("sh_elf_offset -> %lu\n", sh_elf_offset);
-            elf_shdr_set_size(&shdr_cp, sh_size + payload_size, class);//setter sh_size.
-            writed += write(packed, shdr_cp.elf32, shdr_struct_size);
-            printf("write the content of the .text shdr. shdr_struct_size: -> %lu. writed -> %lu\n", shdr_struct_size, writed);
-            uint shcp_addr; // funcname write section headers.
-            uint shcp_offset;
-            printf("Begin the loop for modify the rest of following shdrs\n");
-            while (++i < shnum) //run for each section_header after '.text'
-              {
-                shdr = elf_get_section_header(&ehdr, i);
-                shcp_addr = elf_get_section_header_addr(&shdr, class);
-                shcp_offset = elf_get_section_header_offset(&shdr, class);
-                memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); 
-                if (shcp_offset > sh_offset || shcp_addr > sh_addr)
-                  {
-                    if (shcp_addr > sh_addr)
-                      elf_shdr_set_addr(&shdr_cp, shcp_addr + (new_align_size - old_align_size), class);
-                    if (shcp_offset > sh_offset)
-                      elf_shdr_set_offset(&shdr_cp, shcp_offset + (new_align_size - old_align_size), class);
-                  }
-                writed += write(packed, shdr_cp.elf32, shdr_struct_size);
-                printf("write the content of a shdr. shdr_struct_size: -> %lu. writed -> %lu\n", shdr_struct_size, writed);
-              }
-
-            printf("write the rest of file. writed -> %lu\n", writed);
-            writed += write(packed, elf_mmap + writed, file_size - writed);
-            printf("writed the rest of file. writed -> %lu\n", writed);
-          }
-      }
-    else
-      {
-
-        if (sh_elf_offset > sh_offset_payload)
-          {
-            printf("Copy the file content until write payload i miss modify the offset -> %lu\n", sh_offset_payload);
-            writed += write(packed, elf_mmap + writed, sh_offset_payload - writed);
-            printf ("write elf og until payload offset. writed -> %lu\n", writed);
-            writed += write(packed, payload, payload_size);
-            printf ("write payload_size. writed ->  %lu\n", writed);
-            printf ("Cause i use the same elf alignment i don't need to fill the new. pointer move writed bytes %p need advance offset to '.data' section header. writed ->  %lu. sh_elf_offset -> %lu\n" , elf_mmap, writed, sh_elf_offset);
-            writed += write(packed, elf_mmap + writed, sh_elf_offset - writed);
-            printf("Go to the section header '.text' %lu\n", writed);
-            elf_shdr_set_size(&shdr_cp, sh_size + payload_size, class);//setter sh_size.
-            writed += write(packed, shdr_cp.elf32, shdr_struct_size);
-            printf("write shdr '.text' %lu\n", writed);
-            writed += write(packed, elf_mmap + writed, file_size - writed);
-            printf("write the rest of the elf file.\n");
-          }
-        else // At least for Object files.
-          {
-            printf("Copy the file content until section '.text' sh_elf_offset -> %lu\n", sh_elf_offset);
-            writed += write(packed, elf_mmap + writed, sh_elf_offset - writed);
-            elf_shdr_set_size(&shdr_cp, sh_size + payload_size, class);
-            printf("Write the modify shdr: writed -> %lu\n", writed);
-            writed += write(packed, shdr_cp.elf32, shdr_struct_size);
-            printf("Writed the modify shdr: writed -> %lu\n", writed);
-            printf ("write elf og until payload offset. writed -> %lu\n", writed);
-            writed += write(packed, elf_mmap + writed, sh_offset_payload - writed);
-            printf ("writed elf og until payload offset. writed -> %lu\n", writed);
-            writed += write(packed, payload, payload_size);
-            printf ("writed payload. writed -> %lu\n", writed);
-            printf ("write payload_size ->  %lu\n", payload_size);
-            printf("write the rest of the file '.text' %lu\n", writed);
-            writed += write(packed, elf_mmap + writed, file_size - writed);
-            printf("write the rest of the elf file.\n");
-          }
-
-      }
-    free(shdr_cp.elf32);
+      elf_ehdr_set_shoff(&ehdr_cp, e_shoff + (new_align_size - old_align_size), class);
+    writed += write(packed, ehdr_cp.elf32, elf_struct_size);
     free(ehdr_cp.elf32);
+    if (sh_elf_offset > sh_offset_payload)
+      {
+        printf("is first payload offset than shdr_s offset\n");
+        /* uint64_t unused_space = old_align_size - sh_size; */
+        writed += write(packed, elf_mmap + writed, sh_offset_payload - writed);
+
+        printf("Writed previous payload. writed -> %lu\n" , writed);
+        printf("Insert payload. payload_size (written) -> %lu\n" , write(packed, payload, payload_size));
+        // Until here fine.
+        while (modified_section_free_space--) //Write alignment
+          {
+            printf("fill alignment. modified_section_free_space -> %lu\n", modified_section_free_space);
+            write(packed, "\0", 1);
+          }
+        // Until here fine. all fine just need to change the e_shoff + diff_alignment.
+        printf("pre add original_section_free_space writed -> %lu\n", writed);
+        writed += original_section_free_space;
+        printf("post add original_section_free_space writed -> %lu\n", writed);
+        writed += write(packed, elf_mmap + writed, sh_elf_offset - writed);
+        printf("fill until sh_elf_offset. writed -> %lu\n", writed);
+        printf("sh_elf_offset -> %lu\n", sh_elf_offset);
+        elf_shdr_set_size(&shdr_cp, sh_size + payload_size, class);//setter sh_size.
+        writed += write(packed, shdr_cp.elf32, shdr_struct_size);
+        printf("write the content of the .text shdr. shdr_struct_size: -> %lu. writed -> %lu\n", shdr_struct_size, writed);
+        uint shcp_addr; // funcname write section headers.
+        uint shcp_offset;
+        printf("Begin the loop for modify the rest of following shdrs\n");
+        while (++i < shnum) //run for each section_header after '.text'
+          {
+            shdr = elf_get_section_header(&ehdr, i);
+            shcp_addr = elf_get_section_header_addr(&shdr, class);
+            shcp_offset = elf_get_section_header_offset(&shdr, class);
+            memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); 
+            if (old_align_size < new_align_size && (shcp_offset > sh_offset || shcp_addr > sh_addr))
+              {
+                if (shcp_addr > sh_addr)
+                  elf_shdr_set_addr(&shdr_cp, shcp_addr + (new_align_size - old_align_size), class);
+                if (shcp_offset > sh_offset)
+                  elf_shdr_set_offset(&shdr_cp, shcp_offset + (new_align_size - old_align_size), class);
+              }
+            writed += write(packed, shdr_cp.elf32, shdr_struct_size);
+            printf("write the content of a shdr. shdr_struct_size: -> %lu. writed -> %lu\n", shdr_struct_size, writed);
+          }
+        free(shdr_cp.elf32);
+        printf("write the rest of file. writed -> %lu\n", writed);
+        writed += write(packed, elf_mmap + writed, file_size - writed);
+        printf("writed the rest of file. writed -> %lu\n", writed);
+      }
     munmap(elf_mmap, file_size);
     close(packed);
     return (0);
