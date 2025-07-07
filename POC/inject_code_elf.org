@@ -15,17 +15,17 @@ Modify makefile to compile the differents targets and start testing with it.
          2. [X] fill with 0x0 to reach align.
          3. [X] sh_offset I should change the elfh e_shoff When the payload need to increment the alignament_size.
       3. [-]update Ehdr
-         1. [ ] I should change the e_entrypoint to the payload.
-            1. [ ] Find a easy way to generate a payload.
-               1. [ ]  from my payload  jmp to the OG address entrypoint.
-           
-      4. [X] I case payload increment over alignment size we must modify e_shoff.
+         1. [X] I case payload increment over alignment size we must modify e_shoff.
+         2. [ ] I should change the e_entrypoint to the payload.
    3. [ ] Program header 
       1. [ ] p_memsz, p_filesz
       2. [ ] Validation  p_align         ~Values  of  *zero  and one mean no alignment* is required.  Other‐ wise, p_align should be a positive, integral power of  two,  and
         p_vaddr should equal p_offset, modulo p_align.~
-3. [ ] Start making the encrypt (rot13 for testing purpose)
-   1. [ ] Force to maps region of memory in to new places
+3. [ ] Payload Generating.
+   1. [ ] Find a easy way to generate a payload.
+   2. [ ] from my payload  jmp to the OG address entrypoint.
+4. [ ] Start making the encrypt (rot13 for testing purpose)
+   1. [ ] use mmap to save payload, mprotect to asign execution and jmp to the address.
    2. [ ] Will see soon
 
 **  Maybe usefull
@@ -134,6 +134,21 @@ Modify makefile to compile the differents targets and start testing with it.
 
   int elf_insert_payload(void *elf_mmap, off_t file_size, int packed);
 
+  uint64_t get_program_associated_to_shdr(t_elf_h *ehdr, t_elf_sh *shdr, unsigned char class, uint64_t phnum)
+  {
+    const uint64_t sh_offset = elf_get_section_header_offset(shdr, class);
+    uint64_t i;
+    t_elf_ph phdr;
+
+    i = 0;
+    while (++i < phnum)
+    {
+      phdr = elf_get_program_header(ehdr, i);
+      if (elf_get_program_header_offset(&phdr, class) == sh_offset)
+        return  (i);
+    }
+    return  (i);
+  }
 
   uint64_t get_section_ndx_text(t_elf_h *ehdr, const char *sh_str_tab, unsigned char class, uint64_t shnum)
   {
@@ -227,7 +242,16 @@ Modify makefile to compile the differents targets and start testing with it.
         free(shdr_cp.elf32);
         return (6);
       }
-    memcpy(ehdr_cp.elf32, ehdr.elf32, elf_struct_size); 
+    memcpy(ehdr_cp.elf32, ehdr.elf32, elf_struct_size);
+    uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
+    t_elf_ph phdr_cp = {.elf32 = malloc(phdr_struct_size)};
+    if (!phdr_cp.elf32)
+      {
+        free(shdr_cp.elf32);
+        free(ehdr_cp.elf32);
+        return (6);
+      }
+    //  memcpy(phdr_cp.elf32, phdr.elf32, phdr_struct_size);  Don't got a phdr assign.
     writed = 0;
     printf("new_align_size > old_align_size\n");
     uint64_t modified_section_free_space = new_align_size - (sh_size + payload_size);
