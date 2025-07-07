@@ -276,6 +276,8 @@ Modify makefile to compile the differents targets and start testing with it.
     // In case find the section show relevant info function.
     //Payload info   00001000  4831FF            xor rdi,rdi
     // Insert payload.
+
+    //use payload_64.bin or payload_32.bin depend of arch.
     const char payload[] = {'\x48', '\x31', '\xff', '\x48', '\x31', '\xff', '\x48'};
     const size_t payload_size = sizeof(payload) / sizeof(*payload);
     uint64_t 		ndx_sh;
