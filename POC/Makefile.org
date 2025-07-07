@@ -93,15 +93,6 @@ $(NAME): $(BUILD)
 
 $(ADD_INSTRUCTION): $(BUILD-POC_ADD_INSTRUCTION)
 	$(CC) $(CFLAGS) -o $@ $(BUILD-POC_ADD_INSTRUCTION) $(LINKINGFLAGS)
-GEN-PAYLOAD := payload/test.s
-BUILD-PAYLOAD := payload/test
-$(BUILD-PAYLOAD): $(GEN-PAYLOAD)
-	nasm -f elf64 $(GEN-PAYLOAD) -o $(BUILD-PAYLOAD)_64.o
-	nasm -f elf324 $(GEN-PAYLOAD)
-
-gen_payload: $(BUILD-PAYLOAD)
- objcopy -O binary $(BUILD-PAYLOAD)_64.o payload_64.bin
- objcopy -O binary $(BUILD-PAYLOAD)_32.o payload_32.bin
 
 
 $(BUILD-DIR):
