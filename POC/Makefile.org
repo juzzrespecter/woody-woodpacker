@@ -56,7 +56,22 @@ POC_ADD_INSTRUCTION			:= $(ELF_PARSER-SRCS) $(CMN-SRCS) elf/POC/add_instructions
 BUILD					:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(SRC)))
 
 BUILD-POC_ADD_INSTRUCTION		:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(POC_ADD_INSTRUCTION)))
-CC						:= cc
+# Makefile
+
+# Detect the operating system
+UNAME_S := $(shell uname -s)
+
+# Set the CC variable based on the operating system
+ifeq ($(UNAME_S),Linux)
+    # Check for Guix
+    ifeq ($(shell grep -q 'guix' /etc/os-release && echo yes),yes)
+        CC := gcc
+    else
+        CC := cc
+    endif
+else
+    $(error Unsupported operating system: $(UNAME_S))
+endif
 CFLAGS					:= -Wall -Werror -Wextra -g3# -fsanitize=address
 INCLUDEFLAGS			:= -I $(INCLUDE-DIR) -I lib/include/
 LINKINGFLAGS			:= #-L lib -l ft

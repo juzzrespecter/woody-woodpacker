@@ -472,7 +472,6 @@ CLOSED: [2025-06-19 Thu 17:46]
 :LOGBOOK:
 - State "DONE"       from "TODO"       [2025-06-19 Thu 17:46]
 :END:
-
 *** Check integrite struct size with elfheader, phnum not 0 cause this only work on executable, check alignment, check the content of a header + offset exceed file size
 #+begin_src c :tangle  srcs/elf/parser/valid_program_header.c :mkdirp yes 
   #include "format_elf.h"
@@ -544,7 +543,7 @@ CLOSED: [2025-06-19 Thu 17:46]
                   + size * index});
   }
 
-  unsigned char	elf_get_program_header_align(const t_elf_ph *phdr,
+  uint64_t elf_get_program_header_align(const t_elf_ph *phdr,
                           unsigned char class)
   {
           if (class == ELFCLASS32)
@@ -567,18 +566,50 @@ CLOSED: [2025-06-19 Thu 17:46]
                   return (phdr->elf32->p_filesz);
           return (phdr->elf64->p_filesz);
   }
+
+  uint64_t	elf_get_program_header_memsz(const t_elf_ph *phdr,
+                          unsigned char class)
+  {
+          if (class == ELFCLASS32)
+                  return (phdr->elf32->p_memsz);
+          return (phdr->elf64->p_memsz);
+  }
+
+    uint64_t	elf_get_program_header_vaddr(const t_elf_ph *phdr,
+                            unsigned char class)
+    {
+            if (class == ELFCLASS32)
+                    return (phdr->elf32->p_vaddr);
+            return (phdr->elf64->p_vaddr);
+    }
+
+    uint64_t	elf_get_program_header_paddr(const t_elf_ph *phdr,
+                            unsigned char class)
+    {
+            if (class == ELFCLASS32)
+                    return (phdr->elf32->p_paddr);
+            return (phdr->elf64->p_paddr);
+    }
+
 #+end_src
 
 #+begin_src c :tangle include/format_elf.h
 
-// valid_program_header_2
-  uint64_t	elf_get_struct_size_elf_ph(unsigned char class);
-  t_elf_ph	elf_get_program_header(const t_elf_h *ehdr, uint16_t index);
-  uint32_t	elf_get_program_header_offset(const t_elf_ph *phdr,
+  // valid_program_header_2
+    uint64_t	elf_get_struct_size_elf_ph(unsigned char class);
+    t_elf_ph	elf_get_program_header(const t_elf_h *ehdr, uint16_t index);
+    uint32_t	elf_get_program_header_offset(const t_elf_ph *phdr,
+                            unsigned char class);
+    uint64_t	elf_get_program_header_filesz(const t_elf_ph *phdr,
+                            unsigned char class);
+  uint64_t	elf_get_program_header_memsz(const t_elf_ph *phdr,
+  					      unsigned char class);
+  uint64_t elf_get_program_header_align(const t_elf_ph *phdr,
+                            unsigned char class);
+
+  uint64_t	elf_get_program_header_vaddr(const t_elf_ph *phdr,
                           unsigned char class);
-  uint64_t	elf_get_program_header_filesz(const t_elf_ph *phdr,
-                          unsigned char class);
-  unsigned char	elf_get_program_header_align(const t_elf_ph *phdr,
+  uint64_t	elf_get_program_header_paddr(const t_elf_ph *phdr,
                           unsigned char class);
 #+end_src
 

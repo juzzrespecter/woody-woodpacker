@@ -16,16 +16,16 @@ Modify makefile to compile the differents targets and start testing with it.
          3. [X] sh_offset I should change the elfh e_shoff When the payload need to increment the alignament_size.
       3. [-]update Ehdr
          1. [X] I case payload increment over alignment size we must modify e_shoff.
-         2. [ ] I should change the e_entrypoint to the payload.
-   3. [ ] Program header 
-      1. [ ] p_memsz, p_filesz
-      2. [ ] Validation  p_align         ~Values  of  *zero  and one mean no alignment* is required.  Other‐ wise, p_align should be a positive, integral power of  two,  and
-        p_vaddr should equal p_offset, modulo p_align.~
+         2. [ ] I should change the e_entrypoint to the payload When i got a payload that do something not dummy.
+   3. [X] Program header 
+      1. [X] p_memsz, p_filesz
+      
 3. [ ] Payload Generating.
    1. [ ] Find a easy way to generate a payload.
-   2. [ ] from my payload  jmp to the OG address entrypoint.
+      1. [ ] The easiest way i find is read a file that got the machine code 
+   2. [ ] add to my payload a jmp to the OG address entrypoint.
 4. [ ] Start making the encrypt (rot13 for testing purpose)
-   1. [ ] use mmap to save payload, mprotect to asign execution and jmp to the address.
+   1. [ ] use mmap to save payload, mprotect to asign execution  and jmp to the address (u can cast as function pointer but i don't want to use call cause that modify the stack i want to leave the stack frame as clear as possible.)
    2. [ ] Will see soon
 
 **  Maybe usefull
@@ -151,11 +151,11 @@ Modify makefile to compile the differents targets and start testing with it.
   {
     if (class == ELFCLASS32) 
       {
-        printf("ehdr set addr elf32\n");
+        printf("ehdr set shoff elf32\n");
         ehdr->elf32->e_shoff = (uint32_t) value;
         return ;
       }
-    printf("ehdr set addr elf64\n");
+    printf("ehdr set shoff elf64\n");
     ehdr->elf64->e_shoff = value;
   }
   //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
@@ -288,11 +288,11 @@ Modify makefile to compile the differents targets and start testing with it.
       return (5);
     shdr = elf_get_section_header(&ehdr, ndx_sh);
     ndx_ph = elf_get_program_ndx_from_shdr(&ehdr, &shdr, class, phnum);
-
     if (phnum <= ndx_ph)
       return (6);
+    printf("ndx_ph -> %lu\n", ndx_ph);
     phdr = elf_get_program_header(&ehdr, ndx_ph);
-    // Don't go to refacto for now until got the complete logic cause would be messy.
+    // Don't go to refactor for now until got the complete logic cause would be messy.
     //Section header math.
     const uint64_t	e_shoff = elf_get_elfh_shoff(&ehdr);
     const uint64_t sh_addralign = elf_get_section_header_addralign(&shdr, class);
@@ -303,6 +303,10 @@ Modify makefile to compile the differents targets and start testing with it.
     const uint64_t new_align_size = get_alignment_size(sh_addralign, sh_size + payload_size);
     const uint64_t sh_offset_payload = sh_offset + sh_size;
     const uint64_t sh_elf_offset = (void *)shdr.elf32 - (void *)ehdr.elf32;
+    
+
+
+
     uint64_t writed;
 
     // Create copy to modify further
@@ -319,24 +323,61 @@ Modify makefile to compile the differents targets and start testing with it.
         return (8);
       }
     memcpy(ehdr_cp.elf32, ehdr.elf32, elf_struct_size);
-
-    uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
-    t_elf_ph phdr_cp = {.elf32 = malloc(phdr_struct_size)};
-    if (!phdr_cp.elf32)
-      {
-        free(shdr_cp.elf32);
-        free(ehdr_cp.elf32);
-        return (9);
-      }
-     memcpy(phdr_cp.elf32, phdr.elf32, phdr_struct_size);
+    
     writed = 0;
-    printf("new_align_size > old_align_size\n");
-    uint64_t modified_section_free_space = new_align_size - (sh_size + payload_size);
-    uint64_t original_section_free_space = old_align_size - sh_size;
+    
     if (old_align_size < new_align_size)
       elf_ehdr_set_shoff(&ehdr_cp, e_shoff + (new_align_size - old_align_size), class);
     writed += write(packed, ehdr_cp.elf32, elf_struct_size);
     free(ehdr_cp.elf32);
+
+    //if (e_phoff < e_shoff) this is supose in some cases not happend but in executable happend.
+    //Program header
+    uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
+
+   // Write the first header
+    writed += write(packed, elf_mmap + writed, phdr_struct_size);
+
+    t_elf_ph phdr_cp = {.elf32 = malloc(phdr_struct_size)};
+    if (!phdr_cp.elf32)
+      {
+        free(shdr_cp.elf32); // When isolated in a function don't need this 
+        return (9);
+      }
+    memcpy(phdr_cp.elf32, phdr.elf32, phdr_struct_size);
+
+    uint64_t p_align = elf_get_program_header_align(&phdr, class);
+    uint64_t p_memsz = elf_get_program_header_memsz(&phdr, class);
+    uint64_t p_filesz = elf_get_program_header_filesz(&phdr, class);
+    printf("p_align -> %lu\n", p_align);
+    uint64_t p_og_align_addr = get_alignment_size(p_align, p_filesz); 
+    uint64_t p_modified_align_addr = get_alignment_size(p_align, p_filesz + payload_size); 
+    const uint64_t og_p_vaddr = elf_get_program_header_vaddr(&phdr, class);
+    const uint64_t og_p_paddr = elf_get_program_header_paddr(&phdr, class);
+    elf_phdr_set_filesz(&phdr_cp, p_filesz + payload_size, class);
+    elf_phdr_set_memsz(&phdr_cp, p_memsz + payload_size, class);
+    uint64_t p_vaddr;
+    uint64_t p_paddr;
+    while (ndx_ph < phnum)
+    {
+      p_vaddr = elf_get_program_header_vaddr(&phdr, class);
+      p_paddr = elf_get_program_header_paddr(&phdr, class);
+      if (p_og_align_addr < p_modified_align_addr)
+      {
+        if (og_p_vaddr < p_vaddr)
+  	elf_phdr_set_vaddr(&phdr_cp, p_vaddr + (p_modified_align_addr - p_og_align_addr), class);
+        if (og_p_paddr < p_paddr)
+  	elf_phdr_set_paddr(&phdr_cp, p_paddr + (p_modified_align_addr - p_og_align_addr), class);
+      }
+      writed += write(packed, phdr_cp.elf32, phdr_struct_size);
+      ndx_ph++;
+      if (ndx_ph >= phnum)
+        continue ;
+      phdr = elf_get_program_header(&ehdr, ndx_ph);
+      memcpy(phdr_cp.elf32, phdr.elf32, phdr_struct_size);
+    }
+    free(phdr_cp.elf32);
+    
     printf("is first payload offset than shdr_s offset\n");
     /* uint64_t unused_space = old_align_size - sh_size; */
     writed += write(packed, elf_mmap + writed, sh_offset_payload - writed);
@@ -344,6 +385,9 @@ Modify makefile to compile the differents targets and start testing with it.
     printf("Writed previous payload. writed -> %lu\n" , writed);
     printf("Insert payload. payload_size (written) -> %lu\n" , write(packed, payload, payload_size));
     // Until here fine.
+    uint64_t modified_section_free_space = new_align_size - (sh_size + payload_size);
+    uint64_t original_section_free_space = old_align_size - sh_size;
+
     while (modified_section_free_space--) //Write alignment
       {
         printf("fill alignment. modified_section_free_space -> %lu\n", modified_section_free_space);
