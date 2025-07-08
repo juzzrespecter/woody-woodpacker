@@ -481,3 +481,10 @@ Disassembly of section .text:
   40100d:	48 31 ff             	xor    rdi,rdi
   401010:	48                   	rex.W          // i just add one B for pass the size of original_section_free_space an need to modify more things ehdr.
 #+end_src
+
+* Creating the real payload for the project, Fixing the offset in phdr
+:LOGBOOK:
+CLOCK: [2025-07-08 Tue 11:54]--[2025-07-08 Tue 15:00] =>  3:06
+:END:
+
+* Need to make a better get for the .text section and entrypoint phdr, and continue with the payload load.
