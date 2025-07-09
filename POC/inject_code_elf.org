@@ -16,13 +16,16 @@ Modify makefile to compile the differents targets and start testing with it.
          3. [X] sh_offset I should change the elfh e_shoff When the payload need to increment the alignament_size.
       3. [-]update Ehdr
          1. [X] I case payload increment over alignment size we must modify e_shoff.
-         2. [ ] I should change the e_entrypoint to the payload When i got a payload that do something not dummy.
+         2. [ ] I should change the e_entrypoint to the payload
    3. [X] Program header 
       1. [X] p_memsz, p_filesz
+      2. [X] p_paddr, p_vadr
+      3. [X] p_offset
       
 3. [ ] Payload Generating.
-   1. [ ] Find a easy way to generate a payload.
-      1. [ ] The easiest way i find is read a file that got the machine code 
+   1. [X] Find a easy way to generate a payload.
+       ~objdump -M intel --disassemble=_start payload/woody_asm.o | awk 'NR > 7 {for(i=1; i<=NF; i++) if ($i ~ /^[0-9a-fA-F]+$/) printf "0x%s", $i;}'~
+      1. [ ] The easiest way to load machine code dinamically is reading a file.
    2. [ ] add to my payload a jmp to the OG address entrypoint.
 4. [ ] Start making the encrypt (rot13 for testing purpose)
    1. [ ] use mmap to save payload, mprotect to asign execution  and jmp to the address (u can cast as function pointer but i don't want to use call cause that modify the stack i want to leave the stack frame as clear as possible.)
@@ -200,6 +203,23 @@ Modify makefile to compile the differents targets and start testing with it.
 
   int elf_insert_payload(void *elf_mmap, off_t file_size, int packed);
 
+  uint64_t elf_get_program_ndx_from_entrypoint(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
+  {
+    const uint64_t e_entrypoint = elf_get_elfh_entry(ehdr);
+    t_elf_ph phdr;
+    uint64_t i;
+    uint64_t p_vaddr;
+
+    i = 0;
+    while (++i < phnum) // Skip the first 
+    {
+      phdr = elf_get_program_header(ehdr, i);
+      p_vaddr = elf_get_program_header_vaddr(&phdr, class);
+      if (e_entrypoint >= p_vaddr && p_vaddr + elf_get_program_header_filesz(&phdr, class) > e_entrypoint)
+        return  (i);
+    }
+    return  (i);
+  }
   uint64_t elf_get_program_ndx_from_shdr(t_elf_h *ehdr, t_elf_sh *shdr, unsigned char class, uint64_t phnum)
   {
     const uint64_t sh_offset = elf_get_section_header_offset(shdr, class);
@@ -207,7 +227,7 @@ Modify makefile to compile the differents targets and start testing with it.
     t_elf_ph phdr;
 
     i = 0;
-    while (++i < phnum)
+    while (++i < phnum) // Skip the first 
     {
       phdr = elf_get_program_header(ehdr, i);
       if (elf_get_program_header_offset(&phdr, class) == sh_offset)
@@ -216,19 +236,18 @@ Modify makefile to compile the differents targets and start testing with it.
     return  (i);
   }
 
-  uint64_t get_section_ndx_text(t_elf_h *ehdr, const char *sh_str_tab, unsigned char class, uint64_t shnum)
+  uint64_t elf_get_section_ndx_from_phdr(t_elf_h *ehdr, t_elf_ph *phdr, unsigned char class, uint64_t shnum)
   {
-    char 			*name_str;
     t_elf_sh		shdr;
     uint64_t 		i;
+    const uint64_t		p_offset = elf_get_program_header_offset(phdr, class);
 
     i = 0;
     while (i < shnum) //run for each section_header
       {
         shdr = elf_get_section_header(ehdr, i);
-        name_str = (char *)elf_get_section_name(sh_str_tab, elf_get_section_header_name(&shdr, class));
-        if (!strcmp(name_str, ".text"))
-          break ;
+        if (p_offset == elf_get_section_header_offset(&shdr, class))
+          return (i);
         i++;
       }
     return (i);
@@ -271,7 +290,6 @@ Modify makefile to compile the differents targets and start testing with it.
     t_elf_h 		ehdr = (t_elf_h){.elf32 = elf_mmap};
     const uint64_t 	shnum = elf_get_elfh_shnum(&ehdr);
     const uint64_t 	phnum = elf_get_elfh_phnum(&ehdr);
-    const char	 	*sh_str_tab = elf_get_section_string_table(&ehdr);
     const unsigned char 	class = elf_get_elfh_e_ident_class(elf_mmap);
     // In case find the section show relevant info function.
     //Payload info   00001000  4831FF            xor rdi,rdi
@@ -285,15 +303,16 @@ Modify makefile to compile the differents targets and start testing with it.
     //  const uint64_t	e_shoff = elf_get_elfh_shoff(&ehdr);
     //  const uint64_t	e_phoff = elf_get_elfh_phoff(&ehdr);
 
-    ndx_sh = get_section_ndx_text(&ehdr, sh_str_tab, class, shnum);
-    if (shnum <= ndx_sh)
-      return (5);
-    shdr = elf_get_section_header(&ehdr, ndx_sh);
-    ndx_ph = elf_get_program_ndx_from_shdr(&ehdr, &shdr, class, phnum);
+    ndx_ph = elf_get_program_ndx_from_entrypoint(&ehdr, class, phnum);
     if (phnum <= ndx_ph)
       return (6);
     printf("ndx_ph -> %lu\n", ndx_ph);
     phdr = elf_get_program_header(&ehdr, ndx_ph);
+
+    ndx_sh = elf_get_section_ndx_from_phdr(&ehdr, &phdr, class, shnum);
+    if (shnum <= ndx_sh)
+      return (5);
+    shdr = elf_get_section_header(&ehdr, ndx_sh);
     // Don't go to refactor for now until got the complete logic cause would be messy.
     //Section header math.
     const uint64_t	e_shoff = elf_get_elfh_shoff(&ehdr);
@@ -305,7 +324,7 @@ Modify makefile to compile the differents targets and start testing with it.
     const uint64_t new_align_size = get_alignment_size(sh_addralign, sh_size + payload_size);
     const uint64_t sh_offset_payload = sh_offset + sh_size;
     const uint64_t sh_elf_offset = (void *)shdr.elf32 - (void *)ehdr.elf32;
-    
+
 
 
 
@@ -325,9 +344,9 @@ Modify makefile to compile the differents targets and start testing with it.
         return (8);
       }
     memcpy(ehdr_cp.elf32, ehdr.elf32, elf_struct_size);
-    
+
     writed = 0;
-    
+
     if (old_align_size < new_align_size)
       elf_ehdr_set_shoff(&ehdr_cp, e_shoff + (new_align_size - old_align_size), class);
     writed += write(packed, ehdr_cp.elf32, elf_struct_size);
@@ -367,9 +386,9 @@ Modify makefile to compile the differents targets and start testing with it.
       if (p_og_align_addr < p_modified_align_addr)
       {
         if (og_p_vaddr < p_vaddr)
-  	elf_phdr_set_vaddr(&phdr_cp, p_vaddr + (p_modified_align_addr - p_og_align_addr), class);
+        elf_phdr_set_vaddr(&phdr_cp, p_vaddr + (p_modified_align_addr - p_og_align_addr), class);
         if (og_p_paddr < p_paddr)
-  	elf_phdr_set_paddr(&phdr_cp, p_paddr + (p_modified_align_addr - p_og_align_addr), class);
+        elf_phdr_set_paddr(&phdr_cp, p_paddr + (p_modified_align_addr - p_og_align_addr), class);
       }
       writed += write(packed, phdr_cp.elf32, phdr_struct_size);
       ndx_ph++;
@@ -379,7 +398,7 @@ Modify makefile to compile the differents targets and start testing with it.
       memcpy(phdr_cp.elf32, phdr.elf32, phdr_struct_size);
     }
     free(phdr_cp.elf32);
-    
+
     printf("is first payload offset than shdr_s offset\n");
     /* uint64_t unused_space = old_align_size - sh_size; */
     writed += write(packed, elf_mmap + writed, sh_offset_payload - writed);
@@ -488,3 +507,6 @@ CLOCK: [2025-07-08 Tue 11:54]--[2025-07-08 Tue 15:00] =>  3:06
 :END:
 
 * Need to make a better get for the .text section and entrypoint phdr, and continue with the payload load.
+:LOGBOOK:
+CLOCK: [2025-07-09 Wed 13:46]
+:END:
