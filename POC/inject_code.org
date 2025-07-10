@@ -108,27 +108,28 @@ _start:
 
 #+end_src
 #+begin_src shell :tangle no
-          payload= "0x550x480x890xe50x480x830xec0x200x310xc00x480xb80x2e0x2e0x2e0x2e0x570x4f0x4f0x440x480x890x450xea0x480xb80x4f0x440x590x2e0x2e0x2e0x2e0x0a0x480x890x450xf00x480x8d0x450xea0xba0x0e0x000x000x000x480x890xc60xbf0x010x000x000x000xb80x010x000x000x000x0f0x050x480x830xc40x200xadd0x5d" // i need to add jmp instruction to entrypoint, and the address.
-"0xE9" + memcpy(&e_entrypoint(struct_ptr), ptr_to_write, size_of_e_entrypoint_in_struct);
-          asm_code="""push   rbp
-          mov    rbp,rsp
-          sub    rsp,0x20
-          xor    eax,eax
-          movabs rax,0x444f4f572e2e2e2e
+              payload=
+              "\x48\x89\xe5\x48\x83\xec\x20\x31\xc0\x48\xb8\x2e\x2e\x2e\x2e\x57\x4f\x4f\x44\x48\x89\x45\xea\x48\xb8\x4f\x44\x59\x2e\x2e\x2e\x2e\x0a\x48\x89\x45\xf0\x48\x8d\x45\xea\xba\x0e\x00\x00\x00\x48\x89\xc6\xbf\x01\x00\x00\x00\xb8\x01\x00\x00\x00\x0f\x05\x48\x83\xc4\x20"
+    "0xE9" + memcpy(&e_entrypoint(struct_ptr), ptr_to_write, size_of_e_entrypoint_in_struct);
+              asm_code="""push   rbp
+              mov    rbp,rsp
+              sub    rsp,0x20
+              xor    eax,eax
+              movabs rax,0x444f4f572e2e2e2e
 
-          mov    QWORD PTR [rbp-0x16],rax
-          movabs rax,0xa2e2e2e2e59444f
+              mov    QWORD PTR [rbp-0x16],rax
+              movabs rax,0xa2e2e2e2e59444f
 
-          mov    QWORD PTR [rbp-0x10],rax
-          lea    rax,[rbp-0x16]
-          mov    edx,0xe
-          mov    rsi,rax
-          mov    edi,0x1
-          mov    eax,0x1
-          syscall
-          add rsp, 0x20
-          pop rbp
-  """
+              mov    QWORD PTR [rbp-0x10],rax
+              lea    rax,[rbp-0x16]
+              mov    edx,0xe
+              mov    rsi,rax
+              mov    edi,0x1
+              mov    eax,0x1
+              syscall
+              add rsp, 0x20
+              pop rbp
+      """
 #+end_src
 [[file:~/Documents/woody-woodpacker/Documentation.org][Refer]]
 * Generic Logic

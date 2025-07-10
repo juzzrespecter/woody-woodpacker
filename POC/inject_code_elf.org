@@ -14,534 +14,562 @@ Modify makefile to compile the differents targets and start testing with it.
          1. [X] sh_size
          2. [X] fill with 0x0 to reach align.
          3. [X] sh_offset I should change the elfh e_shoff When the payload need to increment the alignament_size.
-      3. [-]update Ehdr
+      3. [X]update Ehdr
          1. [X] I case payload increment over alignment size we must modify e_shoff.
-         2. [ ] I should change the e_entrypoint to the payload
+         2. [X] I should change the e_entrypoint to the payload
    3. [X] Program header 
       1. [X] p_memsz, p_filesz
       2. [X] p_paddr, p_vadr
       3. [X] p_offset
       
-3. [ ] Payload Generating.
+3. [X] Payload Generating.
    1. [X] Find a easy way to generate a payload.
-       ~objdump -M intel --disassemble=_start payload/woody_asm.o | awk 'NR > 7 {for(i=1; i<=NF; i++) if ($i ~ /^[0-9a-fA-F]+$/) printf "0x%s", $i;}'~
-      1. [ ] The easiest way to load machine code dinamically is reading a file.
-   2. [ ] add to my payload a jmp to the OG address entrypoint.
-4. [ ] Start making the encrypt (rot13 for testing purpose)
+       ~objdump -M intel --disassemble=_start payload/woody_asm.o | awk 'NR > 7 {for(i=1; i<=NF; i++) if ($i ~ /^[0-9a-fA-F]+$/ && length($i) == 2) printf "\x%s", $i;}'~
+       i detect 'add' asm instruction is detected as hex i avoid that with the length == 2
+      1. [X] The easiest way to load machine code dinamically is reading a file.
+   2. [X] add to my payload a jmp to the OG address entrypoint.
+   3. [X] add the expect payload and got diff payload depend of arch.
+4. [-] Start making the encrypt (rot13 for testing purpose)
    1. [ ] use mmap to save payload, mprotect to asign execution  and jmp to the address (u can cast as function pointer but i don't want to use call cause that modify the stack i want to leave the stack frame as clear as possible.)
    2. [ ] Will see soon
 
-**  Maybe usefull
-   4. [X] check the code appear. ~objdump -M intel -D | tail~
-
-   5. [ ] In case a function add the symbol. // less cues if not function just inject the code.
-      1. [ ] In case append to a current function should update the current size of the symbol ... // I think i don't need to modify symbols.
-   6. [X] Test that work.
+** REVIEW Maybe usefull
+   [X] check the paylod  appear. ~objdump -M intel -D file | tail~
+   [X] check the payload.bin is fine ~ndisasm -b {32,64} file~.
+   [X] Test that work.
    
      
 
 #+begin_src c :tangle srcs/elf/POC/add_instructions.c :mkdirp yes
-     // TODO May create a struct file with mmap and size ?
-     #include "format_elf.h"
-     #include <string.h>
-     #include <stdbool.h>
-     #include <unistd.h>
-     #include <stdio.h>
-     #include <stdint.h>
-     #include <fcntl.h>
-     #include <sys/mman.h>
-     #include <stdlib.h> //Malloc
+  // TODO May create a struct file with mmap and size ?
+  #include "format_elf.h"
+  #include <string.h>
+  #include <stdbool.h>
+  #include <unistd.h>
+  #include <stdio.h>
+  #include <stdint.h>
+  #include <fcntl.h>
+  #include <sys/mman.h>
+  #include <stdlib.h> //Malloc
 
 
-     uint64_t get_alignment_size(uint64_t alignment, uint64_t size)
-     {
-       return (((size + alignment - 1) / alignment) * alignment);
-     }
+  uint64_t get_alignment_size(uint64_t alignment, uint64_t size)
+  {
+    return (((size + alignment - 1) / alignment) * alignment);
+  }
 
-     // Maybe paranoia
-     bool is_little_endian_the_cpu(void)
-     {
-       uint32_t num = 1;
+  // Maybe paranoia
+  bool is_little_endian_the_cpu(void)
+  {
+    uint32_t num = 1;
 
-       return (*(uint8_t *)&num == 1);
-     }
+    return (*(uint8_t *)&num == 1);
+  }
 
-     // Maybe paranoia
-     uint64_t swap_endianess(uint64_t value)
-     {
-       uint64_t swapped;
-       uint64_t i;
+  // Maybe paranoia
+  uint64_t swap_endianess(uint64_t value)
+  {
+    uint64_t swapped;
+    uint64_t i;
 
-       swapped = 0;
-       i = 0;
-       while (i < 8)
-         {
-           swapped |= ((value >> (i * 8)) & 0xFF) << ((7 - i) * 8);
-           i++;
-         }
-       return swapped;
-     }
-     //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
-     // segfault for advice if i am doing something bad.
-     void elf_phdr_set_memsz(t_elf_ph *phdr, uint64_t value, unsigned char class)
-     {
-       if (class == ELFCLASS32) 
-         {
-           printf("phdr set addr elf32\n");
-           phdr->elf32->p_memsz = (uint32_t) value;
-           return ;
-         }
-       printf("phdr set addr elf64\n");
-       phdr->elf64->p_memsz = value;
-     }
+    swapped = 0;
+    i = 0;
+    while (i < 8)
+      {
+        swapped |= ((value >> (i * 8)) & 0xFF) << ((7 - i) * 8);
+        i++;
+      }
+    return swapped;
+  }
+  //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
+  // segfault for advice if i am doing something bad.
+  void elf_phdr_set_memsz(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("phdr set addr elf32\n");
+        phdr->elf32->p_memsz = (uint32_t) value;
+        return ;
+      }
+    printf("phdr set addr elf64\n");
+    phdr->elf64->p_memsz = value;
+  }
 
-     //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
-     // segfault for advice if i am doing something bad.
-     void elf_phdr_set_offset(t_elf_ph *phdr, uint64_t value, unsigned char class)
-     {
-       if (class == ELFCLASS32) 
-         {
-           printf("phdr set addr elf32\n");
-           phdr->elf32->p_offset = (uint32_t) value;
-           return ;
-         }
-       printf("phdr set addr elf64\n");
-       phdr->elf64->p_offset = value;
-     }
+  //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
+  // segfault for advice if i am doing something bad.
+  void elf_phdr_set_offset(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("phdr set addr elf32\n");
+        phdr->elf32->p_offset = (uint32_t) value;
+        return ;
+      }
+    printf("phdr set addr elf64\n");
+    phdr->elf64->p_offset = value;
+  }
 
-     //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
-     // segfault for advice if i am doing something bad.
-     void elf_phdr_set_vaddr(t_elf_ph *phdr, uint64_t value, unsigned char class)
-     {
-       if (class == ELFCLASS32) 
-         {
-           printf("phdr set addr elf32\n");
-           phdr->elf32->p_vaddr = (uint32_t) value;
-           return ;
-         }
-       printf("phdr set addr elf64\n");
-       phdr->elf64->p_vaddr = value;
-     }
+  //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
+  // segfault for advice if i am doing something bad.
+  void elf_phdr_set_vaddr(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("phdr set addr elf32\n");
+        phdr->elf32->p_vaddr = (uint32_t) value;
+        return ;
+      }
+    printf("phdr set addr elf64\n");
+    phdr->elf64->p_vaddr = value;
+  }
 
-     void elf_phdr_set_paddr(t_elf_ph *phdr, uint64_t value, unsigned char class)
-     {
-       if (class == ELFCLASS32) 
-         {
-           printf("phdr set addr elf32\n");
-           phdr->elf32->p_paddr = (uint32_t) value;
-           return ;
-         }
-       printf("phdr set addr elf64\n");
-       phdr->elf64->p_paddr = value;
-     }
+  void elf_phdr_set_paddr(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("phdr set addr elf32\n");
+        phdr->elf32->p_paddr = (uint32_t) value;
+        return ;
+      }
+    printf("phdr set addr elf64\n");
+    phdr->elf64->p_paddr = value;
+  }
 
-     //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
-     // segfault for advice if i am doing something bad.
-     void elf_phdr_set_filesz(t_elf_ph *phdr, uint64_t value, unsigned char class)
-     {
-       if (class == ELFCLASS32) 
-         {
-           printf("phdr set addr elf32\n");
-           phdr->elf32->p_filesz = (uint32_t) value;
-           return ;
-         }
-       printf("phdr set addr elf64\n");
-       phdr->elf64->p_filesz = value;
-     }
+  //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
+  // segfault for advice if i am doing something bad.
+  void elf_phdr_set_filesz(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("phdr set addr elf32\n");
+        phdr->elf32->p_filesz = (uint32_t) value;
+        return ;
+      }
+    printf("phdr set addr elf64\n");
+    phdr->elf64->p_filesz = value;
+  }
 
-     //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
-     // segfault for advice if i am doing something bad.
-     void elf_ehdr_set_shoff(t_elf_h *ehdr, uint64_t value, unsigned char class)
-     {
-       if (class == ELFCLASS32) 
-         {
-           printf("ehdr set shoff elf32\n");
-           ehdr->elf32->e_shoff = (uint32_t) value;
-           return ;
-         }
-       printf("ehdr set shoff elf64\n");
-       ehdr->elf64->e_shoff = value;
-     }
+  //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
+  // segfault for advice if i am doing something bad.
+  void elf_ehdr_set_shoff(t_elf_h *ehdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("ehdr set shoff elf32\n");
+        ehdr->elf32->e_shoff = (uint32_t) value;
+        return ;
+      }
+    printf("ehdr set shoff elf64\n");
+    ehdr->elf64->e_shoff = value;
+  }
 
 
-       void elf_ehdr_set_entry(t_elf_h *ehdr, uint64_t value, unsigned char class)
-     {
-       if (class == ELFCLASS32) 
-         {
-           printf("ehdr set entry elf32\n");
-           ehdr->elf32->e_entry = (uint32_t) value;
-           return ;
-         }
-       printf("ehdr set entry elf64\n");
-       ehdr->elf64->e_entry = value;
-     }
-     //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
-     // segfault for advice if i am doing something bad.
-     void elf_shdr_set_addr(t_elf_sh *shdr, uint64_t value, unsigned char class)
-     {
-       if (class == ELFCLASS32) 
-         {
-           printf("shdr set addr elf32\n");
-           shdr->elf32->sh_addr = (uint32_t) value;
-           return ;
-         }
-       printf("shdr set addr elf64\n");
-       shdr->elf64->sh_addr = value;
-     }
+  void elf_ehdr_set_entry(t_elf_h *ehdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("ehdr set entry elf32\n");
+        ehdr->elf32->e_entry = (uint32_t) value;
+        return ;
+      }
+    printf("ehdr set entry elf64\n");
+    ehdr->elf64->e_entry = value;
+  }
+  //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
+  // segfault for advice if i am doing something bad.
+  void elf_shdr_set_addr(t_elf_sh *shdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("shdr set addr elf32\n");
+        shdr->elf32->sh_addr = (uint32_t) value;
+        return ;
+      }
+    printf("shdr set addr elf64\n");
+    shdr->elf64->sh_addr = value;
+  }
 
-     //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm
-     // segfault for advice if i am doing something bad.
-     void elf_shdr_set_size(t_elf_sh *shdr, uint64_t value, unsigned char class)
-     {
-       if (class == ELFCLASS32) 
-         {
-           printf("shdr set size elf32\n");
-           shdr->elf32->sh_size = (uint32_t) value;
-           return ;
-         }
-       printf("shdr set size elf64\n");
-       shdr->elf64->sh_size = value;
-     }
+  //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm
+  // segfault for advice if i am doing something bad.
+  void elf_shdr_set_size(t_elf_sh *shdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("shdr set size elf32\n");
+        shdr->elf32->sh_size = (uint32_t) value;
+        return ;
+      }
+    printf("shdr set size elf64\n");
+    shdr->elf64->sh_size = value;
+  }
 
-     void elf_shdr_set_offset(t_elf_sh *shdr, uint64_t value, unsigned char class)
-     {
-       if (class == ELFCLASS32) 
-         {
-           printf("shdr set offset elf32\n");
-           shdr->elf32->sh_offset = (uint32_t) value;
-           return ;
-         }
-       printf("shdr set offset elf64\n");
-       shdr->elf64->sh_offset = value;
-     }
+  void elf_shdr_set_offset(t_elf_sh *shdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("shdr set offset elf32\n");
+        shdr->elf32->sh_offset = (uint32_t) value;
+        return ;
+      }
+    printf("shdr set offset elf64\n");
+    shdr->elf64->sh_offset = value;
+  }
 
-     int elf_insert_payload(void *elf_mmap, off_t file_size, int packed);
+  int elf_insert_payload(void *elf_mmap, off_t file_size, int packed);
 
-    uint64_t elf_get_program_ndx_from_entrypoint(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t e_entrypoint)
-     {
-       t_elf_ph phdr;
-       uint64_t i;
-       uint64_t p_vaddr;
+  uint64_t elf_get_program_ndx_from_entrypoint(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t e_entrypoint)
+  {
+    t_elf_ph phdr;
+    uint64_t i;
+    uint64_t p_vaddr;
 
-       i = 0;
-       while (++i < phnum) // Skip the first 
-       {
-         phdr = elf_get_program_header(ehdr, i);
-         p_vaddr = elf_get_program_header_vaddr(&phdr, class);
-         if (e_entrypoint >= p_vaddr && p_vaddr + elf_get_program_header_filesz(&phdr, class) > e_entrypoint)
-           return  (i);
-       }
-       return  (i);
-     }
+    i = 0;
+    while (++i < phnum) // Skip the first 
+      {
+        phdr = elf_get_program_header(ehdr, i);
+        p_vaddr = elf_get_program_header_vaddr(&phdr, class);
+        if (e_entrypoint >= p_vaddr && p_vaddr + elf_get_program_header_filesz(&phdr, class) > e_entrypoint)
+          return  (i);
+      }
+    return  (i);
+  }
   //TODO
-    size_t elf_get_highest_vaddr_avalaible(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
-    {
-      t_elf_ph phdr;
-      uint64_t i;
-      size_t p_vaddr;
-      size_t max_vaddr = 0;
-      size_t max_align_size = 0;
+  size_t elf_get_highest_vaddr_avalaible(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
+  {
+    t_elf_ph phdr;
+    uint64_t i;
+    size_t p_vaddr;
+    size_t max_vaddr = 0;
+    size_t max_align_size = 0;
 
-      i = 0;
-      while (++i < phnum) // Skip the first 
-        {
-          phdr = elf_get_program_header(ehdr, i);
-          if (elf_get_program_header_type(&phdr, class) != PT_LOAD) // If not loadable ignore
-            continue ;
-          p_vaddr = elf_get_program_header_vaddr(&phdr, class);
-          if (max_vaddr < p_vaddr)
-            {
+    i = 0;
+    while (++i < phnum) // Skip the first 
+      {
+        phdr = elf_get_program_header(ehdr, i);
+        if (elf_get_program_header_type(&phdr, class) != PT_LOAD) // If not loadable ignore
+          continue ;
+        p_vaddr = elf_get_program_header_vaddr(&phdr, class);
+        if (max_vaddr < p_vaddr)
+          {
             max_vaddr = p_vaddr;
             max_align_size = get_alignment_size(elf_get_program_header_align(&phdr, class), elf_get_program_header_memsz(&phdr, class));
-            }
-        }
-      return  (max_vaddr + max_align_size);
-    }
+          }
+      }
+    return  (max_vaddr + max_align_size);
+  }
 
-     uint64_t elf_get_program_ndx_from_shdr(t_elf_h *ehdr, t_elf_sh *shdr, unsigned char class, uint64_t phnum)
-     {
-       const uint64_t sh_offset = elf_get_section_header_offset(shdr, class);
-       uint64_t i;
-       t_elf_ph phdr;
+  uint64_t elf_get_program_ndx_from_shdr(t_elf_h *ehdr, t_elf_sh *shdr, unsigned char class, uint64_t phnum)
+  {
+    const uint64_t sh_offset = elf_get_section_header_offset(shdr, class);
+    uint64_t i;
+    t_elf_ph phdr;
 
-       i = 0;
-       while (++i < phnum) // Skip the first 
-       {
-         phdr = elf_get_program_header(ehdr, i);
-         if (elf_get_program_header_offset(&phdr, class) == sh_offset)
-           return  (i);
-       }
-       return  (i);
-     }
+    i = 0;
+    while (++i < phnum) // Skip the first 
+      {
+        phdr = elf_get_program_header(ehdr, i);
+        if (elf_get_program_header_offset(&phdr, class) == sh_offset)
+          return  (i);
+      }
+    return  (i);
+  }
 
-     uint64_t elf_get_section_ndx_from_phdr(t_elf_h *ehdr, t_elf_ph *phdr, unsigned char class, uint64_t shnum)
-     {
-       t_elf_sh		shdr;
-       uint64_t 		i;
-       const uint64_t		p_offset = elf_get_program_header_offset(phdr, class);
+  uint64_t elf_get_section_ndx_from_phdr(t_elf_h *ehdr, t_elf_ph *phdr, unsigned char class, uint64_t shnum)
+  {
+    t_elf_sh		shdr;
+    uint64_t 		i;
+    const uint64_t		p_offset = elf_get_program_header_offset(phdr, class);
 
-       i = 0;
-       while (i < shnum) //run for each section_header
-         {
-           shdr = elf_get_section_header(ehdr, i);
-           if (p_offset == elf_get_section_header_offset(&shdr, class))
-             return (i);
-           i++;
-         }
-       return (i);
-     }
+    i = 0;
+    while (i < shnum) //run for each section_header
+      {
+        shdr = elf_get_section_header(ehdr, i);
+        if (p_offset == elf_get_section_header_offset(&shdr, class))
+          return (i);
+        i++;
+      }
+    return (i);
+  }
 
-    off_t get_jmp_size(unsigned char class)
-    {
-      if (class == ELFCLASS32)
-        return (8);// B8 00 00 40 00 FF E0 -> B8 ="mov rax"x32, addr\nFF EO="jmp rax"
-      return (12);// 48 B8 00 00 00 00 00 00 00 00 FF E0 -> 48 B8 = "mov rax"x64
-    }
+  off_t get_jmp_size(unsigned char class)
+  {
+    if (class == ELFCLASS32)
+      return (8);// B8 00 00 40 00 FF E0 -> B8 ="mov rax"x32, addr\nFF EO="jmp rax"
+    return (12);// 48 B8 00 00 00 00 00 00 00 00 FF E0 -> 48 B8 = "mov rax"x64
+  }
 
-    // TODO May swap endianess if necesary and we agree, adding the parameter.
-    void set_jmp_entrypoint_payload(void *payload, uint64_t entrypoint, unsigned char class)
-    {
-      Elf32_Addr entrypoint_32 = entrypoint;
-      Elf64_Addr entrypoint_64 = entrypoint;
-      size_t offset = 0;
+  // TODO May swap endianess if necesary and we agree, adding the parameter.
+  void set_jmp_entrypoint_payload(void *payload, uint64_t entrypoint, unsigned char class)
+  {
+    Elf32_Addr entrypoint_32 = entrypoint;
+    Elf64_Addr entrypoint_64 = entrypoint;
+    size_t offset = 0;
 
-      if (class == ELFCLASS64)
-        {
-          memcpy(payload, "\x48", 1); //Rex Prefix x64
-          offset++;
-        }
-      memcpy(payload + offset, "\xB8", 1); //Mov eax in case preceding Rex is rax.
-      offset++;
-      if (class == ELFCLASS64)
-        {
-          memcpy(payload + offset, &entrypoint_64, sizeof (entrypoint_64));
-          offset+= sizeof (entrypoint_64);
-        }
-      else
-        {
-          memcpy(payload + offset, &entrypoint_32, sizeof (entrypoint_32));
-          offset+= sizeof (entrypoint_32);
-        }
-      memcpy(payload + offset, "\xFF\xE0", 2); 
-    }
+    if (class == ELFCLASS64)
+      {
+        memcpy(payload, "\x48", 1); //Rex Prefix x64
+        offset++;
+      }
+    memcpy(payload + offset, "\xB8", 1); //Mov eax in case preceding Rex is rax.
+    offset++;
+    if (class == ELFCLASS64)
+      {
+        memcpy(payload + offset, &entrypoint_64, sizeof (entrypoint_64));
+        offset+= sizeof (entrypoint_64);
+      }
+    else
+      {
+        memcpy(payload + offset, &entrypoint_32, sizeof (entrypoint_32));
+        offset+= sizeof (entrypoint_32);
+      }
+    memcpy(payload + offset, "\xFF\xE0", 2); 
+  }
 
-     int main(int argc, char **argv)
-     {
-       //Validation params
-       if (argc != 2)
-         {
-           printf("usage: %s [filename]\n", *argv);
-           return (1);
-         }  	
-       //Open File
-       int fd = open(argv[1], O_RDONLY); 
-       if (fd < 0)
-         return (2);
-       // Get size file
-       const off_t file_size = lseek(fd, 0, SEEK_END);
-       if ((off_t) -1 == file_size || (off_t) -1 == lseek(fd, 0, SEEK_SET))
-         {
-           close(fd);
-           return (3);
-         }
-       // Save on memory all the file
-       void *elf_mmap = mmap(NULL, file_size, PROT_READ, MAP_SHARED, fd, 0);
-       close(fd);
-       if (!elf_mmap)
-         return (1);
-       // open the file where we gonna add the payload
-       int packed = open("woody", O_CREAT | O_TRUNC | O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
-       if (packed < 0)
-         {
-           munmap(elf_mmap, file_size);
-           return (4);
-         } // not main part POC starting
-       // Get the section to include the payload
-       t_elf_sh		shdr;
-       t_elf_ph		phdr;
-       t_elf_h 		ehdr = (t_elf_h){.elf32 = elf_mmap};
-       const uint64_t     e_entrypoint = elf_get_elfh_entry(&ehdr);
-       const uint64_t 	shnum = elf_get_elfh_shnum(&ehdr);
-       const uint64_t 	phnum = elf_get_elfh_phnum(&ehdr);
-       const unsigned char 	class = elf_get_elfh_e_ident_class(elf_mmap);
-       // In case find the section show relevant info function.
-       //Payload info   00001000  4831FF            xor rdi,rdi
-       // Insert payload.
+  void encrypt(char *src, size_t size)
+  {
+    while (--size)
+      {
+        ,*src += 13;
+        src++;
+      }
+  }
 
-       //use payload_64.bin or payload_32.bin depend of arch.
-       /// char payload[] = { '\x48', '\31', '\FF', '\x48', '\31', '\FF', '\x48' };
-       // Adding Payload dynamically. Create the file with this cmd printf '\x48\x31\xFF\x48\x31\xFF' > payload.bin
+  void decrypt(char *payload, size_t size)
+  {
+    while (size)
+      payload[--size] -= 13;
+  }
 
-       int payload_fd = open("payload.bin", O_RDONLY);
-       if (payload_fd < 0)
-         return (5);
-       const off_t payload_fd_size = lseek(payload_fd,0, SEEK_END);
-       if (payload_fd_size == -1)
-         return (6);
-       if (lseek(payload_fd, 0, SEEK_SET) == -1)
-         return (7);
-       off_t jmp_size = get_jmp_size(class);
-       char *payload = malloc(payload_fd_size + jmp_size);
-       if (!payload)
-         return (8);
-       if (read(payload_fd, payload, payload_fd_size) != payload_fd_size)
-         return (9);
-       set_jmp_entrypoint_payload(payload + payload_fd_size, e_entrypoint, class);
-       const uint64_t payload_size = payload_fd_size + jmp_size;
-       uint64_t 		ndx_sh;
-       uint64_t 		ndx_ph;
-       //  const uint64_t	e_shoff = elf_get_elfh_shoff(&ehdr);
-       //  const uint64_t	e_phoff = elf_get_elfh_phoff(&ehdr);
+  int main(int argc, char **argv)
+  {
+    //Validation params
+    if (argc != 2)
+      {
+        printf("usage: %s [filename]\n", *argv);
+        return (1);
+      }  	
+    //Open File
+    int fd = open(argv[1], O_RDONLY); 
+    if (fd < 0)
+      return (2);
+    // Get size file
+    const off_t file_size = lseek(fd, 0, SEEK_END);
+    if ((off_t) -1 == file_size || (off_t) -1 == lseek(fd, 0, SEEK_SET))
+      {
+        close(fd);
+        return (3);
+      }
+    // Save on memory all the file
+    void *elf_mmap = mmap(NULL, file_size, PROT_READ, MAP_SHARED, fd, 0);
+    close(fd);
+    if (!elf_mmap)
+      return (1);
+    // open the file where we gonna add the payload
+    int packed = open("woody", O_CREAT | O_TRUNC | O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
+    if (packed < 0)
+      {
+        munmap(elf_mmap, file_size);
+        return (4);
+      } // not main part POC starting
+    // Get the section to include the payload
+    t_elf_sh		shdr;
+    t_elf_ph		phdr;
+    t_elf_h 		ehdr = (t_elf_h){.elf32 = elf_mmap};
+    const uint64_t     e_entrypoint = elf_get_elfh_entry(&ehdr);
+    const uint64_t 	shnum = elf_get_elfh_shnum(&ehdr);
+    const uint64_t 	phnum = elf_get_elfh_phnum(&ehdr);
+    const unsigned char 	class = elf_get_elfh_e_ident_class(elf_mmap);
+    // In case find the section show relevant info function.
+    //Payload info   00001000  4831FF            xor rdi,rdi
+    // Insert payload.
 
-       ndx_ph = elf_get_program_ndx_from_entrypoint(&ehdr, class, phnum, e_entrypoint);
-       if (phnum <= ndx_ph)
-         return (10);
-       printf("ndx_ph -> %lu\n", ndx_ph);
-       phdr = elf_get_program_header(&ehdr, ndx_ph);
+    //use payload_64.bin or payload_32.bin depend of arch.
+    /// char payload[] = { '\x48', '\31', '\FF', '\x48', '\31', '\FF', '\x48' };
+    // Adding Payload dynamically. Create the file with this cmd printf '\x48\x31\xFF\x48\x31\xFF' > payload.bin
 
-       ndx_sh = elf_get_section_ndx_from_phdr(&ehdr, &phdr, class, shnum);
-       if (shnum <= ndx_sh)
-         return (11);
-       shdr = elf_get_section_header(&ehdr, ndx_sh);
-       // Don't go to refactor for now until got the complete logic cause would be messy.
-       //Section header math.
-       const uint64_t	e_shoff = elf_get_elfh_shoff(&ehdr);
-       const uint64_t sh_addralign = elf_get_section_header_addralign(&shdr, class);
-       const uint64_t sh_size = elf_get_section_header_size(&shdr, class);
-       const uint64_t sh_offset = elf_get_section_header_offset(&shdr, class);
-       const uint64_t sh_addr = elf_get_section_header_addr(&shdr, class);
-       const uint64_t old_align_size = get_alignment_size(sh_addralign, sh_size);
-       const uint64_t new_align_size = get_alignment_size(sh_addralign, sh_size + payload_size);
-       const uint64_t sh_offset_payload = sh_offset + sh_size;
-       const uint64_t sh_elf_offset = (void *)shdr.elf32 - (void *)ehdr.elf32;
+    int payload_fd;
+    if (class == ELFCLASS64)
+      {
+        printf("elf64 payload bin loaded");
+        payload_fd = open("payload_64.bin", O_RDONLY);
+        printf("elf64 payload bin fd: -> %d", payload_fd);
+      }
+    else
+      {
+        printf("elf32 payload bin loaded");
+        payload_fd = open("payload_32.bin", O_RDONLY);
+        printf("elf32 payload bin fd: -> %d", payload_fd);
+      }
+    if (payload_fd < 0)
+      return (5);
+    const off_t payload_fd_size = lseek(payload_fd,0, SEEK_END);
+    if (payload_fd_size == -1)
+      return (6);
+    if (lseek(payload_fd, 0, SEEK_SET) == -1)
+      return (7);
+    off_t jmp_size = get_jmp_size(class);
+    char *payload = malloc(payload_fd_size + jmp_size);
+    if (!payload)
+      return (8);
+    if (read(payload_fd, payload, payload_fd_size) != payload_fd_size)
+      return (9);
+    set_jmp_entrypoint_payload(payload + payload_fd_size, e_entrypoint, class);
+    const uint64_t payload_size = payload_fd_size + jmp_size;
+    uint64_t 		ndx_sh;
+    uint64_t 		ndx_ph;
+    //  const uint64_t	e_shoff = elf_get_elfh_shoff(&ehdr);
+    //  const uint64_t	e_phoff = elf_get_elfh_phoff(&ehdr);
+
+    ndx_ph = elf_get_program_ndx_from_entrypoint(&ehdr, class, phnum, e_entrypoint);
+    if (phnum <= ndx_ph)
+      return (10);
+    printf("ndx_ph -> %lu\n", ndx_ph);
+    phdr = elf_get_program_header(&ehdr, ndx_ph);
+
+    ndx_sh = elf_get_section_ndx_from_phdr(&ehdr, &phdr, class, shnum);
+    if (shnum <= ndx_sh)
+      return (11);
+    shdr = elf_get_section_header(&ehdr, ndx_sh);
+    // Don't go to refactor for now until got the complete logic cause would be messy.
+    //Section header math.
+    const uint64_t	e_shoff = elf_get_elfh_shoff(&ehdr);
+    const uint64_t sh_addralign = elf_get_section_header_addralign(&shdr, class);
+    const uint64_t sh_size = elf_get_section_header_size(&shdr, class);
+    const uint64_t sh_offset = elf_get_section_header_offset(&shdr, class);
+    const uint64_t sh_addr = elf_get_section_header_addr(&shdr, class);
+    const uint64_t old_align_size = get_alignment_size(sh_addralign, sh_size);
+    const uint64_t new_align_size = get_alignment_size(sh_addralign, sh_size + payload_size);
+    const uint64_t sh_offset_payload = sh_offset + sh_size;
+    const uint64_t sh_elf_offset = (void *)shdr.elf32 - (void *)ehdr.elf32;
 
 
 
 
-       uint64_t writed;
+    uint64_t writed;
 
-       // Create copy to modify further
-       uint64_t shdr_struct_size = elf_get_section_header_struct_size (&ehdr);
-       t_elf_sh shdr_cp = (t_elf_sh){.elf32 = malloc(shdr_struct_size)};
-       if (!shdr_cp.elf32)
-           return (12);
-       memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); 
-       uint64_t elf_struct_size = elf_get_struct_size_elf_header(elf_mmap);
-       t_elf_h ehdr_cp = {.elf32 = malloc(elf_struct_size)};
-       if (!ehdr_cp.elf32)
-         {
-           free(shdr_cp.elf32);
-           return (14);
-         }
-       memcpy(ehdr_cp.elf32, ehdr.elf32, elf_struct_size);
+    // Create copy to modify further
+    uint64_t shdr_struct_size = elf_get_section_header_struct_size (&ehdr);
+    t_elf_sh shdr_cp = (t_elf_sh){.elf32 = malloc(shdr_struct_size)};
+    if (!shdr_cp.elf32)
+      return (12);
+    memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); 
+    uint64_t elf_struct_size = elf_get_struct_size_elf_header(elf_mmap);
+    t_elf_h ehdr_cp = {.elf32 = malloc(elf_struct_size)};
+    if (!ehdr_cp.elf32)
+      {
+        free(shdr_cp.elf32);
+        return (14);
+      }
+    memcpy(ehdr_cp.elf32, ehdr.elf32, elf_struct_size);
 
-       writed = 0;
+    writed = 0;
 
-       if (old_align_size < new_align_size)
-         elf_ehdr_set_shoff(&ehdr_cp, e_shoff + (new_align_size - old_align_size), class);
-       elf_ehdr_set_entry(&ehdr_cp, e_entrypoint, class); // Modify entrypoint.
-       writed += write(packed, ehdr_cp.elf32, elf_struct_size);
-       free(ehdr_cp.elf32);
+    if (old_align_size < new_align_size)
+      elf_ehdr_set_shoff(&ehdr_cp, e_shoff + (new_align_size - old_align_size), class);
+    elf_ehdr_set_entry(&ehdr_cp, e_entrypoint + sh_size, class); // Modify entrypoint.
+    writed += write(packed, ehdr_cp.elf32, elf_struct_size);
+    free(ehdr_cp.elf32);
 
-       //if (e_phoff < e_shoff) this is supose in some cases not happend but in executable happend.
-       //Program header
-       uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
+    //if (e_phoff < e_shoff) this is supose in some cases not happend but in executable happend.
+    //Program header
+    uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
 
-      // Write the first header
-       writed += write(packed, elf_mmap + writed, phdr_struct_size);
+    // Write the first header
+    writed += write(packed, elf_mmap + writed, phdr_struct_size);
 
-       t_elf_ph phdr_cp = {.elf32 = malloc(phdr_struct_size)};
-       if (!phdr_cp.elf32)
-         {
-           free(shdr_cp.elf32); // When isolated in a function don't need this 
-           return (15);
-         }
-       memcpy(phdr_cp.elf32, phdr.elf32, phdr_struct_size);
+    t_elf_ph phdr_cp = {.elf32 = malloc(phdr_struct_size)};
+    if (!phdr_cp.elf32)
+      {
+        free(shdr_cp.elf32); // When isolated in a function don't need this 
+        return (15);
+      }
+    memcpy(phdr_cp.elf32, phdr.elf32, phdr_struct_size);
 
-       uint64_t p_align = elf_get_program_header_align(&phdr, class);
-       uint64_t p_memsz = elf_get_program_header_memsz(&phdr, class);
-       uint64_t p_filesz = elf_get_program_header_filesz(&phdr, class);
-       printf("p_align -> %lu\n", p_align);
-       uint64_t p_og_align_addr = get_alignment_size(p_align, p_filesz); 
-       uint64_t p_modified_align_addr = get_alignment_size(p_align, p_filesz + payload_size); 
-       const uint64_t og_p_vaddr = elf_get_program_header_vaddr(&phdr, class);
-       const uint64_t og_p_paddr = elf_get_program_header_paddr(&phdr, class);
-       elf_phdr_set_filesz(&phdr_cp, p_filesz + payload_size, class);
-       elf_phdr_set_memsz(&phdr_cp, p_memsz + payload_size, class);
-       uint64_t p_vaddr;
-       uint64_t p_paddr;
-       while (ndx_ph < phnum)
-       {
-         p_vaddr = elf_get_program_header_vaddr(&phdr, class);
-         p_paddr = elf_get_program_header_paddr(&phdr, class);
-         if (p_og_align_addr < p_modified_align_addr)
-         {
-           if (og_p_vaddr < p_vaddr)
-           elf_phdr_set_vaddr(&phdr_cp, p_vaddr + (p_modified_align_addr - p_og_align_addr), class);
-           if (og_p_paddr < p_paddr)
-           elf_phdr_set_paddr(&phdr_cp, p_paddr + (p_modified_align_addr - p_og_align_addr), class);
-         }
-         writed += write(packed, phdr_cp.elf32, phdr_struct_size);
-         ndx_ph++;
-         if (ndx_ph >= phnum)
-           continue ;
-         phdr = elf_get_program_header(&ehdr, ndx_ph);
-         memcpy(phdr_cp.elf32, phdr.elf32, phdr_struct_size);
-       }
-       free(phdr_cp.elf32);
+    uint64_t p_align = elf_get_program_header_align(&phdr, class);
+    uint64_t p_memsz = elf_get_program_header_memsz(&phdr, class);
+    uint64_t p_filesz = elf_get_program_header_filesz(&phdr, class);
+    printf("p_align -> %lu\n", p_align);
+    uint64_t p_og_align_addr = get_alignment_size(p_align, p_filesz); 
+    uint64_t p_modified_align_addr = get_alignment_size(p_align, p_filesz + payload_size); 
+    const uint64_t og_p_vaddr = elf_get_program_header_vaddr(&phdr, class);
+    const uint64_t og_p_paddr = elf_get_program_header_paddr(&phdr, class);
+    elf_phdr_set_filesz(&phdr_cp, p_filesz + payload_size, class);
+    elf_phdr_set_memsz(&phdr_cp, p_memsz + payload_size, class);
+    uint64_t p_vaddr;
+    uint64_t p_paddr;
+    while (ndx_ph < phnum)
+      {
+        p_vaddr = elf_get_program_header_vaddr(&phdr, class);
+        p_paddr = elf_get_program_header_paddr(&phdr, class);
+        if (p_og_align_addr < p_modified_align_addr)
+          {
+            if (og_p_vaddr < p_vaddr)
+              elf_phdr_set_vaddr(&phdr_cp, p_vaddr + (p_modified_align_addr - p_og_align_addr), class);
+            if (og_p_paddr < p_paddr)
+              elf_phdr_set_paddr(&phdr_cp, p_paddr + (p_modified_align_addr - p_og_align_addr), class);
+          }
+        writed += write(packed, phdr_cp.elf32, phdr_struct_size);
+        ndx_ph++;
+        if (ndx_ph >= phnum)
+          continue ;
+        phdr = elf_get_program_header(&ehdr, ndx_ph);
+        memcpy(phdr_cp.elf32, phdr.elf32, phdr_struct_size);
+      }
+    free(phdr_cp.elf32);
 
-       printf("is first payload offset than shdr_s offset\n");
-       /* uint64_t unused_space = old_align_size - sh_size; */
-       writed += write(packed, elf_mmap + writed, sh_offset_payload - writed);
+    printf("is first payload offset than shdr_s offset\n");
+    /* uint64_t unused_space = old_align_size - sh_size; */
+    writed += write(packed, elf_mmap + writed, sh_offset_payload - writed);
 
-       printf("Writed previous payload. writed -> %lu\n" , writed);
-       printf("Insert payload. payload_size (written) -> %lu\n" , write(packed, payload, payload_size));
-       // Until here fine.
-       uint64_t modified_section_free_space = new_align_size - (sh_size + payload_size);
-       uint64_t original_section_free_space = old_align_size - sh_size;
+    printf("Writed previous payload. writed -> %lu\n" , writed);
+    printf("Insert payload. payload_size (written) -> %lu\n" , write(packed, payload, payload_size));
+    // Until here fine.
+    uint64_t modified_section_free_space = new_align_size - (sh_size + payload_size);
+    uint64_t original_section_free_space = old_align_size - sh_size;
 
-       while (modified_section_free_space--) //Write alignment
-         {
-           printf("fill alignment. modified_section_free_space -> %lu\n", modified_section_free_space);
-           write(packed, "\0", 1);
-         }
-       // Until here fine. all fine just need to change the e_shoff + diff_alignment.
-       printf("pre add original_section_free_space writed -> %lu\n", writed);
-       writed += original_section_free_space;
-       printf("post add original_section_free_space writed -> %lu\n", writed);
-       writed += write(packed, elf_mmap + writed, sh_elf_offset - writed);
-       printf("fill until sh_elf_offset. writed -> %lu\n", writed);
-       printf("sh_elf_offset -> %lu\n", sh_elf_offset);
-       elf_shdr_set_size(&shdr_cp, sh_size + payload_size, class);//setter sh_size.
-       writed += write(packed, shdr_cp.elf32, shdr_struct_size);
-       printf("write the content of the .text shdr. shdr_struct_size: -> %lu. writed -> %lu\n", shdr_struct_size, writed);
-       uint shcp_addr; // funcname write section headers.
-       uint shcp_offset;
-       printf("Begin the loop for modify the rest of following shdrs\n");
-       while (++ndx_sh < shnum) //run for each section_header after '.text'
-         {
-           shdr = elf_get_section_header(&ehdr, ndx_sh);
-           shcp_addr = elf_get_section_header_addr(&shdr, class);
-           shcp_offset = elf_get_section_header_offset(&shdr, class);
-           memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); 
-           if (old_align_size < new_align_size && (shcp_offset > sh_offset || shcp_addr > sh_addr))
-             {
-               if (shcp_addr > sh_addr)
-                 elf_shdr_set_addr(&shdr_cp, shcp_addr + (new_align_size - old_align_size), class);
-               if (shcp_offset > sh_offset)
-                 elf_shdr_set_offset(&shdr_cp, shcp_offset + (new_align_size - old_align_size), class);
-             }
-           writed += write(packed, shdr_cp.elf32, shdr_struct_size);
-           printf("write the content of a shdr. shdr_struct_size: -> %lu. writed -> %lu\n", shdr_struct_size, writed);
-         }
-       free(shdr_cp.elf32);
-       printf("write the rest of file. writed -> %lu\n", writed);
-       writed += write(packed, elf_mmap + writed, file_size - writed);
-       printf("writed the rest of file. writed -> %lu\n", writed);
-       munmap(elf_mmap, file_size);
-       close(packed);
-       return (0);
-     }
+    while (modified_section_free_space--) //Write alignment
+      {
+        printf("fill alignment. modified_section_free_space -> %lu\n", modified_section_free_space);
+        if (write(packed, "\0", 1) != 1)
+          printf("\r\n");
+      }
+    // Until here fine. all fine just need to change the e_shoff + diff_alignment.
+    printf("pre add original_section_free_space writed -> %lu\n", writed);
+    writed += original_section_free_space;
+    printf("post add original_section_free_space writed -> %lu\n", writed);
+    writed += write(packed, elf_mmap + writed, sh_elf_offset - writed);
+    printf("fill until sh_elf_offset. writed -> %lu\n", writed);
+    printf("sh_elf_offset -> %lu\n", sh_elf_offset);
+    elf_shdr_set_size(&shdr_cp, sh_size + payload_size, class);//setter sh_size.
+    writed += write(packed, shdr_cp.elf32, shdr_struct_size);
+    printf("write the content of the .text shdr. shdr_struct_size: -> %lu. writed -> %lu\n", shdr_struct_size, writed);
+    uint shcp_addr; // funcname write section headers.
+    uint shcp_offset;
+    printf("Begin the loop for modify the rest of following shdrs\n");
+    while (++ndx_sh < shnum) //run for each section_header after '.text'
+      {
+        shdr = elf_get_section_header(&ehdr, ndx_sh);
+        shcp_addr = elf_get_section_header_addr(&shdr, class);
+        shcp_offset = elf_get_section_header_offset(&shdr, class);
+        memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); 
+        if (old_align_size < new_align_size && (shcp_offset > sh_offset || shcp_addr > sh_addr))
+          {
+            if (shcp_addr > sh_addr)
+              elf_shdr_set_addr(&shdr_cp, shcp_addr + (new_align_size - old_align_size), class);
+            if (shcp_offset > sh_offset)
+              elf_shdr_set_offset(&shdr_cp, shcp_offset + (new_align_size - old_align_size), class);
+          }
+        writed += write(packed, shdr_cp.elf32, shdr_struct_size);
+        printf("write the content of a shdr. shdr_struct_size: -> %lu. writed -> %lu\n", shdr_struct_size, writed);
+      }
+    free(shdr_cp.elf32);
+    printf("write the rest of file. writed -> %lu\n", writed);
+    writed += write(packed, elf_mmap + writed, file_size - writed);
+    printf("writed the rest of file. writed -> %lu\n", writed);
+    munmap(elf_mmap, file_size);
+    close(packed);
+    return (0);
+  }
 #+end_src
 
 #+begin_src c :tangle no
@@ -621,4 +649,17 @@ name@name:~/Documents/woody-woodpacker/POC$ ./a.out
 name@name:~/Documents/woody-woodpacker/POC$ echo $?
 0
 #+end_src
-* TODO Use highest avalaible vaddr for get a valid mmap when decrypt the payload and jmp to run.
+* TODO encrypt the payload rot13, append the decrypt function to the payload, decrypt on the mmap, use mprotect to give EXEC perms.
+:LOGBOOK:
+CLOCK: [2025-07-10 Thu 12:40]
+:END:
+** DONE Get the payload for the subject works properly.
+CLOSED: [2025-07-10 Thu 13:44]
+:LOGBOOK:
+- State "DONE"       from              [2025-07-10 Thu 13:44]
+:END:
+#+begin_src shell
+./woody
+....WOODY....
+name@name:~/Documents/woody-woodpacker/POC$ echo $?
+#+end_src
