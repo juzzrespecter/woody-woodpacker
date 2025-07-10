@@ -670,9 +670,18 @@ CLOSED: [2025-07-10 Thu 17:59]
 Illegal instruction (core dumped) apparently encrypt the payload and execute it with decrypt don't like it.
 
 ** TODO put the encrypt string in bytecode in asm
-
+create function to calculate the size of the pointer.
+create function to write to a pointer the bytecode for sub and for mov,
+size_t ft_mov(dst, offset, value, class); //mov the pointer to not overwrite
+size_t ft_sub(dst, value, class);//mov the pointer to not overwrite
 *** TODO sub the stack size to all the payload
 x64
+48 -> prefix 64bits
+81 -> sub 32bit with 32b inmediate -> 0x100000
+83 -> sub 8bit with 8b inmediate -> 0x0a
+ec -> rsp
+value i should use different data types char, uint32_t, uint64_t, to make a memcpy.
+
 48 81 ec > Byte size
 48 81 ec 00 00 00 01 	sub    rsp,0x1000000 //Depend fo the size
 48 83 ec <= Byte size
@@ -680,7 +689,14 @@ x64
 x32 equal but  with out \x48 prefix.
 
 *** TODO write char by char in bytecode
-// op 
+c6 -> mov byte to memory location
+04 ->
+44 -> moving location with offset byte
+84 -> moving location with offset > byet
+24 -> rsp
+value
+value i should use different data types char, uint32_t, uint64_t, to make a memcpy.
+
 c6 04 24// No offset 
 c6 04 24 55          mov    byte ptr [rsp],0x55 // first plus offset
 c6 44 24// offset 
