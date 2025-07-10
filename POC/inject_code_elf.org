@@ -327,11 +327,8 @@ Modify makefile to compile the differents targets and start testing with it.
 
   void encrypt(char *src, size_t size)
   {
-    while (--size)
-      {
-        ,*src += 13;
-        src++;
-      }
+    while (size)
+        src[--size] += 13;
   }
 
   void decrypt(char *payload, size_t size)
@@ -413,6 +410,7 @@ Modify makefile to compile the differents targets and start testing with it.
       return (8);
     if (read(payload_fd, payload, payload_fd_size) != payload_fd_size)
       return (9);
+    encrypt(payload, payload_fd_size);//Encrypt i don't what will happend.
     set_jmp_entrypoint_payload(payload + payload_fd_size, e_entrypoint, class);
     const uint64_t payload_size = payload_fd_size + jmp_size;
     uint64_t 		ndx_sh;
@@ -651,7 +649,7 @@ name@name:~/Documents/woody-woodpacker/POC$ echo $?
 #+end_src
 * TODO encrypt the payload rot13, append the decrypt function to the payload, decrypt on the mmap, use mprotect to give EXEC perms.
 :LOGBOOK:
-CLOCK: [2025-07-10 Thu 12:40]
+CLOCK: [2025-07-10 Thu 12:40]--[2025-07-10 Thu 17:16] =>  4:36
 :END:
 ** DONE Get the payload for the subject works properly.
 CLOSED: [2025-07-10 Thu 13:44]
@@ -663,3 +661,33 @@ CLOSED: [2025-07-10 Thu 13:44]
 ....WOODY....
 name@name:~/Documents/woody-woodpacker/POC$ echo $?
 #+end_src
+** DONE encrypt the bytecode
+CLOSED: [2025-07-10 Thu 17:59]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-07-10 Thu 17:59]
+:END:
+./woody
+Illegal instruction (core dumped) apparently encrypt the payload and execute it with decrypt don't like it.
+
+** TODO put the encrypt string in bytecode in asm
+
+*** TODO sub the stack size to all the payload
+x64
+48 81 ec > Byte size
+48 81 ec 00 00 00 01 	sub    rsp,0x1000000 //Depend fo the size
+48 83 ec <= Byte size
+48 83 ec 0a                       sub    rsp,0x0a //Depend fo the size
+x32 equal but  with out \x48 prefix.
+
+*** TODO write char by char in bytecode
+// op 
+c6 04 24// No offset 
+c6 04 24 55          mov    byte ptr [rsp],0x55 // first plus offset
+c6 44 24// offset 
+c6 44 24 01 48       mov    byte ptr [rsp+0x1],0x48
+c6 84 24// ofsset > Byte
+c6 84 24 00 01 00 00 c0	mov    BYTE PTR [rsp+0x100],0xc0
+
+
+** TODO decrypt in run time.
+** TODO mmap the decrypt payload.
