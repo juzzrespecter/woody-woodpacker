@@ -326,7 +326,7 @@ Modify makefile to compile the differents targets and start testing with it.
           if (dst)
             memcpy(dst + written, "\x04", 1);
         }
-      else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8) // if offset and byte syze
+      else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 128) // if offset and byte syze
         {
           if (dst)
             memcpy(dst + written, "\x44", 1);
@@ -344,13 +344,13 @@ Modify makefile to compile the differents targets and start testing with it.
         {
           /* if (dst) */
             /* printf("off -> b value %u, b4 value %u, b8 value %lu\n", (uint32_t)off.b, off.b4, off.b8); */
-          if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8)
+          if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
             {
               if (dst)
                 memcpy(dst + written, &off.b, sizeof (off.b)); 
               written += sizeof (off.b);
             }
-          else if ((uint64_t)off.b4 == off.b8)
+          else if ((uint64_t)off.b4 == off.b8 && off.b4 < 0x80000000)
             {
               if (dst)
                 memcpy(dst + written, &off.b4, sizeof (off.b4)); 
@@ -370,7 +370,7 @@ Modify makefile to compile the differents targets and start testing with it.
             memcpy(dst + written, &type.b, sizeof (type.b));
           written += sizeof (type.b);
         }
-      else if ((uint64_t)type.b4 == type.b8)
+      else if ((uint64_t)type.b4 == type.b8 && type.b4)
         {
           if (dst)
             memcpy(dst + written, &type.b4, sizeof (type.b4));
@@ -393,13 +393,15 @@ Modify makefile to compile the differents targets and start testing with it.
 
      written = 0;
      // test need 
+     if (dst)
+       printf("value -> %lu\n", value);
      if (class == ELFCLASS64)
        {
          if (dst)
            memcpy(dst, "\x48", 1);
          written++;
        }
-      if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8)
+      if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8 && type.b < 0x80)
         {
           if (dst)
             memcpy(dst + written, "\x83\xec", 2);
@@ -413,7 +415,7 @@ Modify makefile to compile the differents targets and start testing with it.
           if (dst)
             memcpy(dst + written, "\x81\xec", 2);
           written += 2;
-          if ((uint64_t)type.b4 == type.b8)
+          if ((uint64_t)type.b4 == type.b8 && type.b4 < 0x80000000)
             {
               if (dst)
                 memcpy(dst + written, &type.b4, sizeof (type.b4));
@@ -442,7 +444,7 @@ Modify makefile to compile the differents targets and start testing with it.
            memcpy(dst, "\x48", 1);
          written++;
        }
-      if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8)
+      if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8 && type.b < 0x80)
         {
           if (dst)
             memcpy(dst + written, "\x83\xc4", 2);
@@ -456,7 +458,7 @@ Modify makefile to compile the differents targets and start testing with it.
           if (dst)
             memcpy(dst + written, "\x81\xc4", 2);
           written += 2;
-          if ((uint64_t)type.b4 == type.b8)
+          if ((uint64_t)type.b4 == type.b8 && type.b4 < 0x80000000)
             {
               if (dst)
                 memcpy(dst + written, &type.b4, sizeof (type.b4));
@@ -471,21 +473,6 @@ Modify makefile to compile the differents targets and start testing with it.
         }
       return (written);
    }
-    /* *** TODO sub the stack size to all the payload */
-    /* x64 */
-    /* 48 -> prefix 64bits */
-    /* 81 -> sub 32bit with 32b inmediate -> 0x100000 */
-    /* 83 -> sub 8bit with 8b inmediate -> 0x0a */
-    /* ec -> rsp */
-    /* use a union {char B, uint32_t Bx4, uint64_t Bx8} for use less stack size  */
-    /* value i should use different data types char, uint32_t, uint64_t, to make a memcpy. */
-
-    /* 48 81 ec > Byte size */
-    /* 48 81 ec 00 00 00 01 	sub    rsp,0x1000000 //Depend fo the size */
-    /* 48 83 ec <= Byte size */
-    /* 48 83 ec 0a                       sub    rsp,0x0a //Depend fo the size */
-    /* x32 equal but  with out \x48 prefix. */
-
 
     //Todo may use union avoid use more heap.
   typedef  union u_elf_addr
@@ -494,7 +481,7 @@ Modify makefile to compile the differents targets and start testing with it.
     Elf64_Addr b64;
   }	t_elf_addr;
 
-    void set_jmp_entrypoint_payload(void *payload, uint64_t entrypoint, unsigned char class)
+    void set_jmp_entrypoint(void *payload, uint64_t entrypoint, unsigned char class)
     {
       t_elf_addr u_entrypoint = (t_elf_addr){.b64 = entrypoint};
       size_t offset = 0;
@@ -519,10 +506,17 @@ Modify makefile to compile the differents targets and start testing with it.
       memcpy(payload + offset, "\xFF\xE0", 2); 
     }
 
-    void encrypt(char *src, size_t size)
+    void encrypt(unsigned char *src, size_t size)
     {
-      while (size)
-          src[--size] += 13;
+      size_t i = 0;
+      printf("src pointer -> %p\n", src);
+      while ( i < size)
+        {
+          printf("pre-encrypt value %x\n", src[i]);
+          src[i] += 13;
+          printf("pos-encrypt value %x\n", src[i]);
+          i++;
+        }
     }
 
     void decrypt(char *payload, size_t size)
@@ -572,60 +566,65 @@ Modify makefile to compile the differents targets and start testing with it.
       const unsigned char 	class = elf_get_elfh_e_ident_class(elf_mmap);
       // In case find the section show relevant info function.
 
-      int payload_fd;
+      int cypher_payload_fd;
       if (class == ELFCLASS64)
-          payload_fd = open("payload_64.bin", O_RDONLY);
+          cypher_payload_fd = open("payload_64.bin", O_RDONLY);
       else
-          payload_fd = open("payload_32.bin", O_RDONLY);
-      if (payload_fd < 0)
+          cypher_payload_fd = open("payload_32.bin", O_RDONLY);
+      if (cypher_payload_fd < 0)
         return (5);
-      const off_t payload_fd_size = lseek(payload_fd,0, SEEK_END);
-      if (payload_fd_size == -1)
+      const off_t cypher_payload_fd_size = lseek(cypher_payload_fd,0, SEEK_END);
+      if (cypher_payload_fd_size == -1)
         return (6);
-      if (lseek(payload_fd, 0, SEEK_SET) == -1)
+      if (lseek(cypher_payload_fd, 0, SEEK_SET) == -1)
         return (7);
       off_t jmp_size = get_jmp_size(class);
-      unsigned char *payload = malloc(payload_fd_size + jmp_size);
-      if (!payload)
+
+      const uint64_t cypher_payload_size = cypher_payload_fd_size + jmp_size;
+      unsigned char *cypher_payload = malloc(cypher_payload_size);
+      if (!cypher_payload)
         return (8);
-      if (read(payload_fd, payload, payload_fd_size) != payload_fd_size)
+      if (read(cypher_payload_fd, cypher_payload, cypher_payload_fd_size) != cypher_payload_fd_size)
         return (9);
-      //encrypt(payload, payload_fd_size);
-      set_jmp_entrypoint_payload(payload + payload_fd_size, e_entrypoint, class);
-      // Here we make the test not encrypt to set the bytecode payload in a buffer in asm.
+      printf("first char fd %x\n", cypher_payload[0]);
+      printf("cypher_payload ptr -> %p\n", cypher_payload);
+      set_jmp_entrypoint(cypher_payload + cypher_payload_fd_size, e_entrypoint, class);
+      printf("first char fd %x\n", cypher_payload[0]);
+      printf("cypher_payload ptr -> %p\n", cypher_payload);
+      encrypt(cypher_payload, cypher_payload_size);
+      set_jmp_entrypoint(cypher_payload + cypher_payload_fd_size, e_entrypoint, class);
+      // Here we make the test not encrypt to set the bytecode cypher_payload in a buffer in asm.
       size_t bytecode_buffer_size = 0;
-      size_t payload_index = 0;
-      printf("payload_fd_size + jmp_size -> %lu\n", payload_fd_size + jmp_size);
-      while ((off_t) payload_index < payload_fd_size + jmp_size)
+      size_t cypher_payload_index = 0;
+      while (cypher_payload_index < cypher_payload_size)
         {
-          bytecode_buffer_size += ft_mov_asm(NULL, payload_index, payload[payload_index]);
-          payload_index++;
+          bytecode_buffer_size += ft_mov_asm(NULL, cypher_payload_index, cypher_payload[cypher_payload_index]);
+          cypher_payload_index++;
         }
       // * 2 equal size sub and add
-      size_t generated_bytecode_size = bytecode_buffer_size + 2 * ft_sub_asm(NULL, bytecode_buffer_size, class) + jmp_size; // PDTE decrypt, mmap, jmp to the map
+      size_t generated_bytecode_size = bytecode_buffer_size + 2 * ft_sub_asm(NULL, cypher_payload_size, class) + jmp_size;
+      // PDTE decrypt, mmap, jmp to the map
       char *generated_bytecode = malloc(generated_bytecode_size);
       if (!generated_bytecode)
         return (10);
       printf ("malloc no error generated_bytecode\n");
       size_t generated_bytecode_index = 0;
-      payload_index = 0;
-      generated_bytecode_index += ft_sub_asm(generated_bytecode, bytecode_buffer_size, class);
-      printf("generated_bytecode_index after_sub %lu\n", generated_bytecode_index);
-      while ((off_t)payload_index < payload_fd_size + jmp_size)
+      generated_bytecode_index += ft_sub_asm(generated_bytecode, cypher_payload_size, class);
+      cypher_payload_index = 0;
+      while (cypher_payload_index < cypher_payload_size)
         {
-          generated_bytecode_index += ft_mov_asm(generated_bytecode + generated_bytecode_index, payload_index, payload[payload_index]);
-          payload_index++;
+          generated_bytecode_index += ft_mov_asm(generated_bytecode + generated_bytecode_index, cypher_payload_index, cypher_payload[cypher_payload_index]);
+          cypher_payload_index++;
         }
-      generated_bytecode_index += ft_add_asm(generated_bytecode + generated_bytecode_index, bytecode_buffer_size, class);
-      set_jmp_entrypoint_payload(generated_bytecode + generated_bytecode_index, e_entrypoint, class);
+      generated_bytecode_index += ft_add_asm(generated_bytecode + generated_bytecode_index, cypher_payload_index, class);
+      set_jmp_entrypoint(generated_bytecode + generated_bytecode_index, e_entrypoint, class);
       generated_bytecode_index += jmp_size;
       if (generated_bytecode_index != generated_bytecode_size)
         printf("generated_bytecode_size - generated_bytecode_index = %lu\n", generated_bytecode_size - generated_bytecode_index);
       if (write(2, generated_bytecode, generated_bytecode_size) != (ssize_t)generated_bytecode_size)
-       printf("error on write the generated bytecode\n"); 
+        printf("error on write the generated bytecode\n"); 
       free(generated_bytecode);
 
-      const uint64_t payload_size = payload_fd_size + jmp_size;
       /* const uint64_t payload_size = generated_bytecode_size; */
 
       uint64_t 		ndx_sh;
@@ -649,8 +648,8 @@ Modify makefile to compile the differents targets and start testing with it.
       const uint64_t sh_offset = elf_get_section_header_offset(&shdr, class);
       const uint64_t sh_addr = elf_get_section_header_addr(&shdr, class);
       const uint64_t old_align_size = get_alignment_size(sh_addralign, sh_size);
-      const uint64_t new_align_size = get_alignment_size(sh_addralign, sh_size + payload_size);
-      const uint64_t sh_offset_payload = sh_offset + sh_size;
+      const uint64_t new_align_size = get_alignment_size(sh_addralign, sh_size + cypher_payload_size);
+      const uint64_t sh_offset_cypher_payload = sh_offset + sh_size;
       const uint64_t sh_elf_offset = (void *)shdr.elf32 - (void *)ehdr.elf32;
 
 
@@ -700,11 +699,11 @@ Modify makefile to compile the differents targets and start testing with it.
       uint64_t p_filesz = elf_get_program_header_filesz(&phdr, class);
       printf("p_align -> %lu\n", p_align);
       uint64_t p_og_align_addr = get_alignment_size(p_align, p_filesz); 
-      uint64_t p_modified_align_addr = get_alignment_size(p_align, p_filesz + payload_size); 
+      uint64_t p_modified_align_addr = get_alignment_size(p_align, p_filesz + cypher_payload_size); 
       const uint64_t og_p_vaddr = elf_get_program_header_vaddr(&phdr, class);
       const uint64_t og_p_paddr = elf_get_program_header_paddr(&phdr, class);
-      elf_phdr_set_filesz(&phdr_cp, p_filesz + payload_size, class);
-      elf_phdr_set_memsz(&phdr_cp, p_memsz + payload_size, class);
+      elf_phdr_set_filesz(&phdr_cp, p_filesz + cypher_payload_size, class);
+      elf_phdr_set_memsz(&phdr_cp, p_memsz + cypher_payload_size, class);
       uint64_t p_vaddr;
       uint64_t p_paddr;
       while (ndx_ph < phnum)
@@ -727,12 +726,12 @@ Modify makefile to compile the differents targets and start testing with it.
         }
       free(phdr_cp.elf32);
 
-      writed += write(packed, elf_mmap + writed, sh_offset_payload - writed);
+      writed += write(packed, elf_mmap + writed, sh_offset_cypher_payload - writed);
 
-      uint64_t modified_section_free_space = new_align_size - (sh_size + payload_size);
+      uint64_t modified_section_free_space = new_align_size - (sh_size + cypher_payload_size);
       uint64_t original_section_free_space = old_align_size - sh_size;
-      //write payload
-      if (write(packed, payload, payload_size) != (ssize_t)payload_size)
+      //write cypher_payload
+      if (write(packed, cypher_payload, cypher_payload_size) != (ssize_t)cypher_payload_size)
             printf("\r\n");
       while (modified_section_free_space--) //Write alignment
         {
@@ -741,7 +740,7 @@ Modify makefile to compile the differents targets and start testing with it.
         }
       writed += original_section_free_space;
       writed += write(packed, elf_mmap + writed, sh_elf_offset - writed);
-      elf_shdr_set_size(&shdr_cp, sh_size + payload_size, class);//setter sh_size.
+      elf_shdr_set_size(&shdr_cp, sh_size + cypher_payload_size, class);//setter sh_size.
       writed += write(packed, shdr_cp.elf32, shdr_struct_size);
       uint shcp_addr; // funcname write section headers.
       uint shcp_offset;
@@ -958,11 +957,15 @@ name@name:~/Documents/woody-woodpacker/POC$ echo $?
 
 #+end_src
 ** TODO decrypt in run time.
+:LOGBOOK:
+CLOCK: [2025-07-13 Sun 13:33]--[2025-07-13 Sun 15:45] =>  2:12
+:END:
 *** TODO finish the logic of the rot 13 decrypt
 1. get payload size -> save on rax | eax
 2. cp payload size in a register. -> rcx | ecx
 3. use the cp register to decrement the index of the buffer
 4. test index_buffer, index_buffer, jnz continue of decryption
 5. make some math to calculate the jmp to repeat. e_entrypoint + generator_byte_encode + bytecode counting the jmp byte code.
+6. In case of error jmp to e_entrypoint like nothing happend.
    
 ** TODO mmap the decrypt payload.
