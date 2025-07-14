@@ -326,7 +326,7 @@ Modify makefile to compile the differents targets and start testing with it.
           if (dst)
             memcpy(dst + written, "\x04", 1);
         }
-      else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 128) // if offset and byte syze
+      else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) // if offset and byte syze
         {
           if (dst)
             memcpy(dst + written, "\x44", 1);
@@ -386,15 +386,12 @@ Modify makefile to compile the differents targets and start testing with it.
     }
 
   // if dst == Null calculate size.
-  size_t ft_sub_asm(void *dst, uint64_t value, unsigned char class)//mov the dst pointer to not overwrite.
+  size_t ft_sub_asm_rsp(void *dst, uint64_t value, unsigned char class)//mov the dst pointer to not overwrite.
    {
      size_t	written;
      const t_type	type = (t_type){.b8 = value};
 
      written = 0;
-     // test need 
-     if (dst)
-       printf("value -> %lu\n", value);
      if (class == ELFCLASS64)
        {
          if (dst)
@@ -431,7 +428,62 @@ Modify makefile to compile the differents targets and start testing with it.
       return (written);
    }
 
-   size_t ft_add_asm(void *dst, uint64_t value, unsigned char class)//mov the dst pointer to not overwrite.
+  size_t ft_sub_asm_rsp_buffer_byte(void *dst, uint64_t offset, unsigned char value, unsigned char class)//mov the dst pointer to not overwrite.
+   {
+     size_t	written;
+     const t_type	off = (t_type){.b8 = offset};
+
+     written = 0;
+     if (class == ELFCLASS64)
+       {
+         if (dst)
+           memcpy(dst, "\x80", 1);
+         written++;
+       }
+
+     if (!off.b8)
+       {
+         if (dst)
+           memcpy(dst + written, "\x2c", 1);//Sub byte
+         written++;
+       }
+     else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
+       {
+         if (dst)
+           memcpy(dst + written, "\x6c", 1);//Sub byte
+         written++;
+       }
+     else 
+       {
+         if (dst)
+           memcpy(dst + written, "\xac", 1);//Sub byte
+         written++;
+       }
+     if (dst)
+       memcpy(dst + written, "\x24", 1);// rsp pointer
+     written++;
+     if (off.b8)
+       {
+         if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
+           {
+          if (dst)
+            memcpy(dst + written, &off.b, sizeof(off.b));
+          written += sizeof (off.b);
+           }
+         else
+           {
+             if (dst)
+               memcpy(dst + written, &off.b4, sizeof(off.b4));
+             written += sizeof (off.b4);
+           }
+       }
+     if (dst)
+       memcpy(dst + written, &value, sizeof (value));
+     written += sizeof(value);
+     return (written);
+   }
+
+   size_t ft_add_asm_rsp(void *dst, uint64_t value, unsigned char class)//mov the dst pointer to not overwrite.
    {
      size_t	written;
      const t_type	type = (t_type){.b8 = value};
@@ -509,14 +561,8 @@ Modify makefile to compile the differents targets and start testing with it.
     void encrypt(unsigned char *src, size_t size)
     {
       size_t i = 0;
-      printf("src pointer -> %p\n", src);
       while ( i < size)
-        {
-          printf("pre-encrypt value %x\n", src[i]);
-          src[i] += 13;
-          printf("pos-encrypt value %x\n", src[i]);
-          i++;
-        }
+          src[i++] += 13;
     }
 
     void decrypt(char *payload, size_t size)
@@ -524,6 +570,22 @@ Modify makefile to compile the differents targets and start testing with it.
       while (size)
         payload[--size] -= 13;
     }
+
+  size_t decrypt_rot13_asm(unsigned char *dst, size_t size, unsigned char class)
+  {
+    size_t written = 0;
+    size_t i = 0;
+
+    while (i < size)
+      { /* dst + written segfault */
+        if (dst)
+          written += ft_sub_asm_rsp_buffer_byte(dst + written, i, 13, class);
+        else
+          written += ft_sub_asm_rsp_buffer_byte(dst, i, 13, class);
+        i++;
+      }
+    return (written);
+  }
 
     int main(int argc, char **argv)
     {
@@ -586,13 +648,9 @@ Modify makefile to compile the differents targets and start testing with it.
         return (8);
       if (read(cypher_payload_fd, cypher_payload, cypher_payload_fd_size) != cypher_payload_fd_size)
         return (9);
-      printf("first char fd %x\n", cypher_payload[0]);
-      printf("cypher_payload ptr -> %p\n", cypher_payload);
       set_jmp_entrypoint(cypher_payload + cypher_payload_fd_size, e_entrypoint, class);
-      printf("first char fd %x\n", cypher_payload[0]);
-      printf("cypher_payload ptr -> %p\n", cypher_payload);
       encrypt(cypher_payload, cypher_payload_size);
-      set_jmp_entrypoint(cypher_payload + cypher_payload_fd_size, e_entrypoint, class);
+      /* set_jmp_entrypoint(cypher_payload + cypher_payload_fd_size, e_entrypoint, class); */
       // Here we make the test not encrypt to set the bytecode cypher_payload in a buffer in asm.
       size_t bytecode_buffer_size = 0;
       size_t cypher_payload_index = 0;
@@ -601,23 +659,29 @@ Modify makefile to compile the differents targets and start testing with it.
           bytecode_buffer_size += ft_mov_asm(NULL, cypher_payload_index, cypher_payload[cypher_payload_index]);
           cypher_payload_index++;
         }
+      printf("bytecode_buffer_size %lu\n", bytecode_buffer_size);
+      bytecode_buffer_size += decrypt_rot13_asm(NULL, cypher_payload_size, class);
+      printf("post decrypt rot 13 bytecode_buffer_size %lu\n", bytecode_buffer_size);
+
       // * 2 equal size sub and add
-      size_t generated_bytecode_size = bytecode_buffer_size + 2 * ft_sub_asm(NULL, cypher_payload_size, class) + jmp_size;
+      size_t generated_bytecode_size = bytecode_buffer_size + 2 * ft_sub_asm_rsp(NULL, cypher_payload_size, class) + jmp_size;
       // PDTE decrypt, mmap, jmp to the map
       char *generated_bytecode = malloc(generated_bytecode_size);
       if (!generated_bytecode)
         return (10);
       printf ("malloc no error generated_bytecode\n");
       size_t generated_bytecode_index = 0;
-      generated_bytecode_index += ft_sub_asm(generated_bytecode, cypher_payload_size, class);
+      generated_bytecode_index += ft_sub_asm_rsp(generated_bytecode, cypher_payload_size, class);
       cypher_payload_index = 0;
       while (cypher_payload_index < cypher_payload_size)
         {
           generated_bytecode_index += ft_mov_asm(generated_bytecode + generated_bytecode_index, cypher_payload_index, cypher_payload[cypher_payload_index]);
           cypher_payload_index++;
         }
-      generated_bytecode_index += ft_add_asm(generated_bytecode + generated_bytecode_index, cypher_payload_index, class);
-      set_jmp_entrypoint(generated_bytecode + generated_bytecode_index, e_entrypoint, class);
+      generated_bytecode_index += decrypt_rot13_asm((void *)generated_bytecode + generated_bytecode_index, cypher_payload_size, class);//insert decrypt in real time bytecode.
+
+      generated_bytecode_index += ft_add_asm_rsp(generated_bytecode + generated_bytecode_index, cypher_payload_index, class);
+      set_jmp_entrypoint(generated_bytecode + generated_bytecode_index, e_entrypoint, class);// In future would be mmap
       generated_bytecode_index += jmp_size;
       if (generated_bytecode_index != generated_bytecode_size)
         printf("generated_bytecode_size - generated_bytecode_index = %lu\n", generated_bytecode_size - generated_bytecode_index);
@@ -868,7 +932,11 @@ CLOSED: [2025-07-10 Thu 17:59]
 ./woody
 Illegal instruction (core dumped) apparently encrypt the payload and execute it with decrypt don't like it.
 
-** TODO put the encrypt string in bytecode in asm
+** DONE put the encrypt string in bytecode in asm
+CLOSED: [2025-07-14 Mon 17:55]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-07-14 Mon 17:55]
+:END:
 create function to calculate the size of the pointer.
 create function to write to a pointer the bytecode for sub and for mov,
 size_t ft_mov(dst, offset, value); //mov the pointer to not overwrite
@@ -956,16 +1024,187 @@ name@name:~/Documents/woody-woodpacker/POC$ echo $?
 0
 
 #+end_src
-** TODO decrypt in run time.
+** DONE decrypt in run time.
+CLOSED: [2025-07-14 Mon 17:51]
 :LOGBOOK:
+- State "DONE"       from "TODO"       [2025-07-14 Mon 17:51]
 CLOCK: [2025-07-13 Sun 13:33]--[2025-07-13 Sun 15:45] =>  2:12
 :END:
-*** TODO finish the logic of the rot 13 decrypt
-1. get payload size -> save on rax | eax
-2. cp payload size in a register. -> rcx | ecx
-3. use the cp register to decrement the index of the buffer
-4. test index_buffer, index_buffer, jnz continue of decryption
-5. make some math to calculate the jmp to repeat. e_entrypoint + generator_byte_encode + bytecode counting the jmp byte code.
-6. In case of error jmp to e_entrypoint like nothing happend.
-   
-** TODO mmap the decrypt payload.
+*** DONE finish the logic of the rot 13 decrypt
+CLOSED: [2025-07-14 Mon 17:51]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-07-14 Mon 17:51]
+:END:
+similar to the write payload but change mov to sub   
+#+begin_src shell
+  ndisasm -b 64 generated_bytecode
+  00000000  4883EC4F          sub rsp,byte +0x4f ; -> stack buffer size
+  00000004  C6042462          mov byte [rsp],0x62 ; -> fill buffer with the payload cypher with rot13
+  00000008  C644240155        mov byte [rsp+0x1],0x55
+  0000000D  C644240296        mov byte [rsp+0x2],0x96
+  00000012  C6442403F2        mov byte [rsp+0x3],0xf2
+  00000017  C644240455        mov byte [rsp+0x4],0x55
+  0000001C  C644240590        mov byte [rsp+0x5],0x90
+  00000021  C6442406F9        mov byte [rsp+0x6],0xf9
+  00000026  C64424072D        mov byte [rsp+0x7],0x2d
+  0000002B  C64424083E        mov byte [rsp+0x8],0x3e
+  00000030  C6442409CD        mov byte [rsp+0x9],0xcd
+  00000035  C644240A55        mov byte [rsp+0xa],0x55
+  0000003A  C644240BC5        mov byte [rsp+0xb],0xc5
+  0000003F  C644240C3B        mov byte [rsp+0xc],0x3b
+  00000044  C644240D3B        mov byte [rsp+0xd],0x3b
+  00000049  C644240E3B        mov byte [rsp+0xe],0x3b
+  0000004E  C644240F3B        mov byte [rsp+0xf],0x3b
+  00000053  C644241064        mov byte [rsp+0x10],0x64
+  00000058  C64424115C        mov byte [rsp+0x11],0x5c
+  0000005D  C64424125C        mov byte [rsp+0x12],0x5c
+  00000062  C644241351        mov byte [rsp+0x13],0x51
+  00000067  C644241455        mov byte [rsp+0x14],0x55
+  0000006C  C644241596        mov byte [rsp+0x15],0x96
+  00000071  C644241652        mov byte [rsp+0x16],0x52
+  00000076  C6442417F7        mov byte [rsp+0x17],0xf7
+  0000007B  C644241855        mov byte [rsp+0x18],0x55
+  00000080  C6442419C5        mov byte [rsp+0x19],0xc5
+  00000085  C644241A5C        mov byte [rsp+0x1a],0x5c
+  0000008A  C644241B51        mov byte [rsp+0x1b],0x51
+  0000008F  C644241C66        mov byte [rsp+0x1c],0x66
+  00000094  C644241D3B        mov byte [rsp+0x1d],0x3b
+  00000099  C644241E3B        mov byte [rsp+0x1e],0x3b
+  0000009E  C644241F3B        mov byte [rsp+0x1f],0x3b
+  000000A3  C64424203B        mov byte [rsp+0x20],0x3b
+  000000A8  C644242117        mov byte [rsp+0x21],0x17
+  000000AD  C644242255        mov byte [rsp+0x22],0x55
+  000000B2  C644242396        mov byte [rsp+0x23],0x96
+  000000B7  C644242452        mov byte [rsp+0x24],0x52
+  000000BC  C6442425FD        mov byte [rsp+0x25],0xfd
+  000000C1  C644242655        mov byte [rsp+0x26],0x55
+  000000C6  C64424279A        mov byte [rsp+0x27],0x9a
+  000000CB  C644242852        mov byte [rsp+0x28],0x52
+  000000D0  C6442429F7        mov byte [rsp+0x29],0xf7
+  000000D5  C644242AC7        mov byte [rsp+0x2a],0xc7
+  000000DA  C644242B1B        mov byte [rsp+0x2b],0x1b
+  000000DF  C644242C0D        mov byte [rsp+0x2c],0xd
+  000000E4  C644242D0D        mov byte [rsp+0x2d],0xd
+  000000E9  C644242E0D        mov byte [rsp+0x2e],0xd
+  000000EE  C644242F55        mov byte [rsp+0x2f],0x55
+  000000F3  C644243096        mov byte [rsp+0x30],0x96
+  000000F8  C6442431D3        mov byte [rsp+0x31],0xd3
+  000000FD  C6442432CC        mov byte [rsp+0x32],0xcc
+  00000102  C64424330E        mov byte [rsp+0x33],0xe
+  00000107  C64424340D        mov byte [rsp+0x34],0xd
+  0000010C  C64424350D        mov byte [rsp+0x35],0xd
+  00000111  C64424360D        mov byte [rsp+0x36],0xd
+  00000116  C6442437C5        mov byte [rsp+0x37],0xc5
+  0000011B  C64424380E        mov byte [rsp+0x38],0xe
+  00000120  C64424390D        mov byte [rsp+0x39],0xd
+  00000125  C644243A0D        mov byte [rsp+0x3a],0xd
+  0000012A  C644243B0D        mov byte [rsp+0x3b],0xd
+  0000012F  C644243C1C        mov byte [rsp+0x3c],0x1c
+  00000134  C644243D12        mov byte [rsp+0x3d],0x12
+  00000139  C644243E55        mov byte [rsp+0x3e],0x55
+  0000013E  C644243F90        mov byte [rsp+0x3f],0x90
+  00000143  C6442440D1        mov byte [rsp+0x40],0xd1
+  00000148  C64424412D        mov byte [rsp+0x41],0x2d
+  0000014D  C64424426A        mov byte [rsp+0x42],0x6a
+  00000152  C644244355        mov byte [rsp+0x43],0x55
+  00000157  C6442444C5        mov byte [rsp+0x44],0xc5
+  0000015C  C64424450D        mov byte [rsp+0x45],0xd
+  00000161  C64424461D        mov byte [rsp+0x46],0x1d
+  00000166  C64424474D        mov byte [rsp+0x47],0x4d
+  0000016B  C64424480D        mov byte [rsp+0x48],0xd
+  00000170  C64424490D        mov byte [rsp+0x49],0xd
+  00000175  C644244A0D        mov byte [rsp+0x4a],0xd
+  0000017A  C644244B0D        mov byte [rsp+0x4b],0xd
+  0000017F  C644244C0D        mov byte [rsp+0x4c],0xd
+  00000184  C644244D0C        mov byte [rsp+0x4d],0xc
+  00000189  C644244EED        mov byte [rsp+0x4e],0xed
+  0000018E  802C240D          sub byte [rsp],0xd;-> Decypher the payload byte to byte
+  00000192  806C24010D        sub byte [rsp+0x1],0xd
+  00000197  806C24020D        sub byte [rsp+0x2],0xd
+  0000019C  806C24030D        sub byte [rsp+0x3],0xd
+  000001A1  806C24040D        sub byte [rsp+0x4],0xd
+  000001A6  806C24050D        sub byte [rsp+0x5],0xd
+  000001AB  806C24060D        sub byte [rsp+0x6],0xd
+  000001B0  806C24070D        sub byte [rsp+0x7],0xd
+  000001B5  806C24080D        sub byte [rsp+0x8],0xd
+  000001BA  806C24090D        sub byte [rsp+0x9],0xd
+  000001BF  806C240A0D        sub byte [rsp+0xa],0xd
+  000001C4  806C240B0D        sub byte [rsp+0xb],0xd
+  000001C9  806C240C0D        sub byte [rsp+0xc],0xd
+  000001CE  806C240D0D        sub byte [rsp+0xd],0xd
+  000001D3  806C240E0D        sub byte [rsp+0xe],0xd
+  000001D8  806C240F0D        sub byte [rsp+0xf],0xd
+  000001DD  806C24100D        sub byte [rsp+0x10],0xd
+  000001E2  806C24110D        sub byte [rsp+0x11],0xd
+  000001E7  806C24120D        sub byte [rsp+0x12],0xd
+  000001EC  806C24130D        sub byte [rsp+0x13],0xd
+  000001F1  806C24140D        sub byte [rsp+0x14],0xd
+  000001F6  806C24150D        sub byte [rsp+0x15],0xd
+  000001FB  806C24160D        sub byte [rsp+0x16],0xd
+  00000200  806C24170D        sub byte [rsp+0x17],0xd
+  00000205  806C24180D        sub byte [rsp+0x18],0xd
+  0000020A  806C24190D        sub byte [rsp+0x19],0xd
+  0000020F  806C241A0D        sub byte [rsp+0x1a],0xd
+  00000214  806C241B0D        sub byte [rsp+0x1b],0xd
+  00000219  806C241C0D        sub byte [rsp+0x1c],0xd
+  0000021E  806C241D0D        sub byte [rsp+0x1d],0xd
+  00000223  806C241E0D        sub byte [rsp+0x1e],0xd
+  00000228  806C241F0D        sub byte [rsp+0x1f],0xd
+  0000022D  806C24200D        sub byte [rsp+0x20],0xd
+  00000232  806C24210D        sub byte [rsp+0x21],0xd
+  00000237  806C24220D        sub byte [rsp+0x22],0xd
+  0000023C  806C24230D        sub byte [rsp+0x23],0xd
+  00000241  806C24240D        sub byte [rsp+0x24],0xd
+  00000246  806C24250D        sub byte [rsp+0x25],0xd
+  0000024B  806C24260D        sub byte [rsp+0x26],0xd
+  00000250  806C24270D        sub byte [rsp+0x27],0xd
+  00000255  806C24280D        sub byte [rsp+0x28],0xd
+  0000025A  806C24290D        sub byte [rsp+0x29],0xd
+  0000025F  806C242A0D        sub byte [rsp+0x2a],0xd
+  00000264  806C242B0D        sub byte [rsp+0x2b],0xd
+  00000269  806C242C0D        sub byte [rsp+0x2c],0xd
+  0000026E  806C242D0D        sub byte [rsp+0x2d],0xd
+  00000273  806C242E0D        sub byte [rsp+0x2e],0xd
+  00000278  806C242F0D        sub byte [rsp+0x2f],0xd
+  0000027D  806C24300D        sub byte [rsp+0x30],0xd
+  00000282  806C24310D        sub byte [rsp+0x31],0xd
+  00000287  806C24320D        sub byte [rsp+0x32],0xd
+  0000028C  806C24330D        sub byte [rsp+0x33],0xd
+  00000291  806C24340D        sub byte [rsp+0x34],0xd
+  00000296  806C24350D        sub byte [rsp+0x35],0xd
+  0000029B  806C24360D        sub byte [rsp+0x36],0xd
+  000002A0  806C24370D        sub byte [rsp+0x37],0xd
+  000002A5  806C24380D        sub byte [rsp+0x38],0xd
+  000002AA  806C24390D        sub byte [rsp+0x39],0xd
+  000002AF  806C243A0D        sub byte [rsp+0x3a],0xd
+  000002B4  806C243B0D        sub byte [rsp+0x3b],0xd
+  000002B9  806C243C0D        sub byte [rsp+0x3c],0xd
+  000002BE  806C243D0D        sub byte [rsp+0x3d],0xd
+  000002C3  806C243E0D        sub byte [rsp+0x3e],0xd
+  000002C8  806C243F0D        sub byte [rsp+0x3f],0xd
+  000002CD  806C24400D        sub byte [rsp+0x40],0xd
+  000002D2  806C24410D        sub byte [rsp+0x41],0xd
+  000002D7  806C24420D        sub byte [rsp+0x42],0xd
+  000002DC  806C24430D        sub byte [rsp+0x43],0xd
+  000002E1  806C24440D        sub byte [rsp+0x44],0xd
+  000002E6  806C24450D        sub byte [rsp+0x45],0xd
+  000002EB  806C24460D        sub byte [rsp+0x46],0xd
+  000002F0  806C24470D        sub byte [rsp+0x47],0xd
+  000002F5  806C24480D        sub byte [rsp+0x48],0xd
+  000002FA  806C24490D        sub byte [rsp+0x49],0xd
+  000002FF  806C244A0D        sub byte [rsp+0x4a],0xd
+  00000304  806C244B0D        sub byte [rsp+0x4b],0xd
+  00000309  806C244C0D        sub byte [rsp+0x4c],0xd
+  0000030E  806C244D0D        sub byte [rsp+0x4d],0xd
+  00000313  806C244E0D        sub byte [rsp+0x4e],0xd
+  00000318  4883C44F          add rsp,byte +0x4f ; -> leave as find stack pointer addr
+;; Here should be the part of mmap and mprotect if error jmp to entrypoint as nothing happend.
+  0000031C  48B8001040000000  mov rax,0x401000; -> set a var to entrypoint
+           -0000
+  00000326  FFE0              jmp rax ; jmp to entrypoint
+
+#+end_src
+
+** TODO mmap the decrypted payload.
+** TODO mprotect the decrypted payload.
+** TODO jmp to the decrypted payload.
