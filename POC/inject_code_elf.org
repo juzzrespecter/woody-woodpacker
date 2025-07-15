@@ -24,16 +24,16 @@ Modify makefile to compile the differents targets and start testing with it.
       
 3. [X] Payload Generating.
    1. [X] Find a easy way to generate a payload.
-       ~objdump -M intel --disassemble=_start payload/woody_asm.o | awk 'NR > 7 {for(i=1; i<=NF; i++) if ($i ~ /^[0-9a-fA-F]+$/ && length($i) == 2) printf "\x%s", $i;}'~
+       ~objdump -M intel --disassemble=_start payload/woody_asm.o | awk 'NR > 7 {for(i=1; i<=NF; i++) if ($i ~ /^[0-9a-fA-F]+$/ && length($i) == 2) printf "\\x%s", $i;}'~
        i detect 'add' asm instruction is detected as hex i avoid that with the length == 2
       1. [X] The easiest way to load machine code dinamically is reading a file.
    2. [X] add to my payload a jmp to the OG address entrypoint.
    3. [X] add the expect payload and got diff payload depend of arch.
 4. [-] Start making the encrypt (rot13 for testing purpose)
-   1. [ ] use mmap to save payload, mprotect to asign execution  and jmp to the address (u can cast as function pointer but i don't want to use call cause that modify the stack i want to leave the stack frame as clear as possible.)
+   1. [ ] use mmap to save payload and asign execution  and jmp to the address (u can cast as function pointer but i don't want to use call cause that modify the stack i want to leave the stack frame as clear as possible.)
    2. [ ] Will see soon
 
-** REVIEW Maybe usefull
+** TODO Maybe usefull
 :PROPERTIES:
 :ORDERED:  t
 :END:
@@ -294,16 +294,19 @@ Modify makefile to compile the differents targets and start testing with it.
       return (i);
     }
 
-    off_t get_jmp_size(unsigned char class)
+    off_t get_mov_rax_jmp_rax_size(unsigned char class)
     {
       if (class == ELFCLASS32)
-        return (8);// B8 00 00 40 00 FF E0 -> B8 ="mov rax"x32, addr\nFF EO="jmp rax"
-      return (12);// 48 B8 00 00 00 00 00 00 00 00 FF E0 -> 48 B8 = "mov rax"x64
+        return (7);// B8 00 00 40 00 FF E0 -> B8 ="mov eax", value\nFF EO="jmp rax"
+      return (12);// 48 B8 00 00 00 00 00 00 00 00 FF E0 -> 48 B8 = "mov rax", value
     }
 
+  off_t get_je_size(void)
+  {
+    return (6);//2 plus address
+  }
+
     // TODO May swap endianess if necesary and we agree, adding the parameter.
-    //size_t ft_mov(dst, offset, value); //mov the pointer to not overwrite
-    // if dst == Null calculate the size.
     typedef union u_type
     {
       unsigned char b;
@@ -311,30 +314,119 @@ Modify makefile to compile the differents targets and start testing with it.
       uint64_t b8;
     } t_type;
 
-    size_t ft_mov_asm(void *dst, size_t offset, size_t value) //mov the dst pointer to not overwrite.
+    //size_t ft_mov(dst, offset, value); //mov the pointer to not overwrite
+    // if dst == Null calculate the size.
+
+
+
+  size_t ft_je(unsigned char *dst, size_t distance)
+  {
+    t_type hop = (t_type){.b8 = distance};
+    size_t written;
+
+    written = 0;
+    memcpy(dst + written, "\x0F\x84", 2);
+    written += 2;
+    memcpy(dst + written, &hop.b4, sizeof(hop.b4));
+    return (written + sizeof(hop.b4));
+  }
+
+  size_t ft_mov_asm_rsp(void *dst, size_t offset, size_t value) //mov the dst pointer to not overwrite.
+  {
+    size_t	written;
+    const t_type	type = (t_type){.b8 = value};
+    const t_type	off = (t_type){.b8 = offset};
+
+    written = 0;
+    if (dst)
+      memcpy(dst, "\xc6", 1);
+    written++;
+    if (!off.b8)
+      {
+        if (dst)
+          memcpy(dst + written, "\x04", 1);
+      }
+    else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) // if offset and byte syze
+      {
+        if (dst)
+          memcpy(dst + written, "\x44", 1);
+      }
+    else // if offset and > byte size
+      {
+        if (dst)
+          memcpy(dst + written, "\x84", 1);
+      }
+    written++;
+    if (dst)
+      memcpy(dst + written, "\x24", 1);
+    written++;
+    if (off.b8)
+      {
+        /* if (dst) */
+        /* printf("off -> b value %u, b4 value %u, b8 value %lu\n", (uint32_t)off.b, off.b4, off.b8); */
+        if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
+          {
+            if (dst)
+              memcpy(dst + written, &off.b, sizeof (off.b)); 
+            written += sizeof (off.b);
+          }
+        else if ((uint64_t)off.b4 == off.b8 && off.b4 < 0x80000000)
+          {
+            if (dst)
+              memcpy(dst + written, &off.b4, sizeof (off.b4)); 
+            written += sizeof (off.b4);
+          }
+        else
+          {
+            if (dst)
+              memcpy(dst + written, &off.b8, sizeof (off.b8)); 
+            written += sizeof (off.b8);
+          }
+      }
+    if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8)
+      {
+        if (dst)
+          memcpy(dst + written, &type.b, sizeof (type.b));
+        written += sizeof (type.b);
+      }
+    else if ((uint64_t)type.b4 == type.b8 && type.b4)
+      {
+        if (dst)
+          memcpy(dst + written, &type.b4, sizeof (type.b4));
+        written += sizeof (type.b4);
+      }
+    else
+      {
+        if (dst)
+          memcpy(dst + written, &type.b8, sizeof (type.b8));
+        written += sizeof (type.b8);
+      }
+    return (written);
+  }
+
+    size_t ft_mov_cl_from_rsp(void *dst, size_t offset) //mov the dst pointer to not overwrite.
     {
       size_t	written;
-      const t_type	type = (t_type){.b8 = value};
       const t_type	off = (t_type){.b8 = offset};
 
       written = 0;
       if (dst)
-        memcpy(dst, "\xc6", 1);
+        memcpy(dst, "\x8a", 1);
       written++;
       if (!off.b8)
         {
           if (dst)
-            memcpy(dst + written, "\x04", 1);
+            memcpy(dst + written, "\x0c", 1);
         }
       else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) // if offset and byte syze
         {
           if (dst)
-            memcpy(dst + written, "\x44", 1);
+            memcpy(dst + written, "\x4c", 1);
         }
       else // if offset and > byte size
         {
           if (dst)
-            memcpy(dst + written, "\x84", 1);
+            memcpy(dst + written, "\x8c", 1);
         }
       written++;
       if (dst)
@@ -364,25 +456,45 @@ Modify makefile to compile the differents targets and start testing with it.
             }
 
         }
-      if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8)
-        {
-          if (dst)
-            memcpy(dst + written, &type.b, sizeof (type.b));
-          written += sizeof (type.b);
-        }
-      else if ((uint64_t)type.b4 == type.b8 && type.b4)
-        {
-          if (dst)
-            memcpy(dst + written, &type.b4, sizeof (type.b4));
-          written += sizeof (type.b4);
-        }
-      else
-        {
-          if (dst)
-            memcpy(dst + written, &type.b8, sizeof (type.b8));
-          written += sizeof (type.b8);
-        }
       return (written);
+    }
+
+    size_t ft_mov_rax_from_cl(void *dst, size_t offset) //mov the dst pointer to not overwrite.
+    {
+      size_t	written;
+      const t_type	off = (t_type){.b8 = offset};
+
+      written = 0;
+      if (dst)
+        memcpy(dst, "\x88", 1);
+      written++;
+      if (!off.b8)
+        {
+          if (dst)
+            memcpy(dst + written, "\x08", 1);
+          return (++written);
+        }
+      if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) // if offset and byte syze
+        {
+          if (dst)
+            memcpy(dst + written, "\x48", 1);
+          written++;
+          if (dst)
+            memcpy(dst + written, &off.b, sizeof (off.b)); 
+          return (written + sizeof (off.b));
+        }
+      if (dst)
+        memcpy(dst + written, "\x88", 1);
+      written++;
+      if ((uint64_t)off.b4 == off.b8 && off.b4 < 0x80000000)
+        {
+          if (dst)
+            memcpy(dst + written, &off.b4, sizeof (off.b4)); 
+          return (written + sizeof (off.b4));
+        }
+      if (dst)
+        memcpy(dst + written, &off.b8, sizeof (off.b8)); 
+      return (written + sizeof (off.b8));
     }
 
   // if dst == Null calculate size.
@@ -565,23 +677,48 @@ Modify makefile to compile the differents targets and start testing with it.
           src[i++] += 13;
     }
 
-    void decrypt(char *payload, size_t size)
-    {
-      while (size)
-        payload[--size] -= 13;
-    }
+    /* void decrypt(char *payload, size_t size) */
+    /* { */
+    /*   while (size) */
+    /*     payload[--size] -= 13; */
+    /* } */
 
-  size_t decrypt_rot13_asm(unsigned char *dst, size_t size, unsigned char class)
+  size_t decrypt_rot13_asm(unsigned char *dst, size_t payload_size, unsigned char class)
   {
     size_t written = 0;
     size_t i = 0;
 
-    while (i < size)
+    while (i < payload_size)
       { /* dst + written segfault */
         if (dst)
           written += ft_sub_asm_rsp_buffer_byte(dst + written, i, 13, class);
         else
           written += ft_sub_asm_rsp_buffer_byte(dst, i, 13, class);
+        i++;
+      }
+    return (written);
+  }
+
+  static size_t copy_payload_to_mmap_aux(unsigned char *dst, size_t offset)
+  {
+    size_t written;
+    written = ft_mov_cl_from_rsp(dst, offset);
+    if (dst)
+      return (written + ft_mov_rax_from_cl(dst + written, offset));
+    return (written + ft_mov_rax_from_cl(dst, offset));
+  }
+
+  size_t copy_payload_to_mmap(unsigned char *dst, size_t payload_size)
+  {
+    size_t written = 0;
+    size_t i = 0;
+
+    while (i < payload_size)
+      { /* dst + written segfault if dst == NULL*/
+        if (dst)
+          written += copy_payload_to_mmap_aux(dst + written, i);
+        else
+          written += copy_payload_to_mmap_aux(dst, i);
         i++;
       }
     return (written);
@@ -640,7 +777,7 @@ Modify makefile to compile the differents targets and start testing with it.
         return (6);
       if (lseek(cypher_payload_fd, 0, SEEK_SET) == -1)
         return (7);
-      off_t jmp_size = get_jmp_size(class);
+      off_t jmp_size = get_mov_rax_jmp_rax_size(class);
 
       const uint64_t cypher_payload_size = cypher_payload_fd_size + jmp_size;
       unsigned char *cypher_payload = malloc(cypher_payload_size);
@@ -656,15 +793,16 @@ Modify makefile to compile the differents targets and start testing with it.
       size_t cypher_payload_index = 0;
       while (cypher_payload_index < cypher_payload_size)
         {
-          bytecode_buffer_size += ft_mov_asm(NULL, cypher_payload_index, cypher_payload[cypher_payload_index]);
+          bytecode_buffer_size += ft_mov_asm_rsp(NULL, cypher_payload_index, cypher_payload[cypher_payload_index]);
           cypher_payload_index++;
         }
-      printf("bytecode_buffer_size %lu\n", bytecode_buffer_size);
       bytecode_buffer_size += decrypt_rot13_asm(NULL, cypher_payload_size, class);
-      printf("post decrypt rot 13 bytecode_buffer_size %lu\n", bytecode_buffer_size);
+      size_t size_of_cp_payload_to_mmap = copy_payload_to_mmap(NULL, cypher_payload_size); // + 4. 
+      printf("size_of_cp_payload_to_mmap %lu\n", size_of_cp_payload_to_mmap);
 
       // * 2 equal size sub and add
-      size_t generated_bytecode_size = bytecode_buffer_size + 2 * ft_sub_asm_rsp(NULL, cypher_payload_size, class) + jmp_size;
+      size_t generated_bytecode_size = bytecode_buffer_size + size_of_cp_payload_to_mmap + 2 * ft_sub_asm_rsp(NULL, cypher_payload_size, class) + jmp_size + get_je_size();
+  ;
       // PDTE decrypt, mmap, jmp to the map
       char *generated_bytecode = malloc(generated_bytecode_size);
       if (!generated_bytecode)
@@ -675,16 +813,21 @@ Modify makefile to compile the differents targets and start testing with it.
       cypher_payload_index = 0;
       while (cypher_payload_index < cypher_payload_size)
         {
-          generated_bytecode_index += ft_mov_asm(generated_bytecode + generated_bytecode_index, cypher_payload_index, cypher_payload[cypher_payload_index]);
+          generated_bytecode_index += ft_mov_asm_rsp(generated_bytecode + generated_bytecode_index, cypher_payload_index, cypher_payload[cypher_payload_index]);
           cypher_payload_index++;
         }
       generated_bytecode_index += decrypt_rot13_asm((void *)generated_bytecode + generated_bytecode_index, cypher_payload_size, class);//insert decrypt in real time bytecode.
+      // Insert mmap
+      generated_bytecode_index += ft_je((void *)generated_bytecode + generated_bytecode_index, size_of_cp_payload_to_mmap + 4);
+      // Copy payload to mmap
+      generated_bytecode_index += copy_payload_to_mmap((void *)generated_bytecode + generated_bytecode_index, cypher_payload_size);
 
       generated_bytecode_index += ft_add_asm_rsp(generated_bytecode + generated_bytecode_index, cypher_payload_index, class);
       set_jmp_entrypoint(generated_bytecode + generated_bytecode_index, e_entrypoint, class);// In future would be mmap
       generated_bytecode_index += jmp_size;
       if (generated_bytecode_index != generated_bytecode_size)
         printf("generated_bytecode_size - generated_bytecode_index = %lu\n", generated_bytecode_size - generated_bytecode_index);
+
       if (write(2, generated_bytecode, generated_bytecode_size) != (ssize_t)generated_bytecode_size)
         printf("error on write the generated bytecode\n"); 
       free(generated_bytecode);
@@ -1192,19 +1335,80 @@ similar to the write payload but change mov to sub
   000002F0  806C24470D        sub byte [rsp+0x47],0xd
   000002F5  806C24480D        sub byte [rsp+0x48],0xd
   000002FA  806C24490D        sub byte [rsp+0x49],0xd
-  000002FF  806C244A0D        sub byte [rsp+0x4a],0xd
+  000002FF 806C244A0D        sub byte [rsp+0x4a],0xd
   00000304  806C244B0D        sub byte [rsp+0x4b],0xd
   00000309  806C244C0D        sub byte [rsp+0x4c],0xd
   0000030E  806C244D0D        sub byte [rsp+0x4d],0xd
   00000313  806C244E0D        sub byte [rsp+0x4e],0xd
   00000318  4883C44F          add rsp,byte +0x4f ; -> leave as find stack pointer addr
 ;; Here should be the part of mmap and mprotect if error jmp to entrypoint as nothing happend.
-  0000031C  48B8001040000000  mov rax,0x401000; -> set a var to entrypoint
+  0000031C  48B8001040000000  mov rax,0x401000; -> set a register to entrypoint
            -0000
   00000326  FFE0              jmp rax ; jmp to entrypoint
 
 #+end_src
 
 ** TODO mmap the decrypted payload.
+:LOGBOOK:
+CLOCK: [2025-07-15 Tue 12:58]
+:END:
+first step search the definition of the params
+#+begin_src c :tangle payload/payload_mmap.c
+  #include <sys/mman.h>
+
+  int main(void)
+  {
+    return (mmap((void *)0x405000, 4096, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE |MAP_ANONYMOUS, -1, 0) == (void *)-1);
+  }
+#+end_src
+
+#+begin_src asm :tangle no
+  ;Bytecode ;\x41\xb9\x00\x00\x00\x00\x41\xb8\xff\xff\xff\xff\xb9\x22\x00\x00\x00\xba\x07\x00\x00\x00\xbe\x00\x10\x00\x00\xbf\x00\x50\x40\x00\xe8\xda\xfe\xff\xff\x48\x83\xf8\xff\x0f\x84\xfc\x0f\x40\x00
+          ;je == jz -> 0f 84 address
+   mov    rbp,rsp
+   mov    r9d,0x0
+   mov    r8d,0xffffffff
+   mov    ecx,0x22
+   mov    edx,0x7
+   mov    esi,0x1000
+   mov    edi,0x405000 ;; Address would be diff.
+   mov    rax, 9; In linux at least
+   syscall
+   cmp    rax,0xffffffffffffffff
+   je     30 ; Size of payload * 2 + jmp_size
+   
+#+end_src
+
+#+begin_src c :tangle no
+     #define PROT_READ	0x1		/* Page can be read.  */
+     #define PROT_WRITE	0x2		/* Page can be written.  */
+     #define PROT_EXEC	0x4		/* Page can be executed.  */
+     #define PROT_NONE	0x0		/* Page can not be accessed.  */
+     #define PROT_GROWSDOWN	0x01000000	/* Extend change to start of
+                                                growsdown vma (mprotect only).  */
+     #define PROT_GROWSUP	0x02000000	/* Extend change to start of
+                                                growsup vma (mprotect only).  */
+
+     /* Sharing types (must choose one and only one of these).  */
+     #define MAP_SHARED	0x01		/* Share changes.  */
+     #define MAP_PRIVATE	0x02		/* Changes are private.  */
+     #define MAP_SHARED_VALIDATE	0x03	/* Share changes and validate
+                                                extension flags.  */
+     #define MAP_TYPE	0x0f		/* Mask for type of mapping.  */
+
+     /* Other flags.  */
+     #define MAP_FIXED	0x10		/* Interpret addr exactly.  */
+     #define MAP_FILE	0
+     #ifdef __MAP_ANONYMOUS
+     # define MAP_ANONYMOUS	__MAP_ANONYMOUS	/* Don't use a file.  */
+     #else
+     # define MAP_ANONYMOUS	0x20		/* Don't use a file.  */
+     #endif
+     #define MAP_ANON	MAP_ANONYMOUS
+     /* When MAP_HUGETLB is set bits [26:31] encode the log2 of the huge page size.  */
+     #define MAP_HUGE_SHIFT	26
+     #define MAP_HUGE_MASK	0x3f
+
+#+end_src
 ** TODO mprotect the decrypted payload.
 ** TODO jmp to the decrypted payload.
