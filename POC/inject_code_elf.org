@@ -8,8 +8,7 @@ Modify makefile to compile the differents targets and start testing with it.
    1. [X] Test that execute normally.
 2. [-] Add the function || code to execute at the end of the =.text= section.
    1. [X] Get the assembly code to insert in the file.
-   2. [-] update sh and ph sh_size and p_filesz p_mems,
-      1. [ ] In case the target file got different endianess that our machine we should swap the offset .... previous and later to update the data correctly.
+   2. [X] update sh and ph sh_size and p_filesz p_mems,
       2. [X] update Shdr  // check for get the info and go modified ehdr, phdr.
          1. [X] sh_size
          2. [X] fill with 0x0 to reach align.
@@ -30,13 +29,10 @@ Modify makefile to compile the differents targets and start testing with it.
    2. [X] add to my payload a jmp to the OG address entrypoint.
    3. [X] add the expect payload and got diff payload depend of arch.
 4. [-] Start making the encrypt (rot13 for testing purpose)
-   1. [ ] use mmap to save payload and asign execution  and jmp to the address (u can cast as function pointer but i don't want to use call cause that modify the stack i want to leave the stack frame as clear as possible.)
+   1. [ ] use mmap to save payload and asign execution  and jmp to the address (u can call but i don't want to use call cause that modify the stack i want to leave the stack frame as clear as possible.)
    2. [ ] Will see soon
 
-** TODO Maybe usefull
-:PROPERTIES:
-:ORDERED:  t
-:END:
+** REVIEW Maybe usefull
    [X] check the paylod  appear. ~objdump -M intel -D file | tail~
    [X] check the payload.bin is fine ~ndisasm -b {32,64} file~.
    [X] Test that work.
@@ -236,7 +232,8 @@ Modify makefile to compile the differents targets and start testing with it.
         }
       return  (i);
     }
-    //TODO
+
+    //TODO check is working.
     size_t elf_get_highest_vaddr_avalaible(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
     {
       t_elf_ph phdr;
@@ -798,10 +795,25 @@ Modify makefile to compile the differents targets and start testing with it.
         }
       bytecode_buffer_size += decrypt_rot13_asm(NULL, cypher_payload_size, class);
       size_t size_of_cp_payload_to_mmap = copy_payload_to_mmap(NULL, cypher_payload_size); // + 4. 
-      printf("size_of_cp_payload_to_mmap %lu\n", size_of_cp_payload_to_mmap);
-
+      int bytecode_until_mmap_fd = open("open_mmap_until_mmap_addr.bin", O_RDONLY);
+      if (bytecode_until_mmap_fd < 0)
+        return (1);
+      const off_t bytecode_until_mmap_fd_size = lseek(bytecode_until_mmap_fd,0, SEEK_END);
+      if (bytecode_until_mmap_fd_size == -1)
+        return (6);
+      if (lseek(bytecode_until_mmap_fd, 0, SEEK_SET) == -1)
+        return (7);
+      int bytecode_after_mmap_fd = open("open_mmap_after_mmap_addr", O_RDONLY);
+      if (bytecode_after_mmap_fd < 0)
+        return (1);
+      const off_t bytecode_after_mmap_fd_size = lseek(bytecode_after_mmap_fd,0, SEEK_END);
+      if (bytecode_after_mmap_fd_size == -1)
+        return (6);
+      if (lseek(bytecode_after_mmap_fd, 0, SEEK_SET) == -1)
+        return (7);
+      uint32_t highest_vaddr;
       // * 2 equal size sub and add
-      size_t generated_bytecode_size = bytecode_buffer_size + size_of_cp_payload_to_mmap + 2 * ft_sub_asm_rsp(NULL, cypher_payload_size, class) + jmp_size + get_je_size();
+      size_t generated_bytecode_size = bytecode_buffer_size + size_of_cp_payload_to_mmap + 2 * ft_sub_asm_rsp(NULL, cypher_payload_size, class) + (2 * jmp_size) + get_je_size() + bytecode_after_mmap_fd_size + bytecode_until_mmap_fd_size + sizeof(uint32_t);
   ;
       // PDTE decrypt, mmap, jmp to the map
       char *generated_bytecode = malloc(generated_bytecode_size);
@@ -817,16 +829,38 @@ Modify makefile to compile the differents targets and start testing with it.
           cypher_payload_index++;
         }
       generated_bytecode_index += decrypt_rot13_asm((void *)generated_bytecode + generated_bytecode_index, cypher_payload_size, class);//insert decrypt in real time bytecode.
+
       // Insert mmap
-      generated_bytecode_index += ft_je((void *)generated_bytecode + generated_bytecode_index, size_of_cp_payload_to_mmap + 4);
+      char *bytecode_until_mmap_buffer = malloc(bytecode_until_mmap_fd_size);
+      if (!bytecode_until_mmap_buffer)
+        return (8);
+     if (read(bytecode_until_mmap_fd, bytecode_until_mmap_buffer, bytecode_until_mmap_fd_size) != bytecode_until_mmap_fd_size)
+        return (9);
+
+      memcpy(generated_bytecode + generated_bytecode_index, bytecode_until_mmap_buffer, bytecode_until_mmap_fd_size);
+      generated_bytecode_index += bytecode_until_mmap_fd_size;
+      highest_vaddr = elf_get_highest_vaddr_avalaible(&ehdr, class, phnum);
+      memcpy(generated_bytecode + generated_bytecode_index, &highest_vaddr, sizeof(highest_vaddr));
+      generated_bytecode_index += sizeof(highest_vaddr);
+      char *bytecode_after_mmap_buffer = malloc(bytecode_after_mmap_fd_size);
+      if (!bytecode_after_mmap_buffer)
+        return (8);
+     if (read(bytecode_after_mmap_fd, bytecode_after_mmap_buffer, bytecode_after_mmap_fd_size) != bytecode_after_mmap_fd_size)
+        return (9);
+      memcpy(generated_bytecode + generated_bytecode_index, bytecode_after_mmap_buffer, bytecode_after_mmap_fd_size);
+      generated_bytecode_index += bytecode_after_mmap_fd_size;
+
+      generated_bytecode_index += ft_je((void *)generated_bytecode + generated_bytecode_index, size_of_cp_payload_to_mmap + 4 + jmp_size); // jmp 4 cause the address need 4 bytes and jmp_size got a mov_rax_jmp_rax append at the end of mmap_copy
       // Copy payload to mmap
       generated_bytecode_index += copy_payload_to_mmap((void *)generated_bytecode + generated_bytecode_index, cypher_payload_size);
 
       generated_bytecode_index += ft_add_asm_rsp(generated_bytecode + generated_bytecode_index, cypher_payload_index, class);
-      set_jmp_entrypoint(generated_bytecode + generated_bytecode_index, e_entrypoint, class);// In future would be mmap
+      set_jmp_entrypoint(generated_bytecode + generated_bytecode_index, highest_vaddr, class);
+      generated_bytecode_index += jmp_size;
+      set_jmp_entrypoint(generated_bytecode + generated_bytecode_index, e_entrypoint, class);
       generated_bytecode_index += jmp_size;
       if (generated_bytecode_index != generated_bytecode_size)
-        printf("generated_bytecode_size - generated_bytecode_index = %lu\n", generated_bytecode_size - generated_bytecode_index);
+        printf("generated_bytecode_size - generated_bytecode_index = %lu -> reverse: %lu\n", generated_bytecode_size - generated_bytecode_index, generated_bytecode_index - generated_bytecode_size);
 
       if (write(2, generated_bytecode, generated_bytecode_size) != (ssize_t)generated_bytecode_size)
         printf("error on write the generated bytecode\n"); 
@@ -987,43 +1021,6 @@ Modify makefile to compile the differents targets and start testing with it.
 
 * Try to make more indepedience the code not that hardcoded.
 
-* make the jump to the entrypoint.
-#+begin_src c :tangle no
-  void create_jump_payload(uint64_t entry_point, char *payload) {
-    // Assuming payload has enough space
-    // Clear the payload
-    memset(payload, 0, 64); // Adjust size as needed
-
-    // Create a jump instruction
-    // For a near jump, we use the opcode 0xE9
-    payload[0] = 0xE9; // Opcode for JMP
-
-    // Calculate the relative address
-    // The address of the instruction following the jump
-    uint64_t next_instruction_address = (uint64_t)(payload + 5); // 5 bytes for the jump instruction
-
-    // Calculate the relative offset
-    int32_t offset = (int32_t)(entry_point - next_instruction_address);
-
-    // Copy the offset into the payload (little-endian)
-    memcpy(payload + 1, &offset, sizeof(offset));
-}
-#+end_src
-
-#+begin_src sh :tangle no
-objdump -M intel -D woody | tail
-
-Disassembly of section .text:
-
-0000000000401000 <_start>:
-  401000:	48 31 ff             	xor    rdi,rdi // OG Code exit(0);
-  401003:	b8 3c 00 00 00       	mov    eax,0x3c
-  401008:	0f 05                	syscall
-  40100a:	48 31 ff             	xor    rdi,rdi // Payload Code
-  40100d:	48 31 ff             	xor    rdi,rdi
-  401010:	48                   	rex.W          // i just add one B for pass the size of original_section_free_space an need to modify more things ehdr.
-#+end_src
-
 * Creating the real payload for the project, Fixing the offset in phdr
 :LOGBOOK:
 CLOCK: [2025-07-08 Tue 11:54]--[2025-07-08 Tue 15:00] =>  3:06
@@ -1053,7 +1050,7 @@ name@name:~/Documents/woody-woodpacker/POC$ ./a.out
 name@name:~/Documents/woody-woodpacker/POC$ echo $?
 0
 #+end_src
-* TODO encrypt the payload rot13, append the decrypt function to the payload, decrypt on the mmap, use mprotect to give EXEC perms.
+* TODO encrypt the payload rot13, append the decrypt function to the payload, decrypt on the mmap, use mmap to give EXEC perms.
 :LOGBOOK:
 CLOCK: [2025-07-10 Thu 12:40]--[2025-07-10 Thu 17:16] =>  4:36
 :END:
@@ -1073,7 +1070,7 @@ CLOSED: [2025-07-10 Thu 17:59]
 - State "DONE"       from "TODO"       [2025-07-10 Thu 17:59]
 :END:
 ./woody
-Illegal instruction (core dumped) apparently encrypt the payload and execute it with decrypt don't like it.
+Illegal instruction (core dumped) apparently encrypt the payload and execute it with out decrypt don't like it.
 
 ** DONE put the encrypt string in bytecode in asm
 CLOSED: [2025-07-14 Mon 17:55]
@@ -1350,7 +1347,7 @@ similar to the write payload but change mov to sub
 
 ** TODO mmap the decrypted payload.
 :LOGBOOK:
-CLOCK: [2025-07-15 Tue 12:58]
+CLOCK: [2025-07-15 Tue 12:58]--[2025-07-15 Tue 17:38] =>  4:40
 :END:
 first step search the definition of the params
 #+begin_src c :tangle payload/payload_mmap.c
@@ -1410,5 +1407,8 @@ first step search the definition of the params
      #define MAP_HUGE_MASK	0x3f
 
 #+end_src
-** TODO mprotect the decrypted payload.
+
+*** TODO insert payload until mmap addr
+*** TODO insert payload max avalaible addr
+*** TODO insert payload after mmap addr
 ** TODO jmp to the decrypted payload.
