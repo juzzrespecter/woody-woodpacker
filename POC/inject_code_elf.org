@@ -28,15 +28,15 @@ Modify makefile to compile the differents targets and start testing with it.
       1. [X] The easiest way to load machine code dinamically is reading a file.
    2. [X] add to my payload a jmp to the OG address entrypoint.
    3. [X] add the expect payload and got diff payload depend of arch.
-4. [-] Start making the encrypt (rot13 for testing purpose)
-   1. [ ] use mmap to save payload and asign execution  and jmp to the address (u can call but i don't want to use call cause that modify the stack i want to leave the stack frame as clear as possible.)
-   2. [ ] Will see soon
+4. [X] Start making the encrypt (rot13 for testing purpose)
+   1. [X] use mmap to save payload and asign execution  and jmp to the address (u can call but i don't want to use call cause that modify the stack i want to leave the stack frame as clear as possible.)
+   2. [ ] Compression.
 
 ** REVIEW Maybe usefull
    [X] check the paylod  appear. ~objdump -M intel -D file | tail~
    [X] check the payload.bin is fine ~ndisasm -b {32,64} file~.
    [X] Test that work.
-   
+   [X] Get byte code ~objdump -M intel --disassemble=_start binary_file | awk 'NR > 7 {for(i=1; i<=NF; i++) if ($i ~ /^[0-9a-fA-F]+$/ && length($i) == 2) printf "\\x%s", $i;}'~
      
 
 #+begin_src c :tangle srcs/elf/POC/add_instructions.c :mkdirp yes
@@ -57,6 +57,7 @@ Modify makefile to compile the differents targets and start testing with it.
       return (((size + alignment - 1) / alignment) * alignment);
     }
 
+	
     // Maybe paranoia
     bool is_little_endian_the_cpu(void)
     {
@@ -65,23 +66,6 @@ Modify makefile to compile the differents targets and start testing with it.
       return (*(uint8_t *)&num == 1);
     }
 
-    // Maybe paranoia is bad need to swap all the bits not the bytes.
-    uint64_t swap_endianess(uint64_t value)
-    {
-      uint64_t swapped;
-      uint64_t i;
-
-      swapped = 0;
-      i = 0;
-      while (i < 8)
-        {
-          swapped |= ((value >> (i * 8)) & 0xFF) << ((7 - i) * 8);
-          i++;
-        }
-      return swapped;
-    }
-    //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
-    // segfault for advice if i am doing something bad.
     void elf_phdr_set_memsz(t_elf_ph *phdr, uint64_t value, unsigned char class)
     {
       if (class == ELFCLASS32) 
@@ -94,8 +78,6 @@ Modify makefile to compile the differents targets and start testing with it.
       phdr->elf64->p_memsz = value;
     }
 
-    //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
-    // segfault for advice if i am doing something bad.
     void elf_phdr_set_offset(t_elf_ph *phdr, uint64_t value, unsigned char class)
     {
       if (class == ELFCLASS32) 
@@ -108,8 +90,6 @@ Modify makefile to compile the differents targets and start testing with it.
       phdr->elf64->p_offset = value;
     }
 
-    //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
-    // segfault for advice if i am doing something bad.
     void elf_phdr_set_vaddr(t_elf_ph *phdr, uint64_t value, unsigned char class)
     {
       if (class == ELFCLASS32) 
@@ -134,8 +114,6 @@ Modify makefile to compile the differents targets and start testing with it.
       phdr->elf64->p_paddr = value;
     }
 
-    //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
-    // segfault for advice if i am doing something bad.
     void elf_phdr_set_filesz(t_elf_ph *phdr, uint64_t value, unsigned char class)
     {
       if (class == ELFCLASS32) 
@@ -148,8 +126,6 @@ Modify makefile to compile the differents targets and start testing with it.
       phdr->elf64->p_filesz = value;
     }
 
-    //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
-    // segfault for advice if i am doing something bad.
     void elf_ehdr_set_shoff(t_elf_h *ehdr, uint64_t value, unsigned char class)
     {
       if (class == ELFCLASS32) 
@@ -174,8 +150,7 @@ Modify makefile to compile the differents targets and start testing with it.
       printf("ehdr set entry elf64\n");
       ehdr->elf64->e_entry = value;
     }
-    //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm.
-    // segfault for advice if i am doing something bad.
+
     void elf_shdr_set_addr(t_elf_sh *shdr, uint64_t value, unsigned char class)
     {
       if (class == ELFCLASS32) 
@@ -189,7 +164,6 @@ Modify makefile to compile the differents targets and start testing with it.
     }
 
     //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm
-    // segfault for advice if i am doing something bad.
     void elf_shdr_set_size(t_elf_sh *shdr, uint64_t value, unsigned char class)
     {
       if (class == ELFCLASS32) 
@@ -233,7 +207,6 @@ Modify makefile to compile the differents targets and start testing with it.
       return  (i);
     }
 
-    //TODO check is working.
     size_t elf_get_highest_vaddr_avalaible(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
     {
       t_elf_ph phdr;
@@ -696,6 +669,23 @@ Modify makefile to compile the differents targets and start testing with it.
     return (written);
   }
 
+  size_t set_jmp_rax(void *dst)
+  {
+    if (dst)
+      memcpy(dst, "\xFF\xE0", 2);
+    return (2);
+  }
+
+  size_t set_mov_edi(void *dst, uint32_t value)
+  {
+    if (dst)
+      {
+        memcpy(dst, "\xbf", 1);
+        memcpy(dst + 1, &value, sizeof(value));
+      }
+    return (sizeof(value) + 1);
+  }
+
   static size_t copy_payload_to_mmap_aux(unsigned char *dst, size_t offset)
   {
     size_t written;
@@ -752,6 +742,7 @@ Modify makefile to compile the differents targets and start testing with it.
           munmap(elf_mmap, file_size);
           return (4);
         } // Starting POC part
+      // 1. 
       // Get the section to include the payload
       t_elf_sh		shdr;
       t_elf_ph		phdr;
@@ -795,7 +786,7 @@ Modify makefile to compile the differents targets and start testing with it.
         }
       bytecode_buffer_size += decrypt_rot13_asm(NULL, cypher_payload_size, class);
       size_t size_of_cp_payload_to_mmap = copy_payload_to_mmap(NULL, cypher_payload_size); // + 4. 
-      int bytecode_until_mmap_fd = open("open_mmap_until_mmap_addr.bin", O_RDONLY);
+      int bytecode_until_mmap_fd = open("open_mmap_until_mmap_size.bin", O_RDONLY);
       if (bytecode_until_mmap_fd < 0)
         return (1);
       const off_t bytecode_until_mmap_fd_size = lseek(bytecode_until_mmap_fd,0, SEEK_END);
@@ -812,8 +803,9 @@ Modify makefile to compile the differents targets and start testing with it.
       if (lseek(bytecode_after_mmap_fd, 0, SEEK_SET) == -1)
         return (7);
       uint32_t highest_vaddr;
+      uint32_t mmap_size;
       // * 2 equal size sub and add
-      size_t generated_bytecode_size = bytecode_buffer_size + size_of_cp_payload_to_mmap + 2 * ft_sub_asm_rsp(NULL, cypher_payload_size, class) + jmp_size + 2 + get_js_size() + bytecode_after_mmap_fd_size + bytecode_until_mmap_fd_size + sizeof(uint32_t);
+      size_t generated_bytecode_size = bytecode_buffer_size + size_of_cp_payload_to_mmap + 2 * ft_sub_asm_rsp(NULL, cypher_payload_size, class) + jmp_size + set_jmp_rax(NULL) + get_js_size() + bytecode_after_mmap_fd_size + bytecode_until_mmap_fd_size + sizeof(highest_vaddr) + set_mov_edi(NULL, 0) + sizeof(mmap_size);
   ;
       // PDTE decrypt, mmap, jmp to the map
       char *generated_bytecode = malloc(generated_bytecode_size);
@@ -839,9 +831,13 @@ Modify makefile to compile the differents targets and start testing with it.
 
       memcpy(generated_bytecode + generated_bytecode_index, bytecode_until_mmap_buffer, bytecode_until_mmap_fd_size);
       generated_bytecode_index += bytecode_until_mmap_fd_size;
+      mmap_size = get_alignment_size(0x1000, cypher_payload_size); // Page alignment
+      memcpy(generated_bytecode + generated_bytecode_index, &mmap_size, sizeof(mmap_size));
+      generated_bytecode_index += sizeof(mmap_size);
       highest_vaddr = elf_get_highest_vaddr_avalaible(&ehdr, class, phnum);
-      memcpy(generated_bytecode + generated_bytecode_index, &highest_vaddr, sizeof(highest_vaddr));
-      generated_bytecode_index += sizeof(highest_vaddr);
+      generated_bytecode_index += set_mov_edi(generated_bytecode + generated_bytecode_index, highest_vaddr);
+      /* memcpy(generated_bytecode + generated_bytecode_index, &highest_vaddr, sizeof(highest_vaddr)); */
+      /* generated_bytecode_index += sizeof(highest_vaddr); */
       char *bytecode_after_mmap_buffer = malloc(bytecode_after_mmap_fd_size);
       if (!bytecode_after_mmap_buffer)
         return (8);
@@ -855,7 +851,7 @@ Modify makefile to compile the differents targets and start testing with it.
       generated_bytecode_index += copy_payload_to_mmap((void *)generated_bytecode + generated_bytecode_index, cypher_payload_size);
 
       generated_bytecode_index += ft_add_asm_rsp(generated_bytecode + generated_bytecode_index, cypher_payload_index, class);
-      memcpy(generated_bytecode + generated_bytecode_index, "\xFF\xE0", 2); 
+      memcpy(generated_bytecode + generated_bytecode_index, "\xFF\xE0", 2); //jmp_rax
       generated_bytecode_index += 2;
       set_jmp_entrypoint(generated_bytecode + generated_bytecode_index, e_entrypoint, class);
       generated_bytecode_index += jmp_size;
@@ -1050,8 +1046,10 @@ name@name:~/Documents/woody-woodpacker/POC$ ./a.out
 name@name:~/Documents/woody-woodpacker/POC$ echo $?
 0
 #+end_src
-* TODO encrypt the payload rot13, append the decrypt function to the payload, decrypt on the mmap, use mmap to give EXEC perms.
+* DONE encrypt the payload rot13, append the decrypt function to the payload, decrypt on the mmap, use mmap to give EXEC perms.
+CLOSED: [2025-07-17 Thu 11:27]
 :LOGBOOK:
+- State "DONE"       from "TODO"       [2025-07-17 Thu 11:27]
 CLOCK: [2025-07-10 Thu 12:40]--[2025-07-10 Thu 17:16] =>  4:36
 :END:
 ** DONE Get the payload for the subject works properly.
@@ -1335,8 +1333,8 @@ similar to the write payload but change mov to sub
   000002FF 806C244A0D        sub byte [rsp+0x4a],0xd
   00000304  806C244B0D        sub byte [rsp+0x4b],0xd
   00000309  806C244C0D        sub byte [rsp+0x4c],0xd
-  0000030E  806C244D0D        sub byte [rsp+0x4d],0xd
   00000313  806C244E0D        sub byte [rsp+0x4e],0xd
+  0000030E  806C244D0D        sub byte [rsp+0x4d],0xd
   00000318  4883C44F          add rsp,byte +0x4f ; -> leave as find stack pointer addr
 ;; Here should be the part of mmap and mprotect if error jmp to entrypoint as nothing happend.
   0000031C  48B8001040000000  mov rax,0x401000; -> set a register to entrypoint
@@ -1345,8 +1343,10 @@ similar to the write payload but change mov to sub
 
 #+end_src
 
-** TODO mmap the decrypted payload.
+** DONE mmap the decrypted payload.
+CLOSED: [2025-07-17 Thu 11:27]
 :LOGBOOK:
+- State "DONE"       from "TODO"       [2025-07-17 Thu 11:27]
 CLOCK: [2025-07-15 Tue 12:58]--[2025-07-15 Tue 17:38] =>  4:40
 :END:
 first step search the definition of the params
@@ -1408,7 +1408,66 @@ first step search the definition of the params
 
 #+end_src
 
-*** TODO insert payload until mmap addr
-*** TODO insert payload max avalaible addr
-*** TODO insert payload after mmap addr
-** TODO jmp to the decrypted payload.
+*** DONE insert payload until mmap addr
+CLOSED: [2025-07-17 Thu 11:26]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-07-17 Thu 11:26]
+:END:
+
+*** DONE insert payload max avalaible addr
+CLOSED: [2025-07-17 Thu 11:26]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-07-17 Thu 11:26]
+:END:
+
+*** DONE insert payload after mmap addr
+CLOSED: [2025-07-17 Thu 11:26]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-07-17 Thu 11:26]
+:END:
+
+** DONE jmp to the decrypted payload.
+CLOSED: [2025-07-17 Thu 11:26]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-07-17 Thu 11:26]
+:END:
+
+* DONE don't use a hardcoded mmap size in this case 0x1000 adjust with alignment and size of mmap.
+CLOSED: [2025-07-17 Thu 16:57]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-07-17 Thu 16:57]
+:END:
+
+* DONE make the Workflow logic
+CLOSED: [2025-07-17 Thu 13:46]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-07-17 Thu 13:46]
+:END:
+- Get the file
+- Validate the file
+- Get where put the payload.
+- Get the Payload -> This is the proccess one you got it you don't need all this steps.
+  - Get the subject payload
+    - We need to create a payload to upload the write(1, "....WOODY....\n", 14), jmp entrypoint.
+    - Use the stack for hold the string.
+    - make the syscall for write.
+  - Get the upload of the payload.
+    - Again in the stack | or directly in the mmap if work write the decryption payload.
+    - if mmap fail cmp rax, rax -> js entrypoint.
+    - if mmap work mov the payload and jmp rax -> the address of mmap
+- Update all the values as needed.
+  - If one offset is after the payload should push the payload size + alignment if needed.
+  - If hold size of the offset.
+  - If hold the entrypoint of executable.
+- Write the content.
+
+
+* PLAN Use directly the mmap to write the payload.
+Avoid time in execute the payload may implemented when valid encrypt algorithm.
+
+* TODO make the x32 bit check and adjustment if need it.
+
+* TODO Refactor the code for readability.
+
+* TODO Read the guide for what compress ...
+I would avoid compress all the file cause should be a valid elf file in is compress should give any kind of error.
