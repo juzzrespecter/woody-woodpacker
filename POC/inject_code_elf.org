@@ -208,7 +208,7 @@ Modify makefile to compile the differents targets and start testing with it.
           if (addr >= p_vaddr && p_vaddr + elf_get_program_header_filesz(&phdr, class) > addr)
             return  (i);
           /* Untested */
-          /* if (is_between(p_vaddr, p_vaddr + elf_get_program_header_memsz(&phdr, class), addr)) */
+          /* if (is_between(p_vaddr, p_vaddr + elf_get_program_header_memsz(&phdr, class) - 1, addr)) */
         }
       return  (i);
     }
@@ -963,9 +963,10 @@ Modify makefile to compile the differents targets and start testing with it.
           memcpy(phdr_cp.elf32, phdr.elf32, phdr_struct_size);
         }
       free(phdr_cp.elf32);
-      phdr = elf_get_program_header(&ehdr, elf_get_program_ndx_from_addr(&ehdr, class, phnum, shcp_addr));
-      const uint64_t phcp_vaddr = elf_get_program_header_vaddr(&phcp_addr, class);//  for increment addr
-      const uint64_t phcp_memsz = elf_get_program_header_memsz(&phcp_addr, class);//  for increment addr
+      // Test Below here to section addr.
+      /* phdr = elf_get_program_header(&ehdr, elf_get_program_ndx_from_addr(&ehdr, class, phnum, sh_addr)); */
+      /* const uint64_t phcp_vaddr = elf_get_program_header_vaddr(&phdr, class);//  for increment addr */
+      /* const uint64_t phcp_memsz = elf_get_program_header_memsz(&phdr, class);//  for increment addr */
       writed += write(packed, elf_mmap + writed, sh_offset_payload - writed);
 
       uint64_t modified_section_free_space = new_align_size - (sh_size + payload_size);
