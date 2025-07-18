@@ -57,7 +57,7 @@ Modify makefile to compile the differents targets and start testing with it.
       return (((size + alignment - 1) / alignment) * alignment);
     }
 
-	
+
     // Maybe paranoia
     bool is_little_endian_the_cpu(void)
     {
@@ -190,7 +190,11 @@ Modify makefile to compile the differents targets and start testing with it.
 
     int elf_insert_payload(void *elf_mmap, off_t file_size, int packed);
 
-    uint64_t elf_get_program_ndx_from_entrypoint(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t e_entrypoint)
+  bool is_between(uint64_t lower_limit, uint64_t upper_limit, uint64_t value)
+  {
+    return (lower_limit >= value && value <= upper_limit);
+  }
+    uint64_t elf_get_program_ndx_from_addr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t addr)
     {
       t_elf_ph phdr;
       uint64_t i;
@@ -201,8 +205,10 @@ Modify makefile to compile the differents targets and start testing with it.
         {
           phdr = elf_get_program_header(ehdr, i);
           p_vaddr = elf_get_program_header_vaddr(&phdr, class);
-          if (e_entrypoint >= p_vaddr && p_vaddr + elf_get_program_header_filesz(&phdr, class) > e_entrypoint)
+          if (addr >= p_vaddr && p_vaddr + elf_get_program_header_filesz(&phdr, class) > addr)
             return  (i);
+          /* Untested */
+          /* if (is_between(p_vaddr, p_vaddr + elf_get_program_header_memsz(&phdr, class), addr)) */
         }
       return  (i);
     }
@@ -231,33 +237,16 @@ Modify makefile to compile the differents targets and start testing with it.
       return  (max_vaddr + max_align_size);
     }
 
-    uint64_t elf_get_program_ndx_from_shdr(t_elf_h *ehdr, t_elf_sh *shdr, unsigned char class, uint64_t phnum)
-    {
-      const uint64_t sh_offset = elf_get_section_header_offset(shdr, class);
-      uint64_t i;
-      t_elf_ph phdr;
-
-      i = 0;
-      while (++i < phnum) // Skip the first 
-        {
-          phdr = elf_get_program_header(ehdr, i);
-          if (elf_get_program_header_offset(&phdr, class) == sh_offset)
-            return  (i);
-        }
-      return  (i);
-    }
-
-    uint64_t elf_get_section_ndx_from_phdr(t_elf_h *ehdr, t_elf_ph *phdr, unsigned char class, uint64_t shnum)
+    uint64_t elf_get_section_ndx_from_entrypoint(t_elf_h *ehdr, size_t entrypoint, unsigned char class, uint64_t shnum)
     {
       t_elf_sh		shdr;
       uint64_t 		i;
-      const uint64_t		p_offset = elf_get_program_header_offset(phdr, class);
 
       i = 0;
       while (i < shnum) //run for each section_header
         {
           shdr = elf_get_section_header(ehdr, i);
-          if (p_offset == elf_get_section_header_offset(&shdr, class))
+          if (entrypoint == elf_get_section_header_addr(&shdr, class))
             return (i);
           i++;
         }
@@ -775,8 +764,6 @@ Modify makefile to compile the differents targets and start testing with it.
         return (9);
       set_jmp_entrypoint(cypher_payload + cypher_payload_fd_size, e_entrypoint, class);
       encrypt(cypher_payload, cypher_payload_size);
-      /* set_jmp_entrypoint(cypher_payload + cypher_payload_fd_size, e_entrypoint, class); */
-      // Here we make the test not encrypt to set the bytecode cypher_payload in a buffer in asm.
       size_t bytecode_buffer_size = 0;
       size_t cypher_payload_index = 0;
       while (cypher_payload_index < cypher_payload_size)
@@ -785,6 +772,7 @@ Modify makefile to compile the differents targets and start testing with it.
           cypher_payload_index++;
         }
       bytecode_buffer_size += decrypt_rot13_asm(NULL, cypher_payload_size, class);
+
       size_t size_of_cp_payload_to_mmap = copy_payload_to_mmap(NULL, cypher_payload_size); // + 4. 
       int bytecode_until_mmap_fd = open("open_mmap_until_mmap_size.bin", O_RDONLY);
       if (bytecode_until_mmap_fd < 0)
@@ -802,16 +790,15 @@ Modify makefile to compile the differents targets and start testing with it.
         return (6);
       if (lseek(bytecode_after_mmap_fd, 0, SEEK_SET) == -1)
         return (7);
+
       uint32_t highest_vaddr;
       uint32_t mmap_size;
       // * 2 equal size sub and add
-      size_t generated_bytecode_size = bytecode_buffer_size + size_of_cp_payload_to_mmap + 2 * ft_sub_asm_rsp(NULL, cypher_payload_size, class) + jmp_size + set_jmp_rax(NULL) + get_js_size() + bytecode_after_mmap_fd_size + bytecode_until_mmap_fd_size + sizeof(highest_vaddr) + set_mov_edi(NULL, 0) + sizeof(mmap_size);
+      size_t generated_bytecode_size = bytecode_buffer_size + size_of_cp_payload_to_mmap + 3 * ft_sub_asm_rsp(NULL, cypher_payload_size, class) + jmp_size + set_jmp_rax(NULL) + get_js_size() + bytecode_after_mmap_fd_size + bytecode_until_mmap_fd_size + set_mov_edi(NULL, 0) + sizeof(mmap_size);
   ;
-      // PDTE decrypt, mmap, jmp to the map
       char *generated_bytecode = malloc(generated_bytecode_size);
       if (!generated_bytecode)
         return (10);
-      printf ("malloc no error generated_bytecode\n");
       size_t generated_bytecode_index = 0;
       generated_bytecode_index += ft_sub_asm_rsp(generated_bytecode, cypher_payload_size, class);
       cypher_payload_index = 0;
@@ -853,6 +840,7 @@ Modify makefile to compile the differents targets and start testing with it.
       generated_bytecode_index += ft_add_asm_rsp(generated_bytecode + generated_bytecode_index, cypher_payload_index, class);
       memcpy(generated_bytecode + generated_bytecode_index, "\xFF\xE0", 2); //jmp_rax
       generated_bytecode_index += 2;
+      generated_bytecode_index += ft_add_asm_rsp(generated_bytecode + generated_bytecode_index, cypher_payload_index, class);
       set_jmp_entrypoint(generated_bytecode + generated_bytecode_index, e_entrypoint, class);
       generated_bytecode_index += jmp_size;
       if (generated_bytecode_index != generated_bytecode_size)
@@ -863,17 +851,18 @@ Modify makefile to compile the differents targets and start testing with it.
       /* free(generated_bytecode); */
 
       const uint64_t payload_size = generated_bytecode_size;
-
+      // Fine let's look below this line
       uint64_t 		ndx_sh;
       uint64_t 		ndx_ph;
 
-      ndx_ph = elf_get_program_ndx_from_entrypoint(&ehdr, class, phnum, e_entrypoint);
+      ndx_ph = elf_get_program_ndx_from_addr(&ehdr, class, phnum, e_entrypoint);
       if (phnum <= ndx_ph)
         return (10);
       printf("ndx_ph -> %lu\n", ndx_ph);
       phdr = elf_get_program_header(&ehdr, ndx_ph);
 
-      ndx_sh = elf_get_section_ndx_from_phdr(&ehdr, &phdr, class, shnum);
+      ndx_sh = elf_get_section_ndx_from_entrypoint(&ehdr, e_entrypoint, class, shnum);
+      printf("ndx_sh -> %lu\n", ndx_sh);
       if (shnum <= ndx_sh)
         return (11);
       shdr = elf_get_section_header(&ehdr, ndx_sh);
@@ -916,13 +905,20 @@ Modify makefile to compile the differents targets and start testing with it.
       elf_ehdr_set_entry(&ehdr_cp, e_entrypoint + sh_size, class); // Modify entrypoint.
       writed += write(packed, ehdr_cp.elf32, elf_struct_size);
       free(ehdr_cp.elf32);
+      //Until here all right
 
       //if (e_phoff < e_shoff) this is supose in some cases not happend but in executable happend.
       //Program header
       uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
 
       // Write the first header
-      writed += write(packed, elf_mmap + writed, phdr_struct_size);
+
+      printf("writed %lu\n", writed);
+      printf("ndx_ph %lu\n", ndx_ph);
+      printf("size_ph %lu\n", phdr_struct_size);
+      printf("size_ph * ndx_ph %lu\n", phdr_struct_size * ndx_ph);
+
+      writed += write(packed, elf_mmap + writed, phdr_struct_size * ndx_ph);
       t_elf_ph phdr_cp = {.elf32 = malloc(phdr_struct_size)};
       if (!phdr_cp.elf32)
         {
@@ -935,8 +931,13 @@ Modify makefile to compile the differents targets and start testing with it.
       uint64_t p_memsz = elf_get_program_header_memsz(&phdr, class);
       uint64_t p_filesz = elf_get_program_header_filesz(&phdr, class);
       printf("p_align -> %lu\n", p_align);
+      printf("p_memsz -> %lu\n", p_memsz);
+      printf("p_filesz -> %lu\n", p_filesz);
       uint64_t p_og_align_addr = get_alignment_size(p_align, p_filesz); 
-      uint64_t p_modified_align_addr = get_alignment_size(p_align, p_filesz + payload_size); 
+      uint64_t p_modified_align_addr = get_alignment_size(p_align, p_filesz + payload_size);
+
+      printf("p_og_align_addr -> %lu\n", p_og_align_addr);
+      printf("p_modified_align_addr -> %lu\n", p_modified_align_addr);
       const uint64_t og_p_vaddr = elf_get_program_header_vaddr(&phdr, class);
       const uint64_t og_p_paddr = elf_get_program_header_paddr(&phdr, class);
       elf_phdr_set_filesz(&phdr_cp, p_filesz + payload_size, class);
@@ -962,7 +963,9 @@ Modify makefile to compile the differents targets and start testing with it.
           memcpy(phdr_cp.elf32, phdr.elf32, phdr_struct_size);
         }
       free(phdr_cp.elf32);
-
+      phdr = elf_get_program_header(&ehdr, elf_get_program_ndx_from_addr(&ehdr, class, phnum, shcp_addr));
+      const uint64_t phcp_vaddr = elf_get_program_header_vaddr(&phcp_addr, class);//  for increment addr
+      const uint64_t phcp_memsz = elf_get_program_header_memsz(&phcp_addr, class);//  for increment addr
       writed += write(packed, elf_mmap + writed, sh_offset_payload - writed);
 
       uint64_t modified_section_free_space = new_align_size - (sh_size + payload_size);
@@ -970,6 +973,7 @@ Modify makefile to compile the differents targets and start testing with it.
       //write payload
       if (write(packed, generated_bytecode, payload_size) != (ssize_t)payload_size)
             printf("\r\n");
+      free(generated_bytecode);
       while (modified_section_free_space--) //Write alignment
         {
           if (write(packed, "\0", 1) != 1)
@@ -1465,7 +1469,36 @@ CLOSED: [2025-07-17 Thu 13:46]
 * PLAN Use directly the mmap to write the payload.
 Avoid time in execute the payload may implemented when valid encrypt algorithm.
 
+* TODO make work with a gcc program with asm work fine.
+
+** DONE May Increase the Phdr size over the alignment and increase the rest of v/p addr.
+CLOSED: [2025-07-18 Fri 14:54]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-07-18 Fri 14:54]
+:END:
+
+** TODO Increment address in section just inside the same Phdr. Create a function to help.
+** TODO May eat part of the null bytes if needed and fill it if necessary.
 * TODO make the x32 bit check and adjustment if need it.
+Compile
+with gcc -m32
+with nasm -f elf32
+with ld -melf_i386
+I create the payload
+#+begin_src shell :tangle no
+ndisasm -b 32 payload_32.bin
+00000000  83EC0E            sub esp,byte +0xe
+00000003  C704242E2E2E2E    mov dword [esp],0x2e2e2e2e
+0000000A  C7442404574F4F44  mov dword [esp+0x4],0x444f4f57
+00000012  C7442408592E2E2E  mov dword [esp+0x8],0x2e2e2e59
+0000001A  66C744240C2E0A    mov word [esp+0xc],0xa2e
+00000021  BA0E000000        mov edx,0xe
+00000026  89E1              mov ecx,esp
+00000028  BB01000000        mov ebx,0x1
+0000002D  B804000000        mov eax,0x4
+00000032  CD80              int 0x80
+00000034  83C40E            add esp,byte +0xe
+#+end_src
 
 * TODO Refactor the code for readability.
 
