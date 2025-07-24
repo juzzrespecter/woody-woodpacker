@@ -24,7 +24,7 @@ Modify makefile to compile the differents targets and start testing with it.
 3. [X] Payload Generating.
    1. [X] Find a easy way to generate a payload.
        ~objdump -M intel --disassemble=_start payload/woody_asm.o | awk 'NR > 7 {for(i=1; i<=NF; i++) if ($i ~ /^[0-9a-fA-F]+$/ && length($i) == 2) printf "\\x%s", $i;}'~
-       i detect 'add' asm instruction is detected as hex i avoid that with the length == 2
+       for avoid detect 'add' asm instruction is detected as hex i avoid that with the length == 2
       1. [X] The easiest way to load machine code dinamically is reading a file.
    2. [X] add to my payload a jmp to the OG address entrypoint.
    3. [X] add the expect payload and got diff payload depend of arch.
@@ -702,160 +702,140 @@ Modify makefile to compile the differents targets and start testing with it.
     return (written);
   }
 
-    int main(int argc, char **argv)
-    {
-      //validation params
-      if (argc != 2)
-        {
-          printf("usage: %s [filename]\n", *argv);
-          return (1);
-        }  	
-      //open file
-      int fd = open(argv[1], O_RDONLY); 
-      if (fd < 0)
-        return (2);
-      // get size file
-      const off_t file_size = lseek(fd, 0, SEEK_END);
-      if ((off_t) -1 == file_size || (off_t) -1 == lseek(fd, 0, SEEK_SET))
-        {
-          close(fd);
-          return (3);
-        }
-      // save on memory all the file
-      void *elf_mmap = mmap(NULL, file_size, PROT_READ, MAP_SHARED, fd, 0);
-      close(fd);
-      if (!elf_mmap)
-        return (1);
-      // open the file where we gonna add the payload
-      int packed = open("woody", O_CREAT | O_TRUNC | O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
-      if (packed < 0)
-        {
-          munmap(elf_mmap, file_size);
-          return (4);
-        } // starting poc part
-      // 1. Begin payload stuff
-      // get the section to include the payload
-      t_elf_sh		shdr;
-      t_elf_ph		phdr;
+  int generate_payload(void *elf_mmap, char **payload_ptr, size_t *payload_size)
+  {
+    // 1. Begin payload stuff
+    // get the section to include the payload
+    t_elf_h 		ehdr = (t_elf_h){.elf32 = elf_mmap};
+    const uint64_t     e_entrypoint = elf_get_elfh_entry(&ehdr);
+    /* const uint64_t 	shnum = elf_get_elfh_shnum(&ehdr); */
+    const uint64_t 	phnum = elf_get_elfh_phnum(&ehdr);
+    const unsigned char 	class = elf_get_elfh_e_ident_class(elf_mmap);
+    // in case find the section show relevant info function.
+
+    int cypher_payload_fd;
+    if (class == ELFCLASS64)
+      cypher_payload_fd = open("payload_64.bin", O_RDONLY);
+    else
+      cypher_payload_fd = open("payload_32.bin", O_RDONLY);
+    if (cypher_payload_fd < 0)
+      return (5);
+    const off_t cypher_payload_fd_size = lseek(cypher_payload_fd,0, SEEK_END);
+    if (cypher_payload_fd_size == -1)
+      return (6);
+    if (lseek(cypher_payload_fd, 0, SEEK_SET) == -1)
+      return (7);
+    off_t jmp_size = get_mov_rax_jmp_rax_size(class);
+
+    const uint64_t cypher_payload_size = cypher_payload_fd_size + jmp_size;
+    unsigned char *cypher_payload = malloc(cypher_payload_size);
+    if (!cypher_payload)
+      return (8);
+    if (read(cypher_payload_fd, cypher_payload, cypher_payload_fd_size) != cypher_payload_fd_size)
+      return (9);
+    close(cypher_payload_fd);
+    set_jmp_entrypoint(cypher_payload + cypher_payload_fd_size, e_entrypoint, class);
+    encrypt(cypher_payload, cypher_payload_size);
+    size_t bytecode_buffer_size = 0;
+    size_t cypher_payload_index = 0;
+    while (cypher_payload_index < cypher_payload_size)
+      {
+        bytecode_buffer_size += ft_mov_asm_rsp(NULL, cypher_payload_index, cypher_payload[cypher_payload_index]);
+        cypher_payload_index++;
+      }
+    bytecode_buffer_size += decrypt_rot13_asm(NULL, cypher_payload_size, class);
+
+    size_t size_of_cp_payload_to_mmap = copy_payload_to_mmap(NULL, cypher_payload_size); // + 4. 
+    int bytecode_until_mmap_fd = open("open_mmap_until_mmap_size.bin", O_RDONLY);
+    if (bytecode_until_mmap_fd < 0)
+      return (1);
+    const off_t bytecode_until_mmap_fd_size = lseek(bytecode_until_mmap_fd,0, SEEK_END);
+    if (bytecode_until_mmap_fd_size == -1)
+      return (6);
+    if (lseek(bytecode_until_mmap_fd, 0, SEEK_SET) == -1)
+      return (7);
+    int bytecode_after_mmap_fd = open("open_mmap_after_mmap_addr", O_RDONLY);
+    if (bytecode_after_mmap_fd < 0)
+      return (1);
+    const off_t bytecode_after_mmap_fd_size = lseek(bytecode_after_mmap_fd,0, SEEK_END);
+    if (bytecode_after_mmap_fd_size == -1)
+      return (6);
+    if (lseek(bytecode_after_mmap_fd, 0, SEEK_SET) == -1)
+      return (7);
+
+    uint32_t highest_vaddr;
+    uint32_t mmap_size;
+    // * 2 equal size sub and add
+    size_t generated_bytecode_size = bytecode_buffer_size + size_of_cp_payload_to_mmap + 3 * ft_sub_asm_rsp(NULL, cypher_payload_size, class) + jmp_size + set_jmp_rax(NULL) + get_js_size() + bytecode_after_mmap_fd_size + bytecode_until_mmap_fd_size + set_mov_edi(NULL, 0) + sizeof(mmap_size);
+    ;
+    char *generated_bytecode = malloc(generated_bytecode_size);
+    if (!generated_bytecode)
+      return (10);
+    size_t generated_bytecode_index = 0;
+    generated_bytecode_index += ft_sub_asm_rsp(generated_bytecode, cypher_payload_size, class);
+    cypher_payload_index = 0;
+    while (cypher_payload_index < cypher_payload_size)
+      {
+        generated_bytecode_index += ft_mov_asm_rsp(generated_bytecode + generated_bytecode_index, cypher_payload_index, cypher_payload[cypher_payload_index]);
+        cypher_payload_index++;
+      }
+    generated_bytecode_index += decrypt_rot13_asm((void *)generated_bytecode + generated_bytecode_index, cypher_payload_size, class);//insert decrypt in real time bytecode.
+
+    // insert mmap -> later no buffer
+    char *bytecode_until_mmap_buffer = malloc(bytecode_until_mmap_fd_size);
+    if (!bytecode_until_mmap_buffer)
+      return (8);
+    if (read(bytecode_until_mmap_fd, bytecode_until_mmap_buffer, bytecode_until_mmap_fd_size) != bytecode_until_mmap_fd_size)
+      return (9);
+    close(bytecode_until_mmap_fd);
+
+    memcpy(generated_bytecode + generated_bytecode_index, bytecode_until_mmap_buffer, bytecode_until_mmap_fd_size);
+    generated_bytecode_index += bytecode_until_mmap_fd_size;
+    mmap_size = get_alignment_size(0x1000, cypher_payload_size); // page alignment
+    memcpy(generated_bytecode + generated_bytecode_index, &mmap_size, sizeof(mmap_size));
+    generated_bytecode_index += sizeof(mmap_size);
+    highest_vaddr = elf_get_highest_vaddr_avalaible(&ehdr, class, phnum);
+    generated_bytecode_index += set_mov_edi(generated_bytecode + generated_bytecode_index, highest_vaddr);
+    /* memcpy(generated_bytecode + generated_bytecode_index, &highest_vaddr, sizeof(highest_vaddr)); */
+    /* generated_bytecode_index += sizeof(highest_vaddr); */
+    char *bytecode_after_mmap_buffer = malloc(bytecode_after_mmap_fd_size);
+    if (!bytecode_after_mmap_buffer)
+      return (8);
+    if (read(bytecode_after_mmap_fd, bytecode_after_mmap_buffer, bytecode_after_mmap_fd_size) != bytecode_after_mmap_fd_size)
+      return (9);
+    close(bytecode_after_mmap_fd);
+    memcpy(generated_bytecode + generated_bytecode_index, bytecode_after_mmap_buffer, bytecode_after_mmap_fd_size);
+    generated_bytecode_index += bytecode_after_mmap_fd_size;
+
+    generated_bytecode_index += ft_js((void *)generated_bytecode + generated_bytecode_index, size_of_cp_payload_to_mmap + 4 + jmp_size); // jmp 4 cause the address need 4 bytes and jmp_size got a mov_rax_jmp_rax append at the end of mmap_copy
+    // copy payload to mmap
+    generated_bytecode_index += copy_payload_to_mmap((void *)generated_bytecode + generated_bytecode_index, cypher_payload_size);
+
+    generated_bytecode_index += ft_add_asm_rsp(generated_bytecode + generated_bytecode_index, cypher_payload_index, class);
+    memcpy(generated_bytecode + generated_bytecode_index, "\xff\xe0", 2); //jmp_rax
+    generated_bytecode_index += 2;
+    generated_bytecode_index += ft_add_asm_rsp(generated_bytecode + generated_bytecode_index, cypher_payload_index, class);
+    set_jmp_entrypoint(generated_bytecode + generated_bytecode_index, e_entrypoint, class);
+    generated_bytecode_index += jmp_size;
+    if (generated_bytecode_index != generated_bytecode_size)
+      printf("generated_bytecode_size - generated_bytecode_index = %lu -> reverse: %lu\n", generated_bytecode_size - generated_bytecode_index, generated_bytecode_index - generated_bytecode_size);
+
+    if (write(2, generated_bytecode, generated_bytecode_size) != (ssize_t)generated_bytecode_size)
+      printf("error on write the generated bytecode\n");
+    ,*payload_size = generated_bytecode_size;
+    ,*payload_ptr = generated_bytecode;
+    return (0);
+  }
+
+  int generated_packed_file(void *elf_mmap, size_t file_size, void *generated_bytecode, size_t payload_size, int packed)
+  {
       t_elf_h 		ehdr = (t_elf_h){.elf32 = elf_mmap};
+      t_elf_ph 		phdr;
+      t_elf_sh 		shdr;
       const uint64_t     e_entrypoint = elf_get_elfh_entry(&ehdr);
       const uint64_t 	shnum = elf_get_elfh_shnum(&ehdr);
       const uint64_t 	phnum = elf_get_elfh_phnum(&ehdr);
       const unsigned char 	class = elf_get_elfh_e_ident_class(elf_mmap);
-      // in case find the section show relevant info function.
-
-      int cypher_payload_fd;
-      if (class == ELFCLASS64)
-          cypher_payload_fd = open("payload_64.bin", O_RDONLY);
-      else
-          cypher_payload_fd = open("payload_32.bin", O_RDONLY);
-      if (cypher_payload_fd < 0)
-        return (5);
-      const off_t cypher_payload_fd_size = lseek(cypher_payload_fd,0, SEEK_END);
-      if (cypher_payload_fd_size == -1)
-        return (6);
-      if (lseek(cypher_payload_fd, 0, SEEK_SET) == -1)
-        return (7);
-      off_t jmp_size = get_mov_rax_jmp_rax_size(class);
-
-      const uint64_t cypher_payload_size = cypher_payload_fd_size + jmp_size;
-      unsigned char *cypher_payload = malloc(cypher_payload_size);
-      if (!cypher_payload)
-        return (8);
-      if (read(cypher_payload_fd, cypher_payload, cypher_payload_fd_size) != cypher_payload_fd_size)
-        return (9);
-      set_jmp_entrypoint(cypher_payload + cypher_payload_fd_size, e_entrypoint, class);
-      encrypt(cypher_payload, cypher_payload_size);
-      size_t bytecode_buffer_size = 0;
-      size_t cypher_payload_index = 0;
-      while (cypher_payload_index < cypher_payload_size)
-        {
-          bytecode_buffer_size += ft_mov_asm_rsp(NULL, cypher_payload_index, cypher_payload[cypher_payload_index]);
-          cypher_payload_index++;
-        }
-      bytecode_buffer_size += decrypt_rot13_asm(NULL, cypher_payload_size, class);
-
-      size_t size_of_cp_payload_to_mmap = copy_payload_to_mmap(NULL, cypher_payload_size); // + 4. 
-      int bytecode_until_mmap_fd = open("open_mmap_until_mmap_size.bin", O_RDONLY);
-      if (bytecode_until_mmap_fd < 0)
-        return (1);
-      const off_t bytecode_until_mmap_fd_size = lseek(bytecode_until_mmap_fd,0, SEEK_END);
-      if (bytecode_until_mmap_fd_size == -1)
-        return (6);
-      if (lseek(bytecode_until_mmap_fd, 0, SEEK_SET) == -1)
-        return (7);
-      int bytecode_after_mmap_fd = open("open_mmap_after_mmap_addr", O_RDONLY);
-      if (bytecode_after_mmap_fd < 0)
-        return (1);
-      const off_t bytecode_after_mmap_fd_size = lseek(bytecode_after_mmap_fd,0, SEEK_END);
-      if (bytecode_after_mmap_fd_size == -1)
-        return (6);
-      if (lseek(bytecode_after_mmap_fd, 0, SEEK_SET) == -1)
-        return (7);
-
-      uint32_t highest_vaddr;
-      uint32_t mmap_size;
-      // * 2 equal size sub and add
-      size_t generated_bytecode_size = bytecode_buffer_size + size_of_cp_payload_to_mmap + 3 * ft_sub_asm_rsp(NULL, cypher_payload_size, class) + jmp_size + set_jmp_rax(NULL) + get_js_size() + bytecode_after_mmap_fd_size + bytecode_until_mmap_fd_size + set_mov_edi(NULL, 0) + sizeof(mmap_size);
-  ;
-      char *generated_bytecode = malloc(generated_bytecode_size);
-      if (!generated_bytecode)
-        return (10);
-      size_t generated_bytecode_index = 0;
-      generated_bytecode_index += ft_sub_asm_rsp(generated_bytecode, cypher_payload_size, class);
-      cypher_payload_index = 0;
-      while (cypher_payload_index < cypher_payload_size)
-        {
-          generated_bytecode_index += ft_mov_asm_rsp(generated_bytecode + generated_bytecode_index, cypher_payload_index, cypher_payload[cypher_payload_index]);
-          cypher_payload_index++;
-        }
-      generated_bytecode_index += decrypt_rot13_asm((void *)generated_bytecode + generated_bytecode_index, cypher_payload_size, class);//insert decrypt in real time bytecode.
-
-      // insert mmap
-      char *bytecode_until_mmap_buffer = malloc(bytecode_until_mmap_fd_size);
-      if (!bytecode_until_mmap_buffer)
-        return (8);
-     if (read(bytecode_until_mmap_fd, bytecode_until_mmap_buffer, bytecode_until_mmap_fd_size) != bytecode_until_mmap_fd_size)
-        return (9);
-
-      memcpy(generated_bytecode + generated_bytecode_index, bytecode_until_mmap_buffer, bytecode_until_mmap_fd_size);
-      generated_bytecode_index += bytecode_until_mmap_fd_size;
-      mmap_size = get_alignment_size(0x1000, cypher_payload_size); // page alignment
-      memcpy(generated_bytecode + generated_bytecode_index, &mmap_size, sizeof(mmap_size));
-      generated_bytecode_index += sizeof(mmap_size);
-      highest_vaddr = elf_get_highest_vaddr_avalaible(&ehdr, class, phnum);
-      generated_bytecode_index += set_mov_edi(generated_bytecode + generated_bytecode_index, highest_vaddr);
-      /* memcpy(generated_bytecode + generated_bytecode_index, &highest_vaddr, sizeof(highest_vaddr)); */
-      /* generated_bytecode_index += sizeof(highest_vaddr); */
-      char *bytecode_after_mmap_buffer = malloc(bytecode_after_mmap_fd_size);
-      if (!bytecode_after_mmap_buffer)
-        return (8);
-     if (read(bytecode_after_mmap_fd, bytecode_after_mmap_buffer, bytecode_after_mmap_fd_size) != bytecode_after_mmap_fd_size)
-        return (9);
-      memcpy(generated_bytecode + generated_bytecode_index, bytecode_after_mmap_buffer, bytecode_after_mmap_fd_size);
-      generated_bytecode_index += bytecode_after_mmap_fd_size;
-
-      generated_bytecode_index += ft_js((void *)generated_bytecode + generated_bytecode_index, size_of_cp_payload_to_mmap + 4 + jmp_size); // jmp 4 cause the address need 4 bytes and jmp_size got a mov_rax_jmp_rax append at the end of mmap_copy
-      // copy payload to mmap
-      generated_bytecode_index += copy_payload_to_mmap((void *)generated_bytecode + generated_bytecode_index, cypher_payload_size);
-
-      generated_bytecode_index += ft_add_asm_rsp(generated_bytecode + generated_bytecode_index, cypher_payload_index, class);
-      memcpy(generated_bytecode + generated_bytecode_index, "\xff\xe0", 2); //jmp_rax
-      generated_bytecode_index += 2;
-      generated_bytecode_index += ft_add_asm_rsp(generated_bytecode + generated_bytecode_index, cypher_payload_index, class);
-      set_jmp_entrypoint(generated_bytecode + generated_bytecode_index, e_entrypoint, class);
-      generated_bytecode_index += jmp_size;
-      if (generated_bytecode_index != generated_bytecode_size)
-        printf("generated_bytecode_size - generated_bytecode_index = %lu -> reverse: %lu\n", generated_bytecode_size - generated_bytecode_index, generated_bytecode_index - generated_bytecode_size);
-
-      if (write(2, generated_bytecode, generated_bytecode_size) != (ssize_t)generated_bytecode_size)
-        printf("error on write the generated bytecode\n"); 
-      /* free(generated_bytecode); */
-      // END Payload stuff
-      // Begin Elf stuff
-
-      const uint64_t payload_size = generated_bytecode_size;
-      // fine let's look below this line
       uint64_t 		ndx_sh;
       uint64_t 		ndx_ph;
 
@@ -1029,8 +1009,53 @@ Modify makefile to compile the differents targets and start testing with it.
       free(shdr_cp.elf32);
       writed += write(packed, elf_mmap + writed, file_size - writed);
       printf("succesfully packed\n");
-      munmap(elf_mmap, file_size);
+     
+      
+      return (0);
+  }
+
+    int main(int argc, char **argv)
+    {
+      //validation params
+      if (argc != 2)
+        {
+          printf("usage: %s [filename]\n", *argv);
+          return (1);
+        }  	
+      //open file
+      int fd = open(argv[1], O_RDONLY); 
+      if (fd < 0)
+        return (2);
+      // get size file
+      const off_t file_size = lseek(fd, 0, SEEK_END);
+      if ((off_t) -1 == file_size || (off_t) -1 == lseek(fd, 0, SEEK_SET))
+        {
+          close(fd);
+          return (3);
+        }
+      // save on memory all the file
+      void *elf_mmap = mmap(NULL, file_size, PROT_READ, MAP_SHARED, fd, 0);
+      close(fd);
+      if (!elf_mmap)
+        return (1);
+      // open the file where we gonna add the payload
+      int packed = open("woody", O_CREAT | O_TRUNC | O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
+      if (packed < 0)
+        {
+          munmap(elf_mmap, file_size);
+          return (4);
+        } // starting poc part
+      size_t generated_bytecode_size;// = bytecode_buffer_size + size_of_cp_payload_to_mmap + 3 * ft_sub_asm_rsp(NULL, cypher_payload_size, class) + jmp_size + set_jmp_rax(NULL) + get_js_size() + bytecode_after_mmap_fd_size + bytecode_until_mmap_fd_size + set_mov_edi(NULL, 0) + sizeof(mmap_size);
+      ;
+      char *generated_bytecode;// = malloc(generated_bytecode_size);
+      if (generate_payload(elf_mmap, &generated_bytecode, &generated_bytecode_size))
+        return (10);
+      if (!generated_bytecode || !generated_bytecode_size)
+        return (10);
+      if (generated_packed_file(elf_mmap, file_size, generated_bytecode, generated_bytecode_size, packed))
+        return (11);
       close(packed);
+      munmap(elf_mmap, file_size);
       return (0);
     }
 #+end_src
@@ -1494,11 +1519,13 @@ CLOSED: [2025-07-17 Thu 13:46]
 * PLAN Use directly the mmap to write the payload.
 Avoid time in execute the payload may implemented when valid encrypt algorithm.
 
-* TODO Refactor the code for readability and development.
+* DONE Refactor the code for readability and development.
+CLOSED: [2025-07-24 Thu 12:30]
 * TODO make work with a gcc program with asm work fine.
 with nasm -f elf64 work fine.
 with gcc give segfault. Need keep working. Create more sh, ph and i don't implement well enought for what i can see.
 With one phdr work fine with more not.
+For what i see the shdr_strtab is broken need to check further.
 May cause this:
     If the appended bytecode causes the segment to exceed its original size but still fits within the allocated space (i.e., it does not overlap with the next segment), you can simply update the p_filesz and p_memsz of the modified segment.
     check that i don't overlap any existing segment, in case yes update the offset and vaddr.
@@ -1522,6 +1549,7 @@ CLOSED: [2025-07-23 Wed 13:48]
 CLOSED: [2025-07-23 Wed 13:04]
 ** DONE Align the vaddr and p_offset.
 CLOSED: [2025-07-23 Wed 13:25]
+** TODO Function modify a phdr and update the rest.
 * TODO make the x32 bit check and adjustment if need it.
 Compile
 with gcc -m32
