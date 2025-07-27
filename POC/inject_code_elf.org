@@ -52,7 +52,7 @@ Modify makefile to compile the differents targets and start testing with it.
     #include <stdlib.h> //Malloc
 
 
-    uint64_t get_alignment_size(uint64_t alignment, uint64_t size)
+    uint64_t get_alignment_effective_addr(uint64_t alignment, uint64_t size)
     {
       return (((size + alignment - 1) / alignment) * alignment);
     }
@@ -195,7 +195,7 @@ Modify makefile to compile the differents targets and start testing with it.
     return (lower_limit >= value && value <= upper_limit);
   }
 
-    uint64_t elf_get_program_ndx_from_addr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t addr)
+  uint64_t elf_get_program_ndx_from_addr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t addr)
     {
       t_elf_ph phdr;
       uint64_t i;
@@ -213,29 +213,25 @@ Modify makefile to compile the differents targets and start testing with it.
       return  (i);
     }
 
-    size_t elf_get_highest_vaddr_avalaible(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
-    {
-      t_elf_ph phdr;
-      uint64_t i;
-      size_t p_vaddr;
-      size_t max_vaddr = 0;
-      size_t max_align_size = 0;
+  size_t elf_get_highest_loadable_vaddr_avalaible(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
+  {
+    t_elf_ph phdr;
+    uint64_t i;
+    size_t p_vaddr;
+    size_t highest_avalaible_addr = 0;
 
-      i = 0;
-      while (++i < phnum) // Skip the first 
-        {
-          phdr = elf_get_program_header(ehdr, i);
-          if (elf_get_program_header_type(&phdr, class) != PT_LOAD) // If not loadable ignore
-            continue ;
-          p_vaddr = elf_get_program_header_vaddr(&phdr, class);
-          if (max_vaddr < p_vaddr)
-            {
-              max_vaddr = p_vaddr;
-              max_align_size = get_alignment_size(elf_get_program_header_align(&phdr, class), elf_get_program_header_memsz(&phdr, class));
-            }
-        }
-      return  (max_vaddr + max_align_size);
-    }
+    i = 0;
+    while (++i < phnum) // Skip the first 
+      {
+        phdr = elf_get_program_header(ehdr, i);
+        if (elf_get_program_header_type(&phdr, class) != PT_LOAD) // If not loadable ignore
+  	continue ;
+        p_vaddr = elf_get_program_header_vaddr(&phdr, class);
+        if (highest_avalaible_addr <= p_vaddr)
+  	highest_avalaible_addr = get_alignment_effective_addr(elf_get_program_header_align(&phdr, class), p_vaddr + elf_get_program_header_memsz(&phdr, class));
+      }
+    return  (highest_avalaible_addr);
+  }
 
     uint64_t elf_get_section_ndx_from_addr(t_elf_h *ehdr, size_t addr, unsigned char class, uint64_t shnum)
     {
@@ -715,9 +711,9 @@ Modify makefile to compile the differents targets and start testing with it.
 
     int cypher_payload_fd;
     if (class == ELFCLASS64)
-      cypher_payload_fd = open("payload_64.bin", O_RDONLY);
+      cypher_payload_fd = open("bytecode/payload_64.bin", O_RDONLY);
     else
-      cypher_payload_fd = open("payload_32.bin", O_RDONLY);
+      cypher_payload_fd = open("bytecode/payload_32.bin", O_RDONLY);
     if (cypher_payload_fd < 0)
       return (5);
     const off_t cypher_payload_fd_size = lseek(cypher_payload_fd,0, SEEK_END);
@@ -746,7 +742,7 @@ Modify makefile to compile the differents targets and start testing with it.
     bytecode_buffer_size += decrypt_rot13_asm(NULL, cypher_payload_size, class);
 
     size_t size_of_cp_payload_to_mmap = copy_payload_to_mmap(NULL, cypher_payload_size); // + 4. 
-    int bytecode_until_mmap_fd = open("open_mmap_until_mmap_size.bin", O_RDONLY);
+    int bytecode_until_mmap_fd = open("bytecode/open_mmap_until_mmap_size.bin", O_RDONLY);
     if (bytecode_until_mmap_fd < 0)
       return (1);
     const off_t bytecode_until_mmap_fd_size = lseek(bytecode_until_mmap_fd,0, SEEK_END);
@@ -754,7 +750,7 @@ Modify makefile to compile the differents targets and start testing with it.
       return (6);
     if (lseek(bytecode_until_mmap_fd, 0, SEEK_SET) == -1)
       return (7);
-    int bytecode_after_mmap_fd = open("open_mmap_after_mmap_addr", O_RDONLY);
+    int bytecode_after_mmap_fd = open("bytecode/open_mmap_after_mmap_addr.bin", O_RDONLY);
     if (bytecode_after_mmap_fd < 0)
       return (1);
     const off_t bytecode_after_mmap_fd_size = lseek(bytecode_after_mmap_fd,0, SEEK_END);
@@ -763,9 +759,8 @@ Modify makefile to compile the differents targets and start testing with it.
     if (lseek(bytecode_after_mmap_fd, 0, SEEK_SET) == -1)
       return (7);
 
-    uint32_t highest_vaddr;
+    uint32_t highest_loadable_vaddr;
     uint32_t mmap_size;
-    // * 2 equal size sub and add
     size_t generated_bytecode_size = bytecode_buffer_size + size_of_cp_payload_to_mmap + 3 * ft_sub_asm_rsp(NULL, cypher_payload_size, class) + jmp_size + set_jmp_rax(NULL) + get_js_size() + bytecode_after_mmap_fd_size + bytecode_until_mmap_fd_size + set_mov_edi(NULL, 0) + sizeof(mmap_size);
     ;
     char *generated_bytecode = malloc(generated_bytecode_size);
@@ -779,9 +774,7 @@ Modify makefile to compile the differents targets and start testing with it.
         generated_bytecode_index += ft_mov_asm_rsp(generated_bytecode + generated_bytecode_index, cypher_payload_index, cypher_payload[cypher_payload_index]);
         cypher_payload_index++;
       }
-    generated_bytecode_index += decrypt_rot13_asm((void *)generated_bytecode + generated_bytecode_index, cypher_payload_size, class);//insert decrypt in real time bytecode.
-
-    // insert mmap -> later no buffer
+    generated_bytecode_index += decrypt_rot13_asm((void *)generated_bytecode + generated_bytecode_index, cypher_payload_size, class);
     char *bytecode_until_mmap_buffer = malloc(bytecode_until_mmap_fd_size);
     if (!bytecode_until_mmap_buffer)
       return (8);
@@ -791,13 +784,11 @@ Modify makefile to compile the differents targets and start testing with it.
 
     memcpy(generated_bytecode + generated_bytecode_index, bytecode_until_mmap_buffer, bytecode_until_mmap_fd_size);
     generated_bytecode_index += bytecode_until_mmap_fd_size;
-    mmap_size = get_alignment_size(0x1000, cypher_payload_size); // page alignment
+    mmap_size = get_alignment_effective_addr(0x1000, cypher_payload_size);
     memcpy(generated_bytecode + generated_bytecode_index, &mmap_size, sizeof(mmap_size));
     generated_bytecode_index += sizeof(mmap_size);
-    highest_vaddr = elf_get_highest_vaddr_avalaible(&ehdr, class, phnum);
-    generated_bytecode_index += set_mov_edi(generated_bytecode + generated_bytecode_index, highest_vaddr);
-    /* memcpy(generated_bytecode + generated_bytecode_index, &highest_vaddr, sizeof(highest_vaddr)); */
-    /* generated_bytecode_index += sizeof(highest_vaddr); */
+    highest_loadable_vaddr = elf_get_highest_loadable_vaddr_avalaible(&ehdr, class, phnum);
+    generated_bytecode_index += set_mov_edi(generated_bytecode + generated_bytecode_index, highest_loadable_vaddr);
     char *bytecode_after_mmap_buffer = malloc(bytecode_after_mmap_fd_size);
     if (!bytecode_after_mmap_buffer)
       return (8);
@@ -850,6 +841,7 @@ Modify makefile to compile the differents targets and start testing with it.
       if (shnum <= ndx_sh)
         return (11);
       const uint64_t	e_shoff = elf_get_elfh_shoff(&ehdr);
+      //Logic SHDR
       uint64_t sh_addralign;
       if (shnum <= ndx_sh + 1)
         {
@@ -857,19 +849,17 @@ Modify makefile to compile the differents targets and start testing with it.
   	sh_addralign = elf_get_section_header_addralign(&shdr, class);
   	shdr = elf_get_section_header(&ehdr, ndx_sh);
         }
-      else
+      else // In case that is last one use or alignment.
         {
   	shdr = elf_get_section_header(&ehdr, ndx_sh);
   	sh_addralign = elf_get_section_header_addralign(&shdr, class);
         }
-      /* shdr = elf_get_section_header(&ehdr, ndx_sh); */
-      // don't go to refactor for now until got the complete logic cause would be messy.
-      //section header math.
+      //section header math the one we gonna append data.
       const uint64_t sh_size = elf_get_section_header_size(&shdr, class);
       const uint64_t sh_offset = elf_get_section_header_offset(&shdr, class);
       const uint64_t sh_addr = elf_get_section_header_addr(&shdr, class);
-      const uint64_t old_align_size = get_alignment_size(sh_addralign, sh_offset + sh_size) - sh_offset;
-      const uint64_t new_align_size = get_alignment_size(sh_addralign, sh_offset + sh_size + payload_size) - sh_offset;
+      const uint64_t old_next_offset = get_alignment_effective_addr(sh_addralign, sh_offset + sh_size) - sh_offset;
+      const uint64_t new_next_offset = get_alignment_effective_addr(sh_addralign, sh_offset + sh_size + payload_size) - sh_offset;
       const uint64_t sh_offset_payload = sh_offset + sh_size;
       const uint64_t sh_elf_offset = (void *)shdr.elf32 - (void *)ehdr.elf32;
 
@@ -878,24 +868,15 @@ Modify makefile to compile the differents targets and start testing with it.
       uint64_t writed;
 
       // create copy to modify further
-      uint64_t shdr_struct_size = elf_get_section_header_struct_size (&ehdr);
-      t_elf_sh shdr_cp = (t_elf_sh){.elf32 = malloc(shdr_struct_size)};
-      if (!shdr_cp.elf32)
-        return (12);
-      memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); 
       uint64_t elf_struct_size = elf_get_struct_size_elf_header(elf_mmap);
       t_elf_h ehdr_cp = {.elf32 = malloc(elf_struct_size)};
       if (!ehdr_cp.elf32)
-        {
-          free(shdr_cp.elf32);
           return (14);
-        }
       memcpy(ehdr_cp.elf32, ehdr.elf32, elf_struct_size);
-
       writed = 0;
 
-      if (old_align_size < new_align_size)
-        elf_ehdr_set_shoff(&ehdr_cp, e_shoff + (new_align_size - old_align_size), class);
+      if (old_next_offset < new_next_offset)
+        elf_ehdr_set_shoff(&ehdr_cp, e_shoff + (new_next_offset - old_next_offset), class);
       elf_ehdr_set_entry(&ehdr_cp, e_entrypoint + sh_size, class); // modify entrypoint.
       writed += write(packed, ehdr_cp.elf32, elf_struct_size);
       free(ehdr_cp.elf32);
@@ -915,10 +896,7 @@ Modify makefile to compile the differents targets and start testing with it.
       writed += write(packed, elf_mmap + writed, phdr_struct_size * ndx_ph);
       t_elf_ph phdr_cp = {.elf32 = malloc(phdr_struct_size)};
       if (!phdr_cp.elf32)
-        {
-          free(shdr_cp.elf32); // when isolated in a function don't need this 
           return (15);
-        }
       memcpy(phdr_cp.elf32, phdr.elf32, phdr_struct_size);
       uint64_t p_align = elf_get_program_header_align(&phdr, class);
       uint64_t p_memsz = elf_get_program_header_memsz(&phdr, class);
@@ -927,12 +905,12 @@ Modify makefile to compile the differents targets and start testing with it.
       printf("p_align -> %lu\n", p_align);
       printf("p_memsz -> %lu\n", p_memsz);
       printf("p_filesz -> %lu\n", p_filesz);
-      uint64_t p_og_align_addr = get_alignment_size(p_align, p_offset + p_filesz) - p_offset; 
-      uint64_t p_modified_align_addr = get_alignment_size(p_align, p_offset + p_filesz + payload_size) - p_offset;
+      uint64_t p_og_padding = get_alignment_effective_addr(p_align, p_offset + p_filesz) - p_offset; 
+      uint64_t p_modified_padding = get_alignment_effective_addr(p_align, p_offset + p_filesz + payload_size) - p_offset;
       /* uint64_t p_m_filesz = p_filesz + payload_size; */
 
-      printf("p_og_align_addr -> %lu\n", p_og_align_addr);
-      printf("p_modified_align_addr -> %lu\n", p_modified_align_addr);
+      printf("p_og_padding -> %lu\n", p_og_padding);
+      printf("p_modified_padding -> %lu\n", p_modified_padding);
       const uint64_t og_p_vaddr = elf_get_program_header_vaddr(&phdr, class);
       const uint64_t og_p_paddr = elf_get_program_header_paddr(&phdr, class);
       elf_phdr_set_filesz(&phdr_cp, p_filesz + payload_size, class);
@@ -945,15 +923,15 @@ Modify makefile to compile the differents targets and start testing with it.
           p_vaddr = elf_get_program_header_vaddr(&phdr, class);
           p_paddr = elf_get_program_header_paddr(&phdr, class);
   	p_type = elf_get_program_header_type(&phdr, class);
-          if (PT_LOAD == p_type && p_og_align_addr < p_modified_align_addr)
+          if (PT_LOAD == p_type && p_og_padding < p_modified_padding)
             {
               if (og_p_vaddr < p_vaddr)
   	      {
-  		elf_phdr_set_vaddr(&phdr_cp, p_vaddr + (p_modified_align_addr - p_og_align_addr), class);
-  		elf_phdr_set_offset(&phdr_cp, p_offset + (p_modified_align_addr - p_og_align_addr), class);
+  		elf_phdr_set_vaddr(&phdr_cp, p_vaddr + (p_modified_padding - p_og_padding), class);
+  		elf_phdr_set_offset(&phdr_cp, p_offset + (p_modified_padding - p_og_padding), class);
   	      }
               if (og_p_paddr < p_paddr)
-                elf_phdr_set_paddr(&phdr_cp, p_paddr + (p_modified_align_addr - p_og_align_addr), class);
+                elf_phdr_set_paddr(&phdr_cp, p_paddr + (p_modified_padding - p_og_padding), class);
             }
           writed += write(packed, phdr_cp.elf32, phdr_struct_size);
           ndx_ph++;
@@ -969,22 +947,27 @@ Modify makefile to compile the differents targets and start testing with it.
       /* const uint64_t phcp_memsz = elf_get_program_header_memsz(&phdr, class);//  for increment addr */
       writed += write(packed, elf_mmap + writed, sh_offset_payload - writed);
 
-      uint64_t modified_section_free_space = new_align_size - (sh_size + payload_size);
-      uint64_t original_section_free_space = old_align_size - sh_size;
-      /* uint64_t modified_program_free_space; */
+      uint64_t modified_section_padding = new_next_offset - (sh_size + payload_size);
+      uint64_t original_section_padding = old_next_offset - sh_size;
+      /* uint64_t modified_program_padding; */
       //write payload
       if (write(packed, generated_bytecode, payload_size) != (ssize_t)payload_size)
             printf("\r\n");
       free(generated_bytecode);
-      while (modified_section_free_space--) //write alignment just with shdr no phdr
+      while (modified_section_padding--) //write alignment just with shdr no phdr
         {
           if (write(packed, "\0", 1) != 1)
             printf("\r\n");
         }
       /* if (p_m_filesz > p_filesz) */
         /* writed += p_m_filesz - p_filesz; */
-      writed += original_section_free_space;
+      writed += original_section_padding;
       writed += write(packed, elf_mmap + writed, sh_elf_offset - writed);
+      uint64_t shdr_struct_size = elf_get_section_header_struct_size (&ehdr);
+      t_elf_sh shdr_cp = (t_elf_sh){.elf32 = malloc(shdr_struct_size)};
+      if (!shdr_cp.elf32)
+        return (12);
+      memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); 
       elf_shdr_set_size(&shdr_cp, sh_size + payload_size, class);//setter sh_size.
       writed += write(packed, shdr_cp.elf32, shdr_struct_size);
       uint shcp_addr; // funcname write section headers.
@@ -997,12 +980,12 @@ Modify makefile to compile the differents targets and start testing with it.
           shcp_offset = elf_get_section_header_offset(&shdr, class);
           memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); 
   	// TODO check in case increment size of alignment need to update shdr to add the new addr.
-          if (old_align_size < new_align_size && elf_get_program_ndx_from_addr(&ehdr, class, phnum, shcp_addr) == ndx_ph)
+          if (old_next_offset < new_next_offset)
             {
               if (shcp_addr > sh_addr)
-                elf_shdr_set_addr(&shdr_cp, shcp_addr + (new_align_size - old_align_size), class);
+                elf_shdr_set_addr(&shdr_cp, shcp_addr + (new_next_offset - old_next_offset), class);
               if (shcp_offset > sh_offset)
-                elf_shdr_set_offset(&shdr_cp, shcp_offset + (new_align_size - old_align_size), class);
+                elf_shdr_set_offset(&shdr_cp, shcp_offset + (new_next_offset - old_next_offset), class);
             }
           writed += write(packed, shdr_cp.elf32, shdr_struct_size);
         }
