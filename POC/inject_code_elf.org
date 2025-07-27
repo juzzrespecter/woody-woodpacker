@@ -70,11 +70,11 @@ Modify makefile to compile the differents targets and start testing with it.
     {
       if (class == ELFCLASS32) 
         {
-          printf("phdr set addr elf32\n");
+          printf("phdr set memsz elf32\n");
           phdr->elf32->p_memsz = (uint32_t) value;
           return ;
         }
-      printf("phdr set addr elf64\n");
+      printf("phdr set memsz elf64\n");
       phdr->elf64->p_memsz = value;
     }
 
@@ -82,11 +82,11 @@ Modify makefile to compile the differents targets and start testing with it.
     {
       if (class == ELFCLASS32) 
         {
-          printf("phdr set addr elf32\n");
+          printf("phdr set offset elf32\n");
           phdr->elf32->p_offset = (uint32_t) value;
           return ;
         }
-      printf("phdr set addr elf64\n");
+      printf("phdr set offset elf64\n");
       phdr->elf64->p_offset = value;
     }
 
@@ -192,7 +192,7 @@ Modify makefile to compile the differents targets and start testing with it.
 
   bool is_between(uint64_t lower_limit, uint64_t upper_limit, uint64_t value)
   {
-    return (lower_limit >= value && value <= upper_limit);
+    return (lower_limit <= value && value <= upper_limit);
   }
 
   uint64_t elf_get_program_ndx_from_addr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t addr)
@@ -240,13 +240,12 @@ Modify makefile to compile the differents targets and start testing with it.
       uint64_t		sh_addr;
 
       i = 0;
-      while (i < shnum) //run for each section_header
+      while (i++ < shnum) //run for each section_header
         {
           shdr = elf_get_section_header(ehdr, i);
   	sh_addr = elf_get_section_header_addr(&shdr, class);
           if (is_between(sh_addr, sh_addr + elf_get_section_header_size(&shdr, class) - 1, addr))
             return (i);
-          i++;
         }
       return (i);
     }
@@ -831,14 +830,14 @@ Modify makefile to compile the differents targets and start testing with it.
       uint64_t 		ndx_ph;
 
       ndx_ph = elf_get_program_ndx_from_addr(&ehdr, class, phnum, e_entrypoint);
-      if (phnum <= ndx_ph)
+      if (!ndx_ph || phnum <= ndx_ph)
         return (10);
       printf("ndx_ph -> %lu\n", ndx_ph);
       phdr = elf_get_program_header(&ehdr, ndx_ph);
 
       ndx_sh = elf_get_section_ndx_from_addr(&ehdr, e_entrypoint, class, shnum);
       printf("ndx_sh -> %lu\n", ndx_sh);
-      if (shnum <= ndx_sh)
+      if (!ndx_sh || shnum <= ndx_sh)
         return (11);
       const uint64_t	e_shoff = elf_get_elfh_shoff(&ehdr);
       //Logic SHDR
@@ -905,34 +904,34 @@ Modify makefile to compile the differents targets and start testing with it.
       printf("p_align -> %lu\n", p_align);
       printf("p_memsz -> %lu\n", p_memsz);
       printf("p_filesz -> %lu\n", p_filesz);
-      uint64_t p_og_padding = get_alignment_effective_addr(p_align, p_offset + p_filesz) - p_offset; 
+      printf("p_offset -> %lu\n", p_offset);
+
+      uint64_t p_og_padding = get_alignment_effective_addr(p_align, p_offset + p_filesz) - p_offset;
       uint64_t p_modified_padding = get_alignment_effective_addr(p_align, p_offset + p_filesz + payload_size) - p_offset;
       /* uint64_t p_m_filesz = p_filesz + payload_size; */
 
       printf("p_og_padding -> %lu\n", p_og_padding);
       printf("p_modified_padding -> %lu\n", p_modified_padding);
       const uint64_t og_p_vaddr = elf_get_program_header_vaddr(&phdr, class);
-      const uint64_t og_p_paddr = elf_get_program_header_paddr(&phdr, class);
+      /* const uint64_t og_p_paddr = elf_get_program_header_paddr(&phdr, class); */
       elf_phdr_set_filesz(&phdr_cp, p_filesz + payload_size, class);
       elf_phdr_set_memsz(&phdr_cp, p_memsz + payload_size, class);
       uint64_t p_vaddr;
       uint64_t p_paddr;
-      uint64_t p_type;
       while (ndx_ph < phnum)
         {
           p_vaddr = elf_get_program_header_vaddr(&phdr, class);
           p_paddr = elf_get_program_header_paddr(&phdr, class);
-  	p_type = elf_get_program_header_type(&phdr, class);
-          if (PT_LOAD == p_type && p_og_padding < p_modified_padding)
-            {
-              if (og_p_vaddr < p_vaddr)
-  	      {
-  		elf_phdr_set_vaddr(&phdr_cp, p_vaddr + (p_modified_padding - p_og_padding), class);
-  		elf_phdr_set_offset(&phdr_cp, p_offset + (p_modified_padding - p_og_padding), class);
-  	      }
-              if (og_p_paddr < p_paddr)
-                elf_phdr_set_paddr(&phdr_cp, p_paddr + (p_modified_padding - p_og_padding), class);
-            }
+          if (p_og_padding < p_modified_padding && og_p_vaddr < p_vaddr)
+  	  // The first one don't need to enter just following offset.
+  	  // In case need to surpass the alignment.
+  	  // For now don't have this scenario.
+  	  {
+  	    elf_phdr_set_vaddr(&phdr_cp, p_vaddr + (p_modified_padding - p_og_padding), class);
+  	    elf_phdr_set_offset(&phdr_cp, p_offset + (p_modified_padding - p_og_padding), class);
+  	    if (p_paddr) // p_paddr is for  OPENBSD don't force NULL at paddr.
+  	      elf_phdr_set_paddr(&phdr_cp, p_paddr + (p_modified_padding - p_og_padding), class);
+  	  }
           writed += write(packed, phdr_cp.elf32, phdr_struct_size);
           ndx_ph++;
           if (ndx_ph >= phnum)
@@ -1514,6 +1513,37 @@ May cause this:
     check that i don't overlap any existing segment, in case yes update the offset and vaddr.
     The same with each update of a phdr.  // Create a function for that.
     ~is_between(p_offset, p_offset + p_m_filesz, elf_get_program_header_offset(&phdr, class))~
+*  I Fix section .text need to fix the rest, i think maybe is something with the  padding   need  to check another day.
+    warning: Loadable section ".fini" outside of ELF segments
+  in /home/user/Documents/woody-woodpacker/POC/woody
+
+warning: Loadable section ".rodata" outside of ELF segments
+  in /home/user/Documents/woody-woodpacker/POC/woody
+
+warning: Loadable section ".eh_frame_hdr" outside of ELF segments
+  in /home/user/Documents/woody-woodpacker/POC/woody
+
+warning: Loadable section ".eh_frame" outside of ELF segments
+  in /home/user/Documents/woody-woodpacker/POC/woody
+
+warning: Loadable section ".init_array" outside of ELF segments
+  in /home/user/Documents/woody-woodpacker/POC/woody
+
+warning: Loadable section ".fini_array" outside of ELF segments
+  in /home/user/Documents/woody-woodpacker/POC/woody
+
+warning: Loadable section ".dynamic" outside of ELF segments
+  in /home/user/Documents/woody-woodpacker/POC/woody
+
+warning: Loadable section ".got" outside of ELF segments
+  in /home/user/Documents/woody-woodpacker/POC/woody
+
+warning: Loadable section ".got.plt" outside of ELF segments
+  in /home/user/Documents/woody-woodpacker/POC/woody
+
+warning: Loadable section ".data" outside of ELF segments
+  in /home/user/Documents/woody-woodpacker/POC/woody
+(No debugging symbols found in ./woody)
 
 
 ** DONE May Increase the Phdr size over the alignment and increase the rest of v/p addr.
