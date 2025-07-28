@@ -844,15 +844,18 @@ Modify makefile to compile the differents targets and start testing with it.
       uint64_t sh_addralign;
       if (shnum <= ndx_sh + 1)
         {
+  	printf("ndx_sh %lu, shnum %lu\n", ndx_sh + 1, shnum);
   	shdr = elf_get_section_header(&ehdr, ndx_sh + 1);
   	sh_addralign = elf_get_section_header_addralign(&shdr, class);
   	shdr = elf_get_section_header(&ehdr, ndx_sh);
         }
       else // In case that is last one use or alignment.
         {
+  	printf("ndx_sh %lu, shnum %lu\n", ndx_sh, shnum);
   	shdr = elf_get_section_header(&ehdr, ndx_sh);
   	sh_addralign = elf_get_section_header_addralign(&shdr, class);
         }
+      printf("sh_addralign = %lu\n", sh_addralign);
       //section header math the one we gonna append data.
       const uint64_t sh_size = elf_get_section_header_size(&shdr, class);
       const uint64_t sh_offset = elf_get_section_header_offset(&shdr, class);
@@ -920,8 +923,8 @@ Modify makefile to compile the differents targets and start testing with it.
       printf("modified_section_padding = %lu\n", modified_section_padding);
       printf("og_section_padding = %lu\n", original_section_padding);
 
-      elf_phdr_set_filesz(&phdr_cp, p_filesz + payload_size + (modified_section_padding - p_og_padding), class);
-      elf_phdr_set_memsz(&phdr_cp, p_memsz + payload_size + (modified_section_padding - p_og_padding), class);
+      elf_phdr_set_filesz(&phdr_cp, p_filesz + payload_size + (modified_section_padding - original_section_padding ), class);
+      elf_phdr_set_memsz(&phdr_cp, p_memsz + payload_size + (modified_section_padding - original_section_padding), class);
       uint64_t p_vaddr;
       uint64_t p_paddr;
       while (ndx_ph < phnum)
@@ -976,7 +979,7 @@ Modify makefile to compile the differents targets and start testing with it.
       if (!shdr_cp.elf32)
         return (12);
       memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); 
-      elf_shdr_set_size(&shdr_cp, sh_size + payload_size, class);//setter sh_size.
+      elf_shdr_set_size(&shdr_cp, sh_size + payload_size + (modified_section_padding - original_section_padding), class);//setter sh_size.
       writed += write(packed, shdr_cp.elf32, shdr_struct_size);
       uint shcp_addr; // funcname write section headers.
       uint shcp_offset;
