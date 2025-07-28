@@ -908,19 +908,20 @@ Modify makefile to compile the differents targets and start testing with it.
 
       uint64_t p_og_padding = get_alignment_effective_addr(p_align, p_offset + p_filesz) - p_offset;
       uint64_t p_modified_padding = get_alignment_effective_addr(p_align, p_offset + p_filesz + payload_size) - p_offset;
+
       /* uint64_t p_m_filesz = p_filesz + payload_size; */
 
       printf("p_og_padding -> %lu\n", p_og_padding);
       printf("p_modified_padding -> %lu\n", p_modified_padding);
-      uint64_t modified_section_padding = new_next_offset - (sh_size + payload_size);
-      uint64_t original_section_padding = old_next_offset - sh_size;
-      printf("modified_section_padding -> %lu\n", modified_section_padding);
-      printf("original_section_padding -> %lu\n", original_section_padding);
-
       const uint64_t og_p_vaddr = elf_get_program_header_vaddr(&phdr, class);
       /* const uint64_t og_p_paddr = elf_get_program_header_paddr(&phdr, class); */
-      elf_phdr_set_filesz(&phdr_cp, p_filesz + payload_size + (modified_section_padding - original_section_padding), class);
-      elf_phdr_set_memsz(&phdr_cp, p_memsz + payload_size + (modified_section_padding - original_section_padding), class);
+      uint64_t modified_section_padding = new_next_offset - (sh_size + payload_size);
+      uint64_t original_section_padding = old_next_offset - sh_size;
+      printf("modified_section_padding = %lu\n", modified_section_padding);
+      printf("og_section_padding = %lu\n", original_section_padding);
+
+      elf_phdr_set_filesz(&phdr_cp, p_filesz + payload_size + (modified_section_padding - p_og_padding), class);
+      elf_phdr_set_memsz(&phdr_cp, p_memsz + payload_size + (modified_section_padding - p_og_padding), class);
       uint64_t p_vaddr;
       uint64_t p_paddr;
       while (ndx_ph < phnum)
@@ -928,7 +929,6 @@ Modify makefile to compile the differents targets and start testing with it.
           p_vaddr = elf_get_program_header_vaddr(&phdr, class);
           p_paddr = elf_get_program_header_paddr(&phdr, class);
           if (p_og_padding < p_modified_padding && og_p_vaddr < p_vaddr)
-  	  // This i think is not entering.
   	  // The first one don't need to enter just following offset.
   	  // In case need to surpass the alignment.
   	  // For now don't have this scenario.
@@ -954,6 +954,8 @@ Modify makefile to compile the differents targets and start testing with it.
 
       /* uint64_t modified_section_padding = new_next_offset - (sh_size + payload_size); */
       /* uint64_t original_section_padding = old_next_offset - sh_size; */
+      printf("modified_section_padding = %lu\n", modified_section_padding);
+      printf("og_section_padding = %lu\n", original_section_padding);
       /* uint64_t modified_program_padding; */
       //write payload
       if (write(packed, generated_bytecode, payload_size) != (ssize_t)payload_size)
@@ -964,6 +966,7 @@ Modify makefile to compile the differents targets and start testing with it.
           if (write(packed, "\0", 1) != 1)
             printf("\r\n");
         }
+      modified_section_padding = new_next_offset - (sh_size + payload_size);
       /* if (p_m_filesz > p_filesz) */
         /* writed += p_m_filesz - p_filesz; */
       writed += original_section_padding;
@@ -973,7 +976,7 @@ Modify makefile to compile the differents targets and start testing with it.
       if (!shdr_cp.elf32)
         return (12);
       memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); 
-      elf_shdr_set_size(&shdr_cp, sh_size + payload_size + (modified_section_padding - original_section_padding), class);//setter sh_size.
+      elf_shdr_set_size(&shdr_cp, sh_size + payload_size, class);//setter sh_size.
       writed += write(packed, shdr_cp.elf32, shdr_struct_size);
       uint shcp_addr; // funcname write section headers.
       uint shcp_offset;
@@ -1519,37 +1522,19 @@ May cause this:
     check that i don't overlap any existing segment, in case yes update the offset and vaddr.
     The same with each update of a phdr.  // Create a function for that.
     ~is_between(p_offset, p_offset + p_m_filesz, elf_get_program_header_offset(&phdr, class))~
-*  I Fix section .text need to fix the rest, i think maybe is something with the  padding   need  to check another day.
-    warning: Loadable section ".fini" outside of ELF segments
-  in /home/user/Documents/woody-woodpacker/POC/woody
-
+* DONE I Fix section .text need to fix the rest, i think maybe is something with the  padding   need  to check another day.
+CLOSED: [2025-07-28 Mon 11:40]
+warning: Loadable section ".fini" outside of ELF segments
 warning: Loadable section ".rodata" outside of ELF segments
-  in /home/user/Documents/woody-woodpacker/POC/woody
-
 warning: Loadable section ".eh_frame_hdr" outside of ELF segments
-  in /home/user/Documents/woody-woodpacker/POC/woody
-
 warning: Loadable section ".eh_frame" outside of ELF segments
-  in /home/user/Documents/woody-woodpacker/POC/woody
-
 warning: Loadable section ".init_array" outside of ELF segments
-  in /home/user/Documents/woody-woodpacker/POC/woody
-
 warning: Loadable section ".fini_array" outside of ELF segments
-  in /home/user/Documents/woody-woodpacker/POC/woody
-
 warning: Loadable section ".dynamic" outside of ELF segments
-  in /home/user/Documents/woody-woodpacker/POC/woody
-
 warning: Loadable section ".got" outside of ELF segments
-  in /home/user/Documents/woody-woodpacker/POC/woody
-
 warning: Loadable section ".got.plt" outside of ELF segments
-  in /home/user/Documents/woody-woodpacker/POC/woody
-
 warning: Loadable section ".data" outside of ELF segments
-  in /home/user/Documents/woody-woodpacker/POC/woody
-(No debugging symbols found in ./woody)
+* TODO Detect why is still segfault but we got at advance
 
 
 ** DONE May Increase the Phdr size over the alignment and increase the rest of v/p addr.
