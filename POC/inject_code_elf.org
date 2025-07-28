@@ -842,7 +842,7 @@ Modify makefile to compile the differents targets and start testing with it.
       const uint64_t	e_shoff = elf_get_elfh_shoff(&ehdr);
       //Logic SHDR
       uint64_t sh_addralign;
-      if (shnum <= ndx_sh + 1)
+      if (shnum > ndx_sh + 1)
         {
   	printf("ndx_sh %lu, shnum %lu\n", ndx_sh + 1, shnum);
   	shdr = elf_get_section_header(&ehdr, ndx_sh + 1);
@@ -991,7 +991,7 @@ Modify makefile to compile the differents targets and start testing with it.
           shcp_offset = elf_get_section_header_offset(&shdr, class);
           memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); 
   	// TODO check in case increment size of alignment need to update shdr to add the new addr.
-          if (old_next_offset < new_next_offset)
+          if (shcp_offset < new_next_offset) //  if (shcp_offset < (sh_offset + new_next_offset)) // This break sh_str I think that the better is make this more generic with a function that u pass previous offset + fill including padding.
             {
               if (shcp_addr > sh_addr)
                 elf_shdr_set_addr(&shdr_cp, shcp_addr + (new_next_offset - old_next_offset), class);
@@ -1537,7 +1537,8 @@ warning: Loadable section ".dynamic" outside of ELF segments
 warning: Loadable section ".got" outside of ELF segments
 warning: Loadable section ".got.plt" outside of ELF segments
 warning: Loadable section ".data" outside of ELF segments
-* TODO Detect why is still segfault but we got at advance
+* TODO change the condition to increment offset & addr not to all when increment size of a shdr just what it should.
+just when offset or addr is overlap.
 
 
 ** DONE May Increase the Phdr size over the alignment and increase the rest of v/p addr.
