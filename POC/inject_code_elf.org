@@ -6,7 +6,7 @@
 Modify makefile to compile the differents targets and start testing with it.
 1. [X ]copy the hole file and get execution perm.
    1. [X] Test that execute normally.
-2. [-] Add the function || code to execute at the end of the =.text= section.
+2. [X] Add the function || code to execute at the end of the =.text= section.
    1. [X] Get the assembly code to insert in the file.
    2. [X] update sh and ph sh_size and p_filesz p_mems,
       2. [X] update Shdr  // check for get the info and go modified ehdr, phdr.
@@ -1515,7 +1515,11 @@ Avoid time in execute the payload may implemented when valid encrypt algorithm.
 
 * DONE Refactor the code for readability and development.
 CLOSED: [2025-07-24 Thu 12:30]
-* TODO make work with a gcc program with asm work fine.
+* CANC make work with a gcc program with asm work fine.
+CLOSED: [2025-08-01 Fri 11:33]
+:LOGBOOK:
+- State "CANC"       from "TODO"       [2025-08-01 Fri 11:33]
+:END:
 with nasm -f elf64 work fine.
 with gcc give segfault. Need keep working. Create more sh, ph and i don't implement well enought for what i can see.
 With one phdr work fine with more not.
@@ -1537,7 +1541,11 @@ warning: Loadable section ".dynamic" outside of ELF segments
 warning: Loadable section ".got" outside of ELF segments
 warning: Loadable section ".got.plt" outside of ELF segments
 warning: Loadable section ".data" outside of ELF segments
-* TODO change the condition to increment offset & addr not to all when increment size of a shdr just what it should.
+* CANC change the condition to increment offset & addr not to all when increment size of a shdr just what it should.
+CLOSED: [2025-08-01 Fri 11:33]
+:LOGBOOK:
+- State "CANC"       from "TODO"       [2025-08-01 Fri 11:33]
+:END:
 just when offset or addr is overlap.
 
 
@@ -1557,8 +1565,17 @@ CLOSED: [2025-07-23 Wed 13:48]
 CLOSED: [2025-07-23 Wed 13:04]
 ** DONE Align the vaddr and p_offset.
 CLOSED: [2025-07-23 Wed 13:25]
-** TODO Function modify a phdr and update the rest.
-* TODO make the x32 bit check and adjustment if need it.
+** CANC Function modify a phdr and update the rest.
+CLOSED: [2025-08-01 Fri 11:33]
+:LOGBOOK:
+- State "CANC"       from "TODO"       [2025-08-01 Fri 11:33] \\
+  .
+:END:
+* CANC make the x32 bit check and adjustment if need it.
+CLOSED: [2025-08-01 Fri 11:33]
+:LOGBOOK:
+- State "CANC"       from "TODO"       [2025-08-01 Fri 11:33]
+:END:
 Compile
 with gcc -m32
 with nasm -f elf32
@@ -1580,5 +1597,6 @@ ndisasm -b 32 payload_32.bin
 #+end_src
 
 
-* TODO Read the guide for what compress ...
+* DONE Read the guide for what compress, make a packer.
+CLOSED: [2025-08-01 Fri 11:33]
 I would avoid compress all the file cause should be a valid elf file in is compress should give any kind of error.
