@@ -2,13 +2,12 @@
 #+PROPERTY: header-args:c :tangle "srcs/inject_code.c" :mkdirp yes
 #+PROPERTY: header-args:asm :mkdirp yes
 
-#+begin_src c :tangle "target/example.c" :mkdirp yes
-  #include <stdio.h>
+#+begin_src c :tangle "target/main.c" :mkdirp yes
+  #include <unistd.h>
 
-  int main(int argc, char **argv)
+  int main(void)
   {
-    puts("Hello World!\n");
-    return (0);
+    return (write(1, "Hello World!\n", 13));
   }
 #+end_src
 
@@ -20,45 +19,6 @@ int main() {
 }
 #+end_src
 
-#+begin_src asm :tangle target/hello_no_pie.s :mkdirp yes
-global _start
-
-        section .text
-
-_start: mov rdi, 1      ; stdout fd
-        mov rsi, msg
-        mov rdx, 9      ; 8 chars + newline
-        mov rax, 1      ; write syscall
-        syscall
-
-        xor rdi, rdi    ; return code 0
-        mov rax, 60     ; exit syscall
-        syscall
-
-        section .data
-
-msg:    db "hi there", 10, 0
-#+end_src
-
-#+begin_src asm :tangle target/hello_pie.s :mkdirp yes
-global _start
-
-        section .text
-
-_start: mov rdi, 1      ; stdout fd
-        lea rsi, [rel + msg]
-        mov rdx, 9      ; 8 chars + newline
-        mov rax, 1      ; write syscall
-        syscall
-
-        xor rdi, rdi    ; return code 0
-        mov rax, 60     ; exit syscall
-        syscall
-
-        section .data
-
-msg:    db "hi there", 10, 0
-#+end_src
 
 #+begin_src asm :tangle payload/test.s :mkdirp yes
 global _start
@@ -72,16 +32,6 @@ _start:
 
 #+end_src
 
-#+begin_src asm :tangle payload/woody.c :mkdirp yes
-  #include <unistd.h>
-
-  void woody(void)
-  {
-      char woody_str[] = {'.','.','.','.','W','O','O','D','Y','.','.','.','.','\n'};
-
-      write(1, woody_str, sizeof(woody_str));
-  }
-#+end_src
 
 #+begin_src asm :tangle payload/woody_asm.s :mkdirp yes
           global _start
