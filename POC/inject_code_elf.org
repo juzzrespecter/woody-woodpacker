@@ -138,7 +138,6 @@ Modify makefile to compile the differents targets and start testing with it.
       ehdr->elf64->e_shoff = value;
     }
 
-
     void elf_ehdr_set_entry(t_elf_h *ehdr, uint64_t value, unsigned char class)
     {
       if (class == ELFCLASS32) 
@@ -162,7 +161,6 @@ Modify makefile to compile the differents targets and start testing with it.
       printf("shdr set addralign elf64\n");
       shdr->elf64->sh_addralign = value;
     }
-
 
     void elf_shdr_set_addr(t_elf_sh *shdr, uint64_t value, unsigned char class)
     {
@@ -200,8 +198,6 @@ Modify makefile to compile the differents targets and start testing with it.
       printf("shdr set offset elf64\n");
       shdr->elf64->sh_offset = value;
     }
-
-    int elf_insert_payload(void *elf_mmap, off_t file_size, int packed);
 
   bool is_between(uint64_t lower_limit, uint64_t upper_limit, uint64_t value)
   {
@@ -904,8 +900,15 @@ Modify makefile to compile the differents targets and start testing with it.
       return 0;
   }
 
+  static bool last_section_in_phdr(t_elf_h *ehdr, t_elf_ph ndx_ph, uint64_t ndx_sh, unsigned char class, uint64_t phnum)
+  {
+    t_elf_sh shdr = elf_get_section_header(ehdr, ++ndx_sh);
+
+    return (elf_get_program_ndx_from_addr(ehdr, class, phnum, elf_get_section_header_addr(&shdr, class)) != ndx_ph);
+  }
+
   static int write_program_headers(t_elf_h *ehdr, void *elf_mmap, int packed, uint64_t ndx_ph, uint64_t phnum,
-                                   unsigned char class, uint64_t payload_size, uint64_t *writed)
+                                   unsigned char class, uint64_t payload_size, uint64_t *writed, uint64_t ndx_sh)
   {
       uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
       ,*writed += write(packed, elf_mmap + *writed, phdr_struct_size * ndx_ph);
@@ -925,8 +928,17 @@ Modify makefile to compile the differents targets and start testing with it.
       uint64_t p_og_padding = get_alignment_effective_addr(p_align, p_offset + p_filesz) - p_offset;
       uint64_t p_modified_padding = get_alignment_effective_addr(p_align, p_offset + p_filesz + payload_size) - p_offset;
 
-      elf_phdr_set_filesz(&phdr_cp, p_filesz + payload_size, class);
-      elf_phdr_set_memsz(&phdr_cp, p_memsz + payload_size, class);
+      if (last_section_in_phdr(&ehdr, ndx_ph, ndx_sh, class, phnum)) // Modify phdr content.
+        {
+  	elf_phdr_set_filesz(&phdr_cp, p_filesz + payload_size, class);
+  	elf_phdr_set_memsz(&phdr_cp, p_memsz + payload_size, class);
+        }
+      else
+        {
+  	elf_phdr_set_filesz(&phdr_cp, p_filesz + payload_size + (p_modified_padding - p_og_padding), class);
+  	elf_phdr_set_memsz(&phdr_cp, p_memsz + payload_size + (p_modified_padding - p_og_padding), class);
+  	// fill between code with \0 or with nop?
+        }
 
       uint64_t og_p_vaddr = elf_get_program_header_vaddr(&phdr, class);
 
@@ -1040,7 +1052,7 @@ Modify makefile to compile the differents targets and start testing with it.
                                      old_next_offset, new_next_offset, &writed))
           return 14;
       
-      if (write_program_headers(&ehdr, elf_mmap, packed, ndx_ph, phnum, class, payload_size, &writed))
+      if (write_program_headers(&ehdr, elf_mmap, packed, ndx_ph, phnum, class, payload_size, &writed, ndx_sh))
           return 15;
       writed += write(packed, elf_mmap + writed, sh_offset_payload - writed); //write data until payload offset.
 
@@ -1115,9 +1127,9 @@ Modify makefile to compile the differents targets and start testing with it.
 
 #+end_src
 
-* Try to make more indepedience the code not that hardcoded.
 
-* Creating the real payload for the project, Fixing the offset in phdr
+* DONE Creating the real payload for the project, Fixing the offset in phdr
+CLOSED: [2025-08-11 Mon 11:21]
 :LOGBOOK:
 CLOCK: [2025-07-08 Tue 11:54]--[2025-07-08 Tue 15:00] =>  3:06
 :END:
@@ -1168,7 +1180,7 @@ CLOSED: [2025-07-10 Thu 17:59]
 - State "DONE"       from "TODO"       [2025-07-10 Thu 17:59]
 :END:
 ./woody
-Illegal instruction (core dumped) apparently encrypt the payload and execute it with out decrypt don't like it.
+Illegal instruction (core dumped) apparently encrypt the payload and execute it with out decrypt Kaboom.
 
 ** DONE put the encrypt string in bytecode in asm
 CLOSED: [2025-07-14 Mon 17:55]
@@ -1538,6 +1550,21 @@ CLOSED: [2025-07-17 Thu 16:57]
 - State "DONE"       from "TODO"       [2025-07-17 Thu 16:57]
 :END:
 
+* CANC make work with a gcc program with asm work fine.
+CLOSED: [2025-08-01 Fri 11:33]
+:LOGBOOK:
+- State "CANC"       from "TODO"       [2025-08-01 Fri 11:33]
+:END:
+with nasm -f elf64 work fine.
+with gcc give segfault. Need keep working. Create more sh, ph and i don't implement well enought for what i can see.
+With one phdr work fine with more not.
+Modifying last section in phdr work fine if not.
+For what i see the shdr_strtab is broken need to check further.
+May cause this:
+-    If the appended bytecode causes the segment to exceed its original size but still fits within the allocated space (i.e., it does not overlap with the next segment), you can simply update the p_filesz and p_memsz of the modified segment.
+-    check that i don't overlap any existing segment, in case yes update the offset and vaddr.
+-    The same with each update of a phdr.  // Create a function for that.
+-    ~is_between(p_offset, p_offset + p_m_filesz, elf_get_program_header_offset(&phdr, class))~
 * DONE make the Workflow logic
 CLOSED: [2025-07-17 Thu 13:46]
 :LOGBOOK:
@@ -1567,20 +1594,6 @@ Avoid time in execute the payload may implemented when valid encrypt algorithm.
 
 * DONE Refactor the code for readability and development.
 CLOSED: [2025-07-24 Thu 12:30]
-* CANC make work with a gcc program with asm work fine.
-CLOSED: [2025-08-01 Fri 11:33]
-:LOGBOOK:
-- State "CANC"       from "TODO"       [2025-08-01 Fri 11:33]
-:END:
-with nasm -f elf64 work fine.
-with gcc give segfault. Need keep working. Create more sh, ph and i don't implement well enought for what i can see.
-With one phdr work fine with more not.
-For what i see the shdr_strtab is broken need to check further.
-May cause this:
-    If the appended bytecode causes the segment to exceed its original size but still fits within the allocated space (i.e., it does not overlap with the next segment), you can simply update the p_filesz and p_memsz of the modified segment.
-    check that i don't overlap any existing segment, in case yes update the offset and vaddr.
-    The same with each update of a phdr.  // Create a function for that.
-    ~is_between(p_offset, p_offset + p_m_filesz, elf_get_program_header_offset(&phdr, class))~
 * DONE I Fix section .text need to fix the rest, i think maybe is something with the  padding   need  to check another day.
 CLOSED: [2025-07-28 Mon 11:40]
 warning: Loadable section ".fini" outside of ELF segments
@@ -1593,36 +1606,6 @@ warning: Loadable section ".dynamic" outside of ELF segments
 warning: Loadable section ".got" outside of ELF segments
 warning: Loadable section ".got.plt" outside of ELF segments
 warning: Loadable section ".data" outside of ELF segments
-* CANC change the condition to increment offset & addr not to all when increment size of a shdr just what it should.
-CLOSED: [2025-08-01 Fri 11:33]
-:LOGBOOK:
-- State "CANC"       from "TODO"       [2025-08-01 Fri 11:33]
-:END:
-just when offset or addr is overlap.
-
-
-** DONE May Increase the Phdr size over the alignment and increase the rest of v/p addr.
-CLOSED: [2025-07-18 Fri 14:54]
-:LOGBOOK:
-- State "DONE"       from "TODO"       [2025-07-18 Fri 14:54]
-:END:
-** DONE Improve section header entrypoint with between in shdr for packer a already packed_binary.
-CLOSED: [2025-07-23 Wed 12:30]
-:LOGBOOK:
-CLOCK: [2025-07-23 Wed 12:11]--[2025-07-23 Wed 12:30] =>  0:19
-:END:
-** DONE Increment address in section just inside the same Phdr. Create a function to help.
-CLOSED: [2025-07-23 Wed 13:48]
-*** DONE align size == next shdr alignment.
-CLOSED: [2025-07-23 Wed 13:04]
-** DONE Align the vaddr and p_offset.
-CLOSED: [2025-07-23 Wed 13:25]
-** CANC Function modify a phdr and update the rest.
-CLOSED: [2025-08-01 Fri 11:33]
-:LOGBOOK:
-- State "CANC"       from "TODO"       [2025-08-01 Fri 11:33] \\
-  .
-:END:
 * CANC make the x32 bit check and adjustment if need it.
 CLOSED: [2025-08-01 Fri 11:33]
 :LOGBOOK:
@@ -1649,8 +1632,6 @@ ndisasm -b 32 payload_32.bin
 #+end_src
 
 
-* DONE Read the guide for what compress, make a packer.
-CLOSED: [2025-08-01 Fri 11:33]
-I would avoid compress all the file cause should be a valid elf file in is compress should give any kind of error.
+I would compress section ~.data & .text~
 
 
