@@ -206,6 +206,24 @@
       return  (i);
     }
 
+  size_t elf_get_highest_offset_avalaible(t_elf_h *ehdr, unsigned char class, uint64_t shnum)
+  {
+    t_elf_sh shdr;
+    uint64_t i;
+    size_t sh_offset;
+    size_t highest_avalaible_offset = 0;
+
+    i = 0;
+    while (++i < shnum) // Skip the first 
+      {
+        shdr = elf_get_section_header(ehdr, i);
+        sh_offset = elf_get_section_header_offset(&shdr, class);
+        if (highest_avalaible_offset < sh_offset)
+  	highest_avalaible_offset = sh_offset + elf_get_section_header_size(&shdr, class);
+      }
+    return  (highest_avalaible_offset);
+  }
+
   size_t elf_get_highest_loadable_vaddr_avalaible(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
   {
     t_elf_ph phdr;
@@ -811,6 +829,26 @@
     return (0);
   }
 
+  static t_elf_ph get_n_loadable_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t n)
+  {
+      t_elf_ph phdr;
+      uint64_t ph_ndx;
+      uint64_t times_loadable;
+
+      ph_ndx = 0;
+      times_loadable = 0;
+      while (++ph_ndx < phnum)
+        {
+  	phdr = elf_get_program_header(ehdr, ph_ndx);
+  	if (PT_LOAD != elf_get_program_header_type(&phdr, class))
+  	  times_loadable++;
+  	if (times_loadable == n)
+  	  return (phdr);
+        }
+      phdr.elf32 = NULL;;
+      return (phdr);
+  }
+
   static int validate_elf_headers(t_elf_h *ehdr, uint64_t *shnum, uint64_t *phnum, unsigned char *class)
   {
       ,*shnum = elf_get_elfh_shnum(ehdr);
@@ -823,39 +861,75 @@
       return 0;
   }
 
-  static int find_section_and_program_indices(t_elf_h *ehdr, uint64_t e_entrypoint, uint64_t shnum, uint64_t phnum,
-                                             unsigned char class, uint64_t *ndx_sh, uint64_t *ndx_ph)
-  {
-      ,*ndx_ph = elf_get_program_ndx_from_addr(ehdr, class, phnum, e_entrypoint);
-      if (!*ndx_ph || phnum <= *ndx_ph)
-        return (10);
-      ,*ndx_sh = elf_get_section_ndx_from_addr(ehdr, e_entrypoint, class, shnum);
-      if (!*ndx_sh || shnum <= *ndx_sh)
-        return (11);
-      return (0);
-  }
-  //TODO Modify in the caller the parameter i change -> next_phdr_vaddr, new_phdr_offset.
-  static int prepare_info(t_elf_h *ehdr, unsigned char class, uint64_t payload_size,
-  			uint64_t *next_phdr_vaddr, uint64_t phnum, uint64_t *new_phdr_offset)
-  {
-      t_elf_ph phdr = elf_get_program_header(ehdr, phnum - 1, class);
-      const uint64_t offset = elf_get_program_header_offset(&phdr, class);
-      const uint64_t filesz = elf_get_program_header_filesz(&phdr, class);
-      const uint64_t new_align = 0x1000;
-      ,*next_phdr_vaddr = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum);
-      ,*next_phdr_offset = get_alignment_effective_addr(new_align, offset + filesz);
+  /* static int find_section_and_program_indices(t_elf_h *ehdr, uint64_t e_entrypoint, uint64_t shnum, uint64_t phnum, */
+  /*                                            unsigned char class, uint64_t *ndx_sh, uint64_t *ndx_ph) */
+  /* { */
+  /*     *ndx_ph = elf_get_program_ndx_from_addr(ehdr, class, phnum, e_entrypoint); */
+  /*     if (!*ndx_ph || phnum <= *ndx_ph) */
+  /*       return (10); */
+  /*     *ndx_sh = elf_get_section_ndx_from_addr(ehdr, e_entrypoint, class, shnum); */
+  /*     if (!*ndx_sh || shnum <= *ndx_sh) */
+  /*       return (11); */
+  /*     return (0); */
+  /* } */
 
-      if (*next_phdr_vaddr % new_align == next_phdr_offset % new_align) 
-        printf("all fine with addr and offset aligned\n");
-      else
-        {
-        printf("need to modify a little addr and offset aligned");
-        if (*next_phdr_vaddr % new_align > *next_phdr_offset % new_align)
-  	,*next_phdr_offset += *next_phdr_vaddr % new_align - *next_phdr_offset % new_align;
+  /* static t_elf_ph get_farest_phdr_offset_add_filesz(t_elf_h *ehdr, unsigned char class, uint64_t phnum) */
+  /* { */
+  /*     t_elf_ph phdr; */
+  /*     uint64_t ph_ndx; */
+  /*     uint64_t cur_offset_add_filesz; */
+  /*     uint64_t max_offset_add_filesz; */
+  /*     uint64_t max_ph_ndx; */
+
+  /*     ph_ndx = 0; */
+  /*     max_ph_ndx = 0; */
+  /*     max_offset_add_filesz = 0; */
+  /*     while (++ph_ndx < phnum) */
+  /*       { */
+  /* 	phdr = elf_get_program_header(ehdr, ph_ndx); */
+  /* 	cur_offset_add_filesz = elf_get_program_header_offset(&phdr, class) +elf_get_program_header_filesz(&phdr, class); */
+  /* 	if (max_offset_add_filesz < cur_offset_add_filesz) */
+  /* 	  { */
+  /* 	    max_offset_add_filesz = cur_offset_add_filesz; */
+  /* 	    max_ph_ndx = ph_ndx; */
+  /* 	  } */
+  /*       } */
+  /*     phdr = elf_get_program_header(ehdr, max_ph_ndx); */
+  /*     return (phdr); */
+  /* } */
+
+  static bool increment_offset_phdr(t_elf_h *ehdr, uint64_t offset, uint64_t phnum, unsigned char class)
+  {
+    uint64_t ehdr_struct_size = elf_get_struct_size_elf_header((char *)ehdr->elf32);
+    t_elf_ph phdr_loadable_second = get_n_loadable_phdr(ehdr, class, phnum, 2);
+    uint64_t phdr_loadable_second_offset = elf_get_program_header_vaddr(&phdr_loadable_second, class);
+
+    return (offset > ehdr_struct_size && offset < phdr_loadable_second_offset);
+  }
+
+  static int prepare_info(t_elf_h *ehdr, unsigned char class, uint64_t *new_phdr_vaddr,
+  			uint64_t phnum, uint64_t *new_phdr_offset, uint64_t *new_shoff,
+  			uint64_t payload_size, uint64_t shnum)
+  {
+    /* t_elf_ph phdr = get_farest_phdr_offset_add_filesz(ehdr, class, phnum); */
+    const uint64_t new_align = 0x1000;
+    const uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
+    ,*new_phdr_vaddr = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum);
+    ,*new_phdr_offset = elf_get_highest_offset_avalaible(ehdr, class, shnum);
+    if (increment_offset_phdr(ehdr, *new_phdr_offset, phnum, class))// I think shouldn't go throught this way.
+      ,*new_phdr_offset += phdr_struct_size;
+    if (*new_phdr_vaddr % new_align == *new_phdr_offset % new_align) 
+      printf("all fine with addr and offset aligned\n");
+    else
+      {
+        printf("need to modify a little addr or offset aligned");
+        if (*new_phdr_vaddr % new_align > *new_phdr_offset % new_align)
+  	,*new_phdr_offset += *new_phdr_vaddr % new_align - *new_phdr_offset % new_align;
         else
-  	,*next_phdr_vaddr += *next_phdr_offset % new_align - *next_phdr_vaddr % new_align;
-        }
-      return 0;
+  	,*new_phdr_vaddr += *new_phdr_offset % new_align - *new_phdr_vaddr % new_align;
+      }
+    ,*new_shoff = *new_phdr_offset + payload_size;
+    return 0;
   }
 
   static int copy_and_modify_elf_header(t_elf_h *ehdr, int packed, uint64_t new_e_shoff, unsigned char class,
@@ -866,9 +940,8 @@
     if (!ehdr_cp.elf32)
       return 14;
     memcpy(ehdr_cp.elf32, ehdr->elf32, elf_struct_size);
-    if (new_next_offset)
+    if (new_e_shoff)
       elf_ehdr_set_shoff(&ehdr_cp, new_e_shoff, class);
-
     elf_ehdr_set_entry(&ehdr_cp, new_entrypoint, class);
     elf_ehdr_set_phnum(&ehdr_cp, ++phnum, class);
     elf_ehdr_set_shnum(&ehdr_cp, ++shnum, class);
@@ -877,122 +950,116 @@
     return 0;
   }
 
-  static bool last_section_in_phdr(t_elf_h *ehdr, t_elf_ph ndx_ph, uint64_t ndx_sh, unsigned char class, uint64_t phnum)
+  /* static bool last_section_in_phdr(t_elf_h *ehdr, t_elf_ph ndx_ph, uint64_t ndx_sh, unsigned char class, uint64_t phnum) */
+  /* { */
+  /*   t_elf_sh shdr = elf_get_section_header(ehdr, ++ndx_sh); */
+
+  /*   return (elf_get_program_ndx_from_addr(ehdr, class, phnum, elf_get_section_header_addr(&shdr, class)) != ndx_ph); */
+  /* } */
+
+  static int write_program_headers(t_elf_h *ehdr, int packed, uint64_t phnum,
+  				 uint64_t new_phdr_offset, uint64_t new_phdr_vaddr,
+                                   unsigned char class, uint64_t payload_size, uint64_t *writed)
   {
-    t_elf_sh shdr = elf_get_section_header(ehdr, ++ndx_sh);
+    //Modify first phdr for change the filesz  & memsz = filesz + phdr_struct_size 
+    //Done Modify the offset of all segments that offset is > 0x40(sizeof(ehdr)) <  (2 load phdr offset) = 0x1000
+    //DONE if alignment = {0, 1} don't modify vaddr | paddr.
+    //if first load segment(phdr)vaddr + memsz + sizeof(phdr)  > next load vaddr Error!
+    //for reuse the same packer on a packed file i should detect if i is already packed and add the new payload.
+    t_elf_ph phdr_loadable_second = get_n_loadable_phdr(ehdr, class, phnum, 2);
+    const uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
+    uint64_t ndx_ph;
 
-    return (elf_get_program_ndx_from_addr(ehdr, class, phnum, elf_get_section_header_addr(&shdr, class)) != ndx_ph);
-  }
-
-  static int write_program_headers(t_elf_h *ehdr, void *elf_mmap, int packed, uint64_t ndx_ph, uint64_t phnum,
-                                   unsigned char class, uint64_t payload_size, uint64_t *writed, uint64_t ndx_sh)
-  {
-      uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
-      ,*writed += write(packed, elf_mmap + *writed, phdr_struct_size * ndx_ph);
-
-      t_elf_ph phdr_cp = {.elf32 = malloc(phdr_struct_size)};
-      if (!phdr_cp.elf32)
-          return 15;
-
-      t_elf_ph phdr = elf_get_program_header(ehdr, ndx_ph);
-      memcpy(phdr_cp.elf32, phdr.elf32, phdr_struct_size);
-
-      uint64_t p_align = elf_get_program_header_align(&phdr, class);
-      uint64_t p_memsz = elf_get_program_header_memsz(&phdr, class);
-      uint64_t p_filesz = elf_get_program_header_filesz(&phdr, class);
-      uint64_t p_offset = elf_get_program_header_offset(&phdr, class);
-
-      uint64_t p_og_padding = get_alignment_effective_addr(p_align, p_offset + p_filesz) - p_offset;
-      uint64_t p_modified_padding = get_alignment_effective_addr(p_align, p_offset + p_filesz + payload_size) - p_offset;
-
-      if (last_section_in_phdr(&ehdr, ndx_ph, ndx_sh, class, phnum)) // Modify phdr content.
-        {
-  	elf_phdr_set_filesz(&phdr_cp, p_filesz + payload_size, class);
-  	elf_phdr_set_memsz(&phdr_cp, p_memsz + payload_size, class);
-        }
-      else
-        {
-  	elf_phdr_set_filesz(&phdr_cp, p_filesz + payload_size + (p_modified_padding - p_og_padding), class);
-  	elf_phdr_set_memsz(&phdr_cp, p_memsz + payload_size + (p_modified_padding - p_og_padding), class);
-  	// fill between code with \0 or with nop?
-        }
-
-      uint64_t og_p_vaddr = elf_get_program_header_vaddr(&phdr, class);
-
-      while (ndx_ph < phnum)
+    ndx_ph = 0;
+    t_elf_ph phdr_cp = {.elf32 = malloc(phdr_struct_size)};
+    if (!phdr_cp.elf32 | !phdr_loadable_second.elf32)
+      return 15;
+    t_elf_ph phdr = elf_get_program_header(ehdr, ndx_ph);
+    uint64_t p_offset;
+    memcpy(phdr_cp.elf32, phdr.elf32, phdr_struct_size);
+    elf_phdr_set_filesz(&phdr_cp, elf_get_program_header_filesz(&phdr, class) + phdr_struct_size, class);
+    elf_phdr_set_memsz(&phdr_cp, elf_get_program_header_memsz(&phdr, class) + phdr_struct_size, class);
+    ,*writed += write(packed, phdr_cp.elf32, phdr_struct_size);
+    //Write modify the phdr already exist
+    while (++ndx_ph < phnum)
       {
-          uint64_t p_vaddr = elf_get_program_header_vaddr(&phdr, class);
-          uint64_t p_paddr = elf_get_program_header_paddr(&phdr, class);
+        phdr = elf_get_program_header(ehdr, ndx_ph);
+        memcpy(phdr_cp.elf32, phdr.elf32, phdr_struct_size);
 
-          if (p_og_padding < p_modified_padding && og_p_vaddr < p_vaddr)
-          {
-              elf_phdr_set_vaddr(&phdr_cp, p_vaddr + (p_modified_padding - p_og_padding), class);
-              elf_phdr_set_offset(&phdr_cp, p_offset + (p_modified_padding - p_og_padding), class);
-              if (p_paddr)
-                  elf_phdr_set_paddr(&phdr_cp, p_paddr + (p_modified_padding - p_og_padding), class);
-          }
-
-          ,*writed += write(packed, phdr_cp.elf32, phdr_struct_size);
-          ndx_ph++;
-
-          if (ndx_ph >= phnum)
-              break;
-
-          phdr = elf_get_program_header(ehdr, ndx_ph);
-          memcpy(phdr_cp.elf32, phdr.elf32, phdr_struct_size);
+        p_offset = elf_get_program_header_offset(&phdr, class);
+        if (increment_offset_phdr(ehdr, p_offset, phnum, class))//phdr after > ehdr and before 2 load offset
+  	elf_phdr_set_offset(&phdr_cp, p_offset + phdr_struct_size, class);
+        else if (!p_offset && PT_LOAD == elf_get_program_header_type(&phdr, class))//first load include last phdr.
+  	{
+  	  elf_phdr_set_filesz(&phdr_cp, elf_get_program_header_filesz(&phdr, class) + phdr_struct_size, class);
+  	  elf_phdr_set_memsz(&phdr_cp, elf_get_program_header_memsz(&phdr, class) + phdr_struct_size, class);
+  	  if (elf_get_program_header_memsz(&phdr_cp, class) + elf_get_program_header_vaddr(&phdr_cp, class) > elf_get_program_header_vaddr(&phdr_loadable_second, class))
+  	    return (16);// Overlap the address of the next phdr.
+  	}
+        ,*writed += write(packed, phdr_cp.elf32, phdr_struct_size);
+        ndx_ph++;
       }
+    //Set the new_phdr.
+    memcpy(phdr_cp.elf32, phdr_loadable_second.elf32, phdr_struct_size);// phdr .text
+    //Modify memsz, filesz
 
-      free(phdr_cp.elf32);
-      return 0;
+    elf_phdr_set_memsz(&phdr_cp, payload_size, class);
+    elf_phdr_set_filesz(&phdr_cp, payload_size, class);
+    elf_phdr_set_vaddr(&phdr_cp, new_phdr_vaddr, class);
+    if (elf_get_program_header_paddr(&phdr_cp, class))// Under BSD Is unused and must be Zero
+      elf_phdr_set_paddr(&phdr_cp, new_phdr_vaddr, class);
+    elf_phdr_set_offset(&phdr_cp, new_phdr_offset, class);
+    ,*writed += write(packed, phdr_cp.elf32, phdr_struct_size);
+    free(phdr_cp.elf32);
+    return 0;
   }
 
-  static int write_payload_and_alignment(int packed, void *generated_bytecode, uint64_t payload_size,
-                                         uint64_t modified_section_padding)
+  static int write_alignment_and_payload(int packed, void **generated_bytecode, uint64_t payload_size,
+                                         uint64_t modified_section_padding, uint64_t *writed)
   {
-      if (write(packed, generated_bytecode, payload_size) != (ssize_t)payload_size)
-          return 1;
-
-      free(generated_bytecode);
-
-      while (modified_section_padding--)
-          write(packed, "\0", 1);
-
-      return 0;
+    while (modified_section_padding--)
+      ,*writed += write(packed, "\0", 1);
+    if (write(packed, *generated_bytecode, payload_size) != (ssize_t)payload_size)
+      return (1);
+    free(*generated_bytecode);
+    ,*generated_bytecode = NULL;
+    writed += payload_size;
+    return (0);
   }
 
-  static int write_remaining_section_headers(t_elf_h *ehdr, int packed, uint64_t ndx_sh, uint64_t shnum,
-                                             unsigned char class, uint64_t sh_offset, uint64_t old_next_offset,
-                                             uint64_t new_next_offset, uint64_t *writed, uint64_t payload_size)
+  static int write_remaining_section_headers(t_elf_h *ehdr, int packed, uint64_t phnum, uint64_t shnum,
+                                             unsigned char class, uint64_t new_phdr_offset,
+                                             uint64_t new_phdr_vaddr, uint64_t *writed, uint64_t payload_size)
   {
       uint64_t shdr_struct_size = elf_get_section_header_struct_size(ehdr);
+      uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
       t_elf_sh shdr_cp = (t_elf_sh){.elf32 = malloc(shdr_struct_size)};
+      uint64_t ndx_sh;
       if (!shdr_cp.elf32)
           return 12;
-
+      ndx_sh = 0;
       t_elf_sh shdr = elf_get_section_header(ehdr, ndx_sh);
       memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size);
-      elf_shdr_set_size(&shdr_cp, elf_get_section_header_size(&shdr, class) + payload_size, class);
       ,*writed += write(packed, shdr_cp.elf32, shdr_struct_size);
 
       while (++ndx_sh < shnum)
       {
           shdr = elf_get_section_header(ehdr, ndx_sh);
-          uint64_t shcp_addr = elf_get_section_header_addr(&shdr, class);
+          /* uint64_t shcp_addr = elf_get_section_header_addr(&shdr, class); */
           uint64_t shcp_offset = elf_get_section_header_offset(&shdr, class);
 
           memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size);
-
-          if (shcp_offset >= (sh_offset + old_next_offset))
-          {
-              if (shcp_addr > elf_get_section_header_addr(&shdr, class))
-                  elf_shdr_set_addr(&shdr_cp, shcp_addr + (new_next_offset - old_next_offset), class);
-              if (shcp_offset > sh_offset)
-                  elf_shdr_set_offset(&shdr_cp, shcp_offset + (new_next_offset - old_next_offset), class);
-          }
+          if (increment_offset_phdr(ehdr, shcp_offset, phnum, class))
+  	  elf_shdr_set_offset(&shdr_cp, elf_get_section_header_offset(&shdr, class) + phdr_struct_size, class);
 
           ,*writed += write(packed, shdr_cp.elf32, shdr_struct_size);
       }
-
+      //TODO set last shdr
+      //Modify  flags, name, type, address, offset, align, link, Info, Entsize
+      elf_shdr_set_size(&shdr_cp, new_phdr_vaddr, class);
+      elf_shdr_set_size(&shdr_cp, new_phdr_offset, class);
+      elf_shdr_set_size(&shdr_cp, payload_size, class);
+      ,*writed += write(packed, shdr_cp.elf32, shdr_struct_size);
       free(shdr_cp.elf32);
       return 0;
   }
@@ -1002,43 +1069,39 @@
       t_elf_h ehdr = (t_elf_h){.elf32 = elf_mmap};
       uint64_t shnum;
       uint64_t phnum;
-      uint64_t ndx_sh;
-      uint64_t ndx_ph;
       unsigned char class;
-      uint64_t e_entrypoint = elf_get_elfh_entry(&ehdr);
       uint64_t e_shoff = elf_get_elfh_shoff(&ehdr);
-      uint64_t sh_offset_payload;
-      uint64_t sh_elf_offset;
-      uint64_t sh_addralign;
-      uint64_t sh_size;
-      uint64_t sh_offset;
-      uint64_t sh_addr;
-      uint64_t old_next_offset;
-      uint64_t new_next_offset;
+      uint64_t new_phdr_vaddr;
+      uint64_t new_phdr_offset;
       uint64_t writed = 0;
+      uint64_t new_e_entry;
+      uint64_t new_e_shoff;
+      /* uint64_t sh_size; */
+      /* uint64_t sh_offset; */
 
       if (validate_elf_headers(&ehdr, &shnum, &phnum, &class))
-          return 1;
-      if (find_section_and_program_indices(&ehdr, e_entrypoint, shnum, phnum, class, &ndx_sh, &ndx_ph))
-          return 10;
-      if (prepare_info(&ehdr, class, payload_size,
-  		     &old_next_offset, phnum, &new_next_offset))
-          return 11;
-      if (copy_and_modify_elf_header(&ehdr, packed, e_shoff, e_entrypoint, sh_size, class,
-                                     old_next_offset, new_next_offset, &writed))
-          return 14;
-      if (write_program_headers(&ehdr, elf_mmap, packed, ndx_ph, phnum, class, payload_size, &writed, ndx_sh))
-          return 15;
-      writed += write(packed, elf_mmap + writed, sh_offset_payload - writed); //write data until payload offset.
-      if (write_payload_and_alignment(packed, generated_bytecode, payload_size,
-                                      new_next_offset - (sh_size + payload_size)))
-          return 1;
-      writed += old_next_offset - sh_size;
-      writed += write(packed, elf_mmap + writed, sh_elf_offset - writed);
-      printf("Successfully packed\n");
-      if (write_remaining_section_headers(&ehdr, packed, ndx_sh, shnum, class,
-                                          sh_offset, old_next_offset, new_next_offset, &writed, payload_size))
-          return 12;
+        return (1);
+      /* if (find_section_and_program_indices(&ehdr, e_entrypoint, shnum, phnum, class, &ndx_sh, &ndx_ph)) */
+      /*     return 10; */
+      if (prepare_info(&ehdr, class, &new_phdr_vaddr, phnum, &new_phdr_offset, &new_e_shoff, payload_size, shnum))
+        return (2);
+      new_e_entry = new_phdr_vaddr;
+      if (copy_and_modify_elf_header(&ehdr, packed, new_e_shoff, class, new_e_entry, phnum, shnum, &writed))
+        return (3);
+      if (write_program_headers(&ehdr, packed, phnum, new_phdr_offset, new_e_entry, class, payload_size, &writed))
+        return (4);
+
+    const uint64_t ehdr_struct_size = elf_get_struct_size_elf_header((char *)ehdr.elf32);
+    const uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
+    const uint64_t elf_mmap_offset = ehdr_struct_size + phdr_struct_size * (phnum + 1);
+    writed += write(packed, elf_mmap + elf_mmap_offset, e_shoff - elf_mmap_offset);//Write content previous to e_shoff
+    //TODO 
+      if (write_alignment_and_payload(packed, &generated_bytecode, payload_size,
+                                      new_phdr_offset - writed, &writed))
+        return (5);
+      if (write_remaining_section_headers(&ehdr, packed, phnum, shnum, class,
+                                          new_phdr_offset, new_phdr_vaddr, &writed, payload_size))
+        return (6);
       writed += write(packed, elf_mmap + writed, file_size - writed);//Write the rest of the file
       printf("Successfully packed\n");
       return 0;
@@ -1087,9 +1150,6 @@
         munmap(elf_mmap, file_size);
         return (0);
       }
-
-
-
 #+end_src
 
 * Check argv, argc, envp in gdb
@@ -1116,9 +1176,13 @@
 For avoid trouble previous to jmp to og_entrypoint:
 rsp value must bemantained
 leave all register eq = 0 previous to jmp, except one to hold the jmp address r13 x example.
-* Create a phdr & modify ehdr->phnum
 ** Modify ehdr
-** Modify phdr
+* Create a phdr & modify ehdr->phnum
+
+** TODO Modify phdr
+:LOGBOOK:
+CLOCK: [2025-08-12 Tue 08:35]
+:END:
 ** Modify shdr
 ** Add the payload on the new  offset.
 * Create a shdr & modify ehdr->shnum
