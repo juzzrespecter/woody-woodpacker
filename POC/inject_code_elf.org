@@ -1631,6 +1631,26 @@ ndisasm -b 32 payload_32.bin
 00000034  83C40E            add esp,byte +0xe
 #+end_src
 
+#+begin_src c :tangle payload/xor_asm.s
+  section .text
+      global _start
+
+  _start:
+    xor ax, ax
+    xor bx, bx
+    xor cx, cx
+    xor dx, dx
+    xor si, si
+    xor di, di
+    xor r8, r8
+    xor r9, r9
+    xor r10, r10
+    xor r11, r11
+    xor r12, r12
+    ;; skip r13, e have the entry point in there
+    xor r14, r14
+    xor r15, r15
+#+end_src
 
 I would compress section ~.data & .text~
 

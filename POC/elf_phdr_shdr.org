@@ -689,44 +689,50 @@
       return (written);
    }
 
-    //todo may use union avoid use more heap.
   typedef  union u_elf_addr
   {
     Elf32_Addr b32;    
     Elf64_Addr b64;
   }	t_elf_addr;
 
-    void set_jmp_entrypoint(void *payload, uint64_t entrypoint, unsigned char class)
-    {
-      t_elf_addr u_entrypoint = (t_elf_addr){.b64 = entrypoint};
-      size_t offset = 0;
+  size_t set_jmp_rax(void *dst)
+  {
+    if (dst)
+      memcpy(dst, "\xff\xe0", 2);
+    return (2);
+  }
 
-      if (class == ELFCLASS64)
-        {
-          memcpy(payload, "\x48", 1); //rex prefix x64
-          offset++;
-        }
-      memcpy(payload + offset, "\xb8", 1); //mov eax in case preceding rex is rax.
-      offset++;
-      if (class == ELFCLASS64)
-        {
-          memcpy(payload + offset, &u_entrypoint.b64, sizeof (u_entrypoint.b64));
-          offset+= sizeof (u_entrypoint.b64);
-        }
-      else
-        {
-          memcpy(payload + offset, &u_entrypoint.b32, sizeof (u_entrypoint.b32));
-          offset+= sizeof (u_entrypoint.b32);
-        }
-      memcpy(payload + offset, "\xff\xe0", 2); 
-    }
+  void set_jmp_entrypoint(void *payload, uint64_t entrypoint, unsigned char class)
+  {
+    t_elf_addr u_entrypoint = (t_elf_addr){.b64 = entrypoint};
+    size_t offset = 0;
 
-    void encrypt(unsigned char *src, size_t size)
-    {
-      size_t i = 0;
-      while ( i < size)
-          src[i++] += 13;
-    }
+    if (class == ELFCLASS64)
+      {
+        memcpy(payload, "\x48", 1); //rex prefix x64
+        offset++;
+      }
+    memcpy(payload + offset, "\xb8", 1); //mov eax in case preceding rex is rax.
+    offset++;
+    if (class == ELFCLASS64)
+      {
+        memcpy(payload + offset, &u_entrypoint.b64, sizeof (u_entrypoint.b64));
+        offset+= sizeof (u_entrypoint.b64);
+      }
+    else
+      {
+        memcpy(payload + offset, &u_entrypoint.b32, sizeof (u_entrypoint.b32));
+        offset+= sizeof (u_entrypoint.b32);
+      }
+    set_jmp_rax(payload + offset);
+  }
+
+  void encrypt(unsigned char *src, size_t size)
+  {
+    size_t i = 0;
+    while ( i < size)
+      src[i++] += 13;
+  }
 
     /* void decrypt(char *payload, size_t size) */
     /* { */
@@ -749,14 +755,6 @@
       }
     return (written);
   }
-
-  size_t set_jmp_rax(void *dst)
-  {
-    if (dst)
-      memcpy(dst, "\xff\xe0", 2);
-    return (2);
-  }
-
   size_t set_mov_edi(void *dst, uint32_t value)
   {
     if (dst)
@@ -815,8 +813,7 @@
       return (6);
     if (lseek(cypher_payload_fd, 0, SEEK_SET) == -1)
       return (7);
-    off_t jmp_size = get_mov_rax_jmp_rax_size(class);
-
+    off_t jmp_size = get_mov_rax_jmp_rax_size(class);//Also xor all register.
     const uint64_t cypher_payload_size = cypher_payload_fd_size + jmp_size;
     unsigned char *cypher_payload = malloc(cypher_payload_size);
     if (!cypher_payload)
@@ -826,6 +823,7 @@
     close(cypher_payload_fd);
     set_jmp_entrypoint(cypher_payload + cypher_payload_fd_size, e_entrypoint, class);
     encrypt(cypher_payload, cypher_payload_size);
+    //Read the first file
     size_t bytecode_buffer_size = 0;
     size_t cypher_payload_index = 0;
     while (cypher_payload_index < cypher_payload_size)
@@ -1075,15 +1073,13 @@
     const uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
     uint64_t ndx_ph;
 
-    ndx_ph = 0;
     t_elf_ph phdr_cp = {.elf32 = malloc(phdr_struct_size)};
     if (!phdr_cp.elf32 | !phdr_loadable_and_exec_first.elf32)
       return 15;
+    ndx_ph = 0;
     t_elf_ph phdr = elf_get_program_header(ehdr, ndx_ph);
     uint64_t p_offset;
     memcpy(phdr_cp.elf32, phdr.elf32, phdr_struct_size);
-    elf_phdr_set_filesz(&phdr_cp, elf_get_program_header_filesz(&phdr, class) + phdr_struct_size, class);
-    elf_phdr_set_memsz(&phdr_cp, elf_get_program_header_memsz(&phdr, class) + phdr_struct_size, class);
     ,*writed += write(packed, phdr_cp.elf32, phdr_struct_size);
     //Write modify the phdr already exist
     while (++ndx_ph < phnum)
@@ -1101,8 +1097,9 @@
   	  if (elf_get_program_header_memsz(&phdr_cp, class) + elf_get_program_header_vaddr(&phdr_cp, class) > elf_get_program_header_vaddr(&phdr_loadable_and_exec_first, class))
   	    return (16);// Overlap the address of the next phdr.
   	}
-        ,*writed += write(packed, phdr_cp.elf32, phdr_struct_size);
-        ndx_ph++;
+        if (write(packed, phdr_cp.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
+  	return (17);
+        ,*writed += phdr_struct_size;
       }
     //Set the new_phdr.
     memcpy(phdr_cp.elf32, phdr_loadable_and_exec_first.elf32, phdr_struct_size);// phdr .text
@@ -1115,7 +1112,9 @@
     if (elf_get_program_header_paddr(&phdr_cp, class))// Under BSD Is unused and must be Zero
       elf_phdr_set_paddr(&phdr_cp, new_phdr_vaddr, class);
     elf_phdr_set_offset(&phdr_cp, new_phdr_offset, class);
-    ,*writed += write(packed, phdr_cp.elf32, phdr_struct_size);
+    if (write(packed, phdr_cp.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
+      return (18);
+    ,*writed += phdr_struct_size;
     free(phdr_cp.elf32);
     return 0;
   }
@@ -1316,13 +1315,125 @@
 For avoid trouble previous to jmp to og_entrypoint:
 rsp value must bemantained
 leave all register eq = 0 previous to jmp, except one to hold the jmp address r13 x example.
-** Modify ehdr
-* Create a phdr & modify ehdr->phnum
+** DONE Modify ehdr
+CLOSED: [2025-08-13 Wed 11:27]
+* DONE Create a phdr & modify ehdr->phnum
+CLOSED: [2025-08-13 Wed 11:27]
 
-** TODO Modify phdr
+** DONE Modify phdr
+CLOSED: [2025-08-13 Wed 11:27]
 :LOGBOOK:
 CLOCK: [2025-08-12 Tue 08:35]--[2025-08-12 Tue 18:48] => 10:13
 :END:
 ** Modify shdr
 ** Add the payload on the new  offset.
-* Create a shdr & modify ehdr->shnum
+* DONE Create a shdr & modify ehdr->shnum
+CLOSED: [2025-08-13 Wed 11:27]
+* TODO Check list before work on compress.
+** DONE asm ld.
+CLOSED: [2025-08-13 Wed 11:41]
+** DONE asm ld argv.
+CLOSED: [2025-08-13 Wed 13:48]
+*** DONE Phdr error
+CLOSED: [2025-08-13 Wed 13:47]
+**** DONE I increment the file size of phdr[0] with reason not delete of legacy.
+CLOSED: [2025-08-13 Wed 13:42]
+i got a while (++ndx_ph)
+{
+....
+ndx_ph++;//Xd.
+}
+#+begin_src shell
+> readelf -l argv_ld
+    Program Headers:
+      Type           Offset             VirtAddr           PhysAddr
+                     FileSiz            MemSiz              Flags  Align
+      LOAD           0x0000000000000000 0x0000000000400000 0x0000000000400000
+                     0x00000000000000e8 0x00000000000000e8  R      0x1000
+      LOAD           0x0000000000001000 0x0000000000401000 0x0000000000401000
+                     0x0000000000000043 0x0000000000000043  R E    0x1000
+      LOAD           0x0000000000002000 0x0000000000402000 0x0000000000402000
+                     0x0000000000000002 0x0000000000000002  RW     0x1000
+    readelf -l woody  
+    Program Headers:
+      Type           Offset             VirtAddr           PhysAddr
+                     FileSiz            MemSiz              Flags  Align
+      LOAD           0x0000000000000000 0x0000000000400000 0x0000000000400000
+                     0x0000000000000120 0x0000000000000120  R      0x1000
+      LOAD           0x0000000000001000 0x0000000000401000 0x0000000000401000
+                     0x0000000000000043 0x0000000000000043  R E    0x1000
+    		 //This should be a copy of the previous.
+      LOAD           0x0000000000002190 0x0000000000403190 0x0000000000403190
+                     0x0000000000000583 0x0000000000000583  R E    0x1000
+      NULL           0x0000000000000000 0x0000000000000000 0x0000000000000000
+                     0x0000000000000000 0x0000000000000000         0x0
+
+> ./argv_ld hoal
+./argv_ld
+> ./woody
+....WOODY....
+Segmentation fault #(Hello my friend nice to meet u;)
+  ------- FIX
+  readelf -l argv_ld 
+
+  Elf file type is EXEC (Executable file)
+  Entry point 0x401000
+  There are 3 program headers, starting at offset 64
+
+  Program Headers:
+    Type           Offset             VirtAddr           PhysAddr
+                   FileSiz            MemSiz              Flags  Align
+    LOAD           0x0000000000000000 0x0000000000400000 0x0000000000400000
+                   0x00000000000000e8 0x00000000000000e8  R      0x1000
+    LOAD           0x0000000000001000 0x0000000000401000 0x0000000000401000
+                   0x0000000000000043 0x0000000000000043  R E    0x1000
+    LOAD           0x0000000000002000 0x0000000000402000 0x0000000000402000
+                   0x0000000000000002 0x0000000000000002  RW     0x1000
+
+   Section to Segment mapping:
+    Segment Sections...
+     00     
+     01     .text 
+     02     .data 
+  readelf -l woody   
+
+  Elf file type is EXEC (Executable file)
+  Entry point 0x403190
+  There are 4 program headers, starting at offset 64
+
+  Program Headers:
+    Type           Offset             VirtAddr           PhysAddr
+                   FileSiz            MemSiz              Flags  Align
+    LOAD           0x0000000000000000 0x0000000000400000 0x0000000000400000
+                   0x00000000000000e8 0x00000000000000e8  R      0x1000
+    LOAD           0x0000000000001000 0x0000000000401000 0x0000000000401000
+                   0x0000000000000043 0x0000000000000043  R E    0x1000
+    LOAD           0x0000000000002000 0x0000000000402000 0x0000000000402000
+                   0x0000000000000002 0x0000000000000002  RW     0x1000
+    LOAD           0x0000000000002190 0x0000000000403190 0x0000000000403190
+                   0x0000000000000583 0x0000000000000583  R E    0x1000
+
+   Section to Segment mapping:
+    Segment Sections...
+     00     
+     01     .text 
+     02     .data 
+     03     shstrtab 
+#+end_src
+
+
+#+begin_src shell
+
+#+end_src
+** payload xor all register minus r13 or similar
+** gcc
+** Payload x32
+** asm ld x32
+** asm ld x32 argv.
+** gcc x32.
+* TODO Compress.
+- Shdr .text & .data.
+* HOLD Multistage packer
+- Detect a already packer file and use that section/phdr. besides append new p/shdr. got a limit of phdr until overlap the first load & EXEC phdr vaddr
+- *Compress* the previous payload and append our payload.
+* 
