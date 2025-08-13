@@ -598,6 +598,13 @@ CLOSED: [2025-06-19 Thu 17:46]
     return (phdr->elf64->p_type);
   }
 
+  uint64_t elf_get_program_header_flags(t_elf_ph *phdr, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+        return (phdr->elf32->p_flags);
+    return (phdr->elf64->p_flags);
+  }
+
 
 #+end_src
 
@@ -620,6 +627,7 @@ CLOSED: [2025-06-19 Thu 17:46]
   uint64_t	elf_get_program_header_paddr(const t_elf_ph *phdr,
                           unsigned char class);
   uint64_t elf_get_program_header_type(t_elf_ph *phdr, unsigned char class);
+  uint64_t elf_get_program_header_flags(t_elf_ph *phdr, unsigned char class);
 #+end_src
 
 ***** DONE Check that compile and work succesfully

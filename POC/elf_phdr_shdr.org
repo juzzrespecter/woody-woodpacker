@@ -85,7 +85,19 @@
       phdr->elf64->p_filesz = value;
     }
 
-    void elf_ehdr_set_shoff(t_elf_h *ehdr, uint64_t value, unsigned char class)
+     void elf_phdr_set_flags(t_elf_ph *phdr, uint64_t value, unsigned char class)
+    {
+      if (class == ELFCLASS32) 
+        {
+          printf("phdr set addr elf32\n");
+          phdr->elf32->p_flags = (uint32_t) value;
+          return ;
+        }
+      printf("phdr set addr elf64\n");
+      phdr->elf64->p_flags = value;
+    }
+
+   void elf_ehdr_set_shoff(t_elf_h *ehdr, uint64_t value, unsigned char class)
     {
       if (class == ELFCLASS32) 
         {
@@ -181,6 +193,78 @@
         }
       printf("shdr set offset elf64\n");
       shdr->elf64->sh_offset = value;
+    }
+
+    void elf_shdr_set_flags(t_elf_sh *shdr, uint64_t value, unsigned char class)
+    {
+      if (class == ELFCLASS32) 
+        {
+          printf("shdr set flags elf32\n");
+          shdr->elf32->sh_flags = (uint32_t) value;
+          return ;
+        }
+      printf("shdr set flags elf64\n");
+      shdr->elf64->sh_flags = value;
+    }
+
+    void elf_shdr_set_type(t_elf_sh *shdr, uint64_t value, unsigned char class)
+    {
+      if (class == ELFCLASS32) 
+        {
+          printf("shdr set type elf32\n");
+          shdr->elf32->sh_type = (uint32_t) value;
+          return ;
+        }
+      printf("shdr set type elf64\n");
+      shdr->elf64->sh_type = value;
+    }
+
+    void elf_shdr_set_name(t_elf_sh *shdr, uint64_t value, unsigned char class)
+    {
+      if (class == ELFCLASS32) 
+        {
+          printf("shdr set name elf32\n");
+          shdr->elf32->sh_name = (uint32_t) value;
+          return ;
+        }
+      printf("shdr set name elf64\n");
+      shdr->elf64->sh_name = value;
+    }
+
+    void elf_shdr_set_link(t_elf_sh *shdr, uint64_t value, unsigned char class)
+    {
+      if (class == ELFCLASS32) 
+        {
+          printf("shdr set link elf32\n");
+          shdr->elf32->sh_link = (uint32_t) value;
+          return ;
+        }
+      printf("shdr set link elf64\n");
+      shdr->elf64->sh_link = value;
+    }
+
+    void elf_shdr_set_info(t_elf_sh *shdr, uint64_t value, unsigned char class)
+    {
+      if (class == ELFCLASS32) 
+        {
+          printf("shdr set info elf32\n");
+          shdr->elf32->sh_info = (uint32_t) value;
+          return ;
+        }
+      printf("shdr set info elf64\n");
+      shdr->elf64->sh_info = value;
+    }
+
+    void elf_shdr_set_entsize(t_elf_sh *shdr, uint64_t value, unsigned char class)
+    {
+      if (class == ELFCLASS32) 
+        {
+          printf("shdr set entsize elf32\n");
+          shdr->elf32->sh_entsize = (uint32_t) value;
+          return ;
+        }
+      printf("shdr set entsize elf64\n");
+      shdr->elf64->sh_entsize = value;
     }
 
   bool is_between(uint64_t lower_limit, uint64_t upper_limit, uint64_t value)
@@ -829,23 +913,23 @@
     return (0);
   }
 
-  static t_elf_ph get_n_loadable_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t n)
+  static t_elf_ph get_n_loadable_and_exec_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t n)
   {
       t_elf_ph phdr;
       uint64_t ph_ndx;
-      uint64_t times_loadable;
+      uint64_t times_loadable_and_exec;
 
       ph_ndx = 0;
-      times_loadable = 0;
+      times_loadable_and_exec = 0;
       while (++ph_ndx < phnum)
         {
   	phdr = elf_get_program_header(ehdr, ph_ndx);
-  	if (PT_LOAD != elf_get_program_header_type(&phdr, class))
-  	  times_loadable++;
-  	if (times_loadable == n)
+  	if (PT_LOAD == elf_get_program_header_type(&phdr, class) && PF_X & elf_get_program_header_flags(&phdr, class))
+  	    times_loadable_and_exec++;
+  	if (times_loadable_and_exec == n)
   	  return (phdr);
         }
-      phdr.elf32 = NULL;;
+      phdr.elf32 = NULL;
       return (phdr);
   }
 
@@ -901,10 +985,10 @@
   static bool increment_offset_phdr(t_elf_h *ehdr, uint64_t offset, uint64_t phnum, unsigned char class)
   {
     uint64_t ehdr_struct_size = elf_get_struct_size_elf_header((char *)ehdr->elf32);
-    t_elf_ph phdr_loadable_second = get_n_loadable_phdr(ehdr, class, phnum, 2);
-    uint64_t phdr_loadable_second_offset = elf_get_program_header_vaddr(&phdr_loadable_second, class);
+    t_elf_ph phdr_loadable_and_exec_first = get_n_loadable_and_exec_phdr(ehdr, class, phnum, 1);
+    uint64_t phdr_loadable_and_exec_first_offset = elf_get_program_header_offset(&phdr_loadable_and_exec_first, class);
 
-    return (offset > ehdr_struct_size && offset < phdr_loadable_second_offset);
+    return (offset > ehdr_struct_size && offset < phdr_loadable_and_exec_first_offset);
   }
 
   static int prepare_info(t_elf_h *ehdr, unsigned char class, uint64_t *new_phdr_vaddr,
@@ -922,13 +1006,34 @@
       printf("all fine with addr and offset aligned\n");
     else
       {
-        printf("need to modify a little addr or offset aligned");
+        printf("need to modify a little addr or offset aligned\n");
+        printf("new_phdr_offset = %lu\n new_phdr_vaddr = %lu\n", *new_phdr_offset, *new_phdr_vaddr);
+        printf("new_phdr_offset = 0x%lx\n new_phdr_vaddr = 0x%lx\n", *new_phdr_offset, *new_phdr_vaddr);
+        printf("new_phdr_offset %% 0x1000 = %lu\n new_phdr_vaddr %% 0x1000 = %lu\n", *new_phdr_offset % new_align, *new_phdr_vaddr % new_align);
+        printf("new_phdr_offset %% 0x1000 = 0x%lx\n new_phdr_vaddr %% 0x1000 = 0x%lx\n", *new_phdr_offset % new_align, *new_phdr_vaddr % new_align);
         if (*new_phdr_vaddr % new_align > *new_phdr_offset % new_align)
   	,*new_phdr_offset += *new_phdr_vaddr % new_align - *new_phdr_offset % new_align;
         else
   	,*new_phdr_vaddr += *new_phdr_offset % new_align - *new_phdr_vaddr % new_align;
       }
+    printf("new_phdr_offset = 0x%lx\n new_phdr_vaddr = 0x%lx\n", *new_phdr_offset, *new_phdr_vaddr);
+    if (*new_phdr_offset % 16)
+      {
+        ,*new_phdr_vaddr += 16 - *new_phdr_vaddr % 16;
+        ,*new_phdr_offset += 16 - *new_phdr_offset % 16;
+        printf("after 16 alignment new_phdr_offset = 0x%lx\n new_phdr_vaddr = 0x%lx\n", *new_phdr_offset, *new_phdr_vaddr);
+      }
     ,*new_shoff = *new_phdr_offset + payload_size;
+    printf("previos to check alignment\n");
+    printf("new_shoff= 0x%lx\n", *new_shoff);
+    printf("new_shoff = %ld\n", *new_shoff);
+    if (*new_shoff % 16)
+      {
+        ,*new_shoff += 16 - *new_shoff % 16;
+        printf("after check alignment\n");
+        printf("new_shoff = 0x%lx\n", *new_shoff);
+        printf("new_shoff = %ld\n", *new_shoff);
+      }
     return 0;
   }
 
@@ -966,13 +1071,13 @@
     //DONE if alignment = {0, 1} don't modify vaddr | paddr.
     //if first load segment(phdr)vaddr + memsz + sizeof(phdr)  > next load vaddr Error!
     //for reuse the same packer on a packed file i should detect if i is already packed and add the new payload.
-    t_elf_ph phdr_loadable_second = get_n_loadable_phdr(ehdr, class, phnum, 2);
+    t_elf_ph phdr_loadable_and_exec_first = get_n_loadable_and_exec_phdr(ehdr, class, phnum, 1);
     const uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
     uint64_t ndx_ph;
 
     ndx_ph = 0;
     t_elf_ph phdr_cp = {.elf32 = malloc(phdr_struct_size)};
-    if (!phdr_cp.elf32 | !phdr_loadable_second.elf32)
+    if (!phdr_cp.elf32 | !phdr_loadable_and_exec_first.elf32)
       return 15;
     t_elf_ph phdr = elf_get_program_header(ehdr, ndx_ph);
     uint64_t p_offset;
@@ -993,19 +1098,20 @@
   	{
   	  elf_phdr_set_filesz(&phdr_cp, elf_get_program_header_filesz(&phdr, class) + phdr_struct_size, class);
   	  elf_phdr_set_memsz(&phdr_cp, elf_get_program_header_memsz(&phdr, class) + phdr_struct_size, class);
-  	  if (elf_get_program_header_memsz(&phdr_cp, class) + elf_get_program_header_vaddr(&phdr_cp, class) > elf_get_program_header_vaddr(&phdr_loadable_second, class))
+  	  if (elf_get_program_header_memsz(&phdr_cp, class) + elf_get_program_header_vaddr(&phdr_cp, class) > elf_get_program_header_vaddr(&phdr_loadable_and_exec_first, class))
   	    return (16);// Overlap the address of the next phdr.
   	}
         ,*writed += write(packed, phdr_cp.elf32, phdr_struct_size);
         ndx_ph++;
       }
     //Set the new_phdr.
-    memcpy(phdr_cp.elf32, phdr_loadable_second.elf32, phdr_struct_size);// phdr .text
+    memcpy(phdr_cp.elf32, phdr_loadable_and_exec_first.elf32, phdr_struct_size);// phdr .text
     //Modify memsz, filesz
 
     elf_phdr_set_memsz(&phdr_cp, payload_size, class);
     elf_phdr_set_filesz(&phdr_cp, payload_size, class);
     elf_phdr_set_vaddr(&phdr_cp, new_phdr_vaddr, class);
+    elf_phdr_set_flags(&phdr_cp, PF_X | PF_R, class);// May now don't need but don't care.
     if (elf_get_program_header_paddr(&phdr_cp, class))// Under BSD Is unused and must be Zero
       elf_phdr_set_paddr(&phdr_cp, new_phdr_vaddr, class);
     elf_phdr_set_offset(&phdr_cp, new_phdr_offset, class);
@@ -1014,16 +1120,25 @@
     return 0;
   }
 
-  static int write_alignment_and_payload(int packed, void **generated_bytecode, uint64_t payload_size,
-                                         uint64_t modified_section_padding, uint64_t *writed)
+  static int write_padding_and_payload(int packed, void **generated_bytecode, uint64_t payload_size,
+                                         uint64_t padding, uint64_t *writed)
   {
-    while (modified_section_padding--)
-      ,*writed += write(packed, "\0", 1);
+    printf("padding: %lu\n", padding);
+    while (padding--)
+      {
+        if (write(packed, "\0", 1) != 1)
+  	return (1);
+        writed[0]++;
+      }
     if (write(packed, *generated_bytecode, payload_size) != (ssize_t)payload_size)
-      return (1);
+      {
+        free(*generated_bytecode);
+        ,*generated_bytecode = NULL;
+        return (2);
+      }
     free(*generated_bytecode);
     ,*generated_bytecode = NULL;
-    writed += payload_size;
+    ,*writed += payload_size;
     return (0);
   }
 
@@ -1036,29 +1151,47 @@
       t_elf_sh shdr_cp = (t_elf_sh){.elf32 = malloc(shdr_struct_size)};
       uint64_t ndx_sh;
       if (!shdr_cp.elf32)
-          return 12;
+        return (12);
       ndx_sh = 0;
       t_elf_sh shdr = elf_get_section_header(ehdr, ndx_sh);
       memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size);
-      ,*writed += write(packed, shdr_cp.elf32, shdr_struct_size);
+      printf("write shdr writed: %ld\n", *writed);
+      uint64_t shcp_offset;   
+      uint64_t padding = 16 - *writed % 16;
+      printf("padding: %lu\n", padding);
+      while (padding--)
+      {
+        if (write(packed, "\0", 1) != 1)
+  	return (1);
+        writed[0]++;
+      }
 
+      if (write(packed, shdr_cp.elf32, shdr_struct_size) != (ssize_t)shdr_struct_size)
+        return (2);
+      ,*writed += shdr_struct_size;
       while (++ndx_sh < shnum)
       {
           shdr = elf_get_section_header(ehdr, ndx_sh);
-          /* uint64_t shcp_addr = elf_get_section_header_addr(&shdr, class); */
-          uint64_t shcp_offset = elf_get_section_header_offset(&shdr, class);
-
+          shcp_offset = elf_get_section_header_offset(&shdr, class);
           memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size);
           if (increment_offset_phdr(ehdr, shcp_offset, phnum, class))
   	  elf_shdr_set_offset(&shdr_cp, elf_get_section_header_offset(&shdr, class) + phdr_struct_size, class);
-
-          ,*writed += write(packed, shdr_cp.elf32, shdr_struct_size);
+  	if (write(packed, shdr_cp.elf32, shdr_struct_size) != (ssize_t)shdr_struct_size)
+  	  return (1);
+  	,*writed += shdr_struct_size;
       }
       //TODO set last shdr
       //Modify  flags, name, type, address, offset, align, link, Info, Entsize
-      elf_shdr_set_size(&shdr_cp, new_phdr_vaddr, class);
-      elf_shdr_set_size(&shdr_cp, new_phdr_offset, class);
+      elf_shdr_set_addr(&shdr_cp, new_phdr_vaddr, class);
+      elf_shdr_set_offset(&shdr_cp, new_phdr_offset, class);
       elf_shdr_set_size(&shdr_cp, payload_size, class);
+      elf_shdr_set_addralign(&shdr_cp, 16, class);
+      elf_shdr_set_name(&shdr_cp, elf_get_section_header_name(&shdr_cp, class) + 1, class);
+      elf_shdr_set_type(&shdr_cp, SHT_PROGBITS, class);
+      elf_shdr_set_flags(&shdr_cp, SHF_ALLOC | SHF_EXECINSTR, class);
+      elf_shdr_set_link(&shdr_cp, 0, class);
+      elf_shdr_set_info(&shdr_cp, 0, class);
+      elf_shdr_set_entsize(&shdr_cp, 0, class);
       ,*writed += write(packed, shdr_cp.elf32, shdr_struct_size);
       free(shdr_cp.elf32);
       return 0;
@@ -1070,15 +1203,15 @@
       uint64_t shnum;
       uint64_t phnum;
       unsigned char class;
-      uint64_t e_shoff = elf_get_elfh_shoff(&ehdr);
       uint64_t new_phdr_vaddr;
       uint64_t new_phdr_offset;
-      uint64_t writed = 0;
+      uint64_t writed;
       uint64_t new_e_entry;
       uint64_t new_e_shoff;
+      /* uint64_t e_shoff = elf_get_elfh_shoff(&ehdr); */
       /* uint64_t sh_size; */
       /* uint64_t sh_offset; */
-
+      
       if (validate_elf_headers(&ehdr, &shnum, &phnum, &class))
         return (1);
       /* if (find_section_and_program_indices(&ehdr, e_entrypoint, shnum, phnum, class, &ndx_sh, &ndx_ph)) */
@@ -1086,25 +1219,32 @@
       if (prepare_info(&ehdr, class, &new_phdr_vaddr, phnum, &new_phdr_offset, &new_e_shoff, payload_size, shnum))
         return (2);
       new_e_entry = new_phdr_vaddr;
+      //New to check were i got the disalign offset and writed
+      writed = 0;
       if (copy_and_modify_elf_header(&ehdr, packed, new_e_shoff, class, new_e_entry, phnum, shnum, &writed))
         return (3);
+      printf("after copy and modify ehdr -> writed: %ld\n", writed);
       if (write_program_headers(&ehdr, packed, phnum, new_phdr_offset, new_e_entry, class, payload_size, &writed))
         return (4);
+      printf("after write phdrs -> writed: %ld\n", writed);
 
     const uint64_t ehdr_struct_size = elf_get_struct_size_elf_header((char *)ehdr.elf32);
     const uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
     const uint64_t elf_mmap_offset = ehdr_struct_size + phdr_struct_size * (phnum + 1);
-    writed += write(packed, elf_mmap + elf_mmap_offset, e_shoff - elf_mmap_offset);//Write content previous to e_shoff
-    //TODO 
-      if (write_alignment_and_payload(packed, &generated_bytecode, payload_size,
-                                      new_phdr_offset - writed, &writed))
-        return (5);
-      if (write_remaining_section_headers(&ehdr, packed, phnum, shnum, class,
-                                          new_phdr_offset, new_phdr_vaddr, &writed, payload_size))
-        return (6);
-      writed += write(packed, elf_mmap + writed, file_size - writed);//Write the rest of the file
-      printf("Successfully packed\n");
-      return 0;
+    // now should write if need the alignment.
+    writed += write(packed, elf_mmap + elf_mmap_offset, elf_get_highest_offset_avalaible(&ehdr, class, shnum)- elf_mmap_offset);//Write content previous to e_shoff better skip the alignment bits for avoid errors.
+    printf("after write the content previous to e_shoff-> writed: %ld\n", writed);
+    // TODO 
+    printf("new_phdr_offset: %lu\nwrited: %ld\n", new_phdr_offset, writed);
+    if (write_padding_and_payload(packed, &generated_bytecode, payload_size,
+  				new_phdr_offset - writed, &writed))
+      return (5);
+    if (write_remaining_section_headers(&ehdr, packed, phnum, shnum, class,
+  				      new_phdr_offset, new_phdr_vaddr, &writed, payload_size))
+      return (6);
+    writed += write(packed, elf_mmap + writed, file_size - writed);//Write the rest of the file
+    printf("Successfully packed\n");
+    return 0;
   }
 
       int main(int argc, char **argv)
@@ -1181,7 +1321,7 @@ leave all register eq = 0 previous to jmp, except one to hold the jmp address r1
 
 ** TODO Modify phdr
 :LOGBOOK:
-CLOCK: [2025-08-12 Tue 08:35]
+CLOCK: [2025-08-12 Tue 08:35]--[2025-08-12 Tue 18:48] => 10:13
 :END:
 ** Modify shdr
 ** Add the payload on the new  offset.
