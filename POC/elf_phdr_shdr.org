@@ -1,294 +1,293 @@
 #+title: elf_phdr_shdr
 #+begin_src c :tangle srcs/elf/POC/elf_phdr_shdr.c
-    #include "format_elf.h"
-    #include <string.h>
-    #include <stdbool.h>
-    #include <unistd.h>
-    #include <stdio.h>
-    #include <stdint.h>
-    #include <fcntl.h>
-    #include <sys/mman.h>
-    #include <stdlib.h> //Malloc
+  #include "format_elf.h"
+  #include <string.h>
+  #include <stdbool.h>
+  #include <unistd.h>
+  #include <stdio.h>
+  #include <stdint.h>
+  #include <fcntl.h>
+  #include <sys/mman.h>
+  #include <stdlib.h> //Malloc
+
+  uint64_t get_alignment_effective_addr(uint64_t alignment, uint64_t size)
+  {
+    return (((size + alignment - 1) / alignment) * alignment);
+  }
 
 
-    uint64_t get_alignment_effective_addr(uint64_t alignment, uint64_t size)
-    {
-      return (((size + alignment - 1) / alignment) * alignment);
-    }
+  // Maybe paranoia
+  bool is_little_endian_the_cpu(void)
+  {
+    uint32_t num = 1;
 
+    return (*(uint8_t *)&num == 1);
+  }
+  // Begin setter eh/ph/sh
+  void elf_phdr_set_memsz(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("phdr set memsz elf32\n");
+        phdr->elf32->p_memsz = (uint32_t) value;
+        return ;
+      }
+    printf("phdr set memsz elf64\n");
+    phdr->elf64->p_memsz = value;
+  }
 
-    // Maybe paranoia
-    bool is_little_endian_the_cpu(void)
-    {
-      uint32_t num = 1;
+  void elf_phdr_set_offset(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("phdr set offset elf32\n");
+        phdr->elf32->p_offset = (uint32_t) value;
+        return ;
+      }
+    printf("phdr set offset elf64\n");
+    phdr->elf64->p_offset = value;
+  }
 
-      return (*(uint8_t *)&num == 1);
-    }
+  void elf_phdr_set_vaddr(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("phdr set vaddr elf32\n");
+        phdr->elf32->p_vaddr = (uint32_t) value;
+        return ;
+      }
+    printf("phdr set vaddr elf64\n");
+    phdr->elf64->p_vaddr = value;
+  }
 
-    void elf_phdr_set_memsz(t_elf_ph *phdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("phdr set memsz elf32\n");
-          phdr->elf32->p_memsz = (uint32_t) value;
-          return ;
-        }
-      printf("phdr set memsz elf64\n");
-      phdr->elf64->p_memsz = value;
-    }
+  void elf_phdr_set_paddr(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("phdr set paddr elf32\n");
+        phdr->elf32->p_paddr = (uint32_t) value;
+        return ;
+      }
+    printf("phdr set paddr elf64\n");
+    phdr->elf64->p_paddr = value;
+  }
 
-    void elf_phdr_set_offset(t_elf_ph *phdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("phdr set offset elf32\n");
-          phdr->elf32->p_offset = (uint32_t) value;
-          return ;
-        }
-      printf("phdr set offset elf64\n");
-      phdr->elf64->p_offset = value;
-    }
+  void elf_phdr_set_filesz(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("phdr set addr elf32\n");
+        phdr->elf32->p_filesz = (uint32_t) value;
+        return ;
+      }
+    printf("phdr set addr elf64\n");
+    phdr->elf64->p_filesz = value;
+  }
 
-    void elf_phdr_set_vaddr(t_elf_ph *phdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("phdr set vaddr elf32\n");
-          phdr->elf32->p_vaddr = (uint32_t) value;
-          return ;
-        }
-      printf("phdr set vaddr elf64\n");
-      phdr->elf64->p_vaddr = value;
-    }
+  void elf_phdr_set_flags(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("phdr set addr elf32\n");
+        phdr->elf32->p_flags = (uint32_t) value;
+        return ;
+      }
+    printf("phdr set addr elf64\n");
+    phdr->elf64->p_flags = value;
+  }
 
-    void elf_phdr_set_paddr(t_elf_ph *phdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("phdr set paddr elf32\n");
-          phdr->elf32->p_paddr = (uint32_t) value;
-          return ;
-        }
-      printf("phdr set paddr elf64\n");
-      phdr->elf64->p_paddr = value;
-    }
+  void elf_ehdr_set_shoff(t_elf_h *ehdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("ehdr set shoff elf32\n");
+        ehdr->elf32->e_shoff = (uint32_t) value;
+        return ;
+      }
+    printf("ehdr set shoff elf64\n");
+    ehdr->elf64->e_shoff = value;
+  }
 
-    void elf_phdr_set_filesz(t_elf_ph *phdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("phdr set addr elf32\n");
-          phdr->elf32->p_filesz = (uint32_t) value;
-          return ;
-        }
-      printf("phdr set addr elf64\n");
-      phdr->elf64->p_filesz = value;
-    }
+  void elf_ehdr_set_entry(t_elf_h *ehdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("ehdr set entry elf32\n");
+        ehdr->elf32->e_entry = (uint32_t) value;
+        return ;
+      }
+    printf("ehdr set entry elf64\n");
+    ehdr->elf64->e_entry = value;
+  }
 
-     void elf_phdr_set_flags(t_elf_ph *phdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("phdr set addr elf32\n");
-          phdr->elf32->p_flags = (uint32_t) value;
-          return ;
-        }
-      printf("phdr set addr elf64\n");
-      phdr->elf64->p_flags = value;
-    }
+  void elf_ehdr_set_phnum(t_elf_h *ehdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("ehdr set phnum elf32\n");
+        ehdr->elf32->e_phnum = (uint32_t) value;
+        return ;
+      }
+    printf("ehdr set phnum elf64\n");
+    ehdr->elf64->e_phnum = value;
+  }
 
-   void elf_ehdr_set_shoff(t_elf_h *ehdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("ehdr set shoff elf32\n");
-          ehdr->elf32->e_shoff = (uint32_t) value;
-          return ;
-        }
-      printf("ehdr set shoff elf64\n");
-      ehdr->elf64->e_shoff = value;
-    }
+  void elf_ehdr_set_shnum(t_elf_h *ehdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("ehdr set shnum elf32\n");
+        ehdr->elf32->e_shnum = (uint32_t) value;
+        return ;
+      }
+    printf("ehdr set shnum elf64\n");
+    ehdr->elf64->e_shnum = value;
+  }
 
-    void elf_ehdr_set_entry(t_elf_h *ehdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("ehdr set entry elf32\n");
-          ehdr->elf32->e_entry = (uint32_t) value;
-          return ;
-        }
-      printf("ehdr set entry elf64\n");
-      ehdr->elf64->e_entry = value;
-    }
+  void elf_shdr_set_addralign(t_elf_sh *shdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("shdr set addralign elf32\n");
+        shdr->elf32->sh_addralign = (uint32_t) value;
+        return ;
+      }
+    printf("shdr set addralign elf64\n");
+    shdr->elf64->sh_addralign = value;
+  }
 
-    void elf_ehdr_set_phnum(t_elf_h *ehdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("ehdr set phnum elf32\n");
-          ehdr->elf32->e_phnum = (uint32_t) value;
-          return ;
-        }
-      printf("ehdr set phnum elf64\n");
-      ehdr->elf64->e_phnum = value;
-    }
+  void elf_shdr_set_addr(t_elf_sh *shdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("shdr set addr elf32\n");
+        shdr->elf32->sh_addr = (uint32_t) value;
+        return ;
+      }
+    printf("shdr set addr elf64\n");
+    shdr->elf64->sh_addr = value;
+  }
 
-    void elf_ehdr_set_shnum(t_elf_h *ehdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("ehdr set shnum elf32\n");
-          ehdr->elf32->e_shnum = (uint32_t) value;
-          return ;
-        }
-      printf("ehdr set shnum elf64\n");
-      ehdr->elf64->e_shnum = value;
-    }
+  //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm
+  void elf_shdr_set_size(t_elf_sh *shdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("shdr set size elf32\n");
+        shdr->elf32->sh_size = (uint32_t) value;
+        return ;
+      }
+    printf("shdr set size elf64\n");
+    shdr->elf64->sh_size = value;
+  }
 
+  void elf_shdr_set_offset(t_elf_sh *shdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("shdr set offset elf32\n");
+        shdr->elf32->sh_offset = (uint32_t) value;
+        return ;
+      }
+    printf("shdr set offset elf64\n");
+    shdr->elf64->sh_offset = value;
+  }
 
-    void elf_shdr_set_addralign(t_elf_sh *shdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("shdr set addralign elf32\n");
-          shdr->elf32->sh_addralign = (uint32_t) value;
-          return ;
-        }
-      printf("shdr set addralign elf64\n");
-      shdr->elf64->sh_addralign = value;
-    }
+  void elf_shdr_set_flags(t_elf_sh *shdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("shdr set flags elf32\n");
+        shdr->elf32->sh_flags = (uint32_t) value;
+        return ;
+      }
+    printf("shdr set flags elf64\n");
+    shdr->elf64->sh_flags = value;
+  }
 
-    void elf_shdr_set_addr(t_elf_sh *shdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("shdr set addr elf32\n");
-          shdr->elf32->sh_addr = (uint32_t) value;
-          return ;
-        }
-      printf("shdr set addr elf64\n");
-      shdr->elf64->sh_addr = value;
-    }
+  void elf_shdr_set_type(t_elf_sh *shdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("shdr set type elf32\n");
+        shdr->elf32->sh_type = (uint32_t) value;
+        return ;
+      }
+    printf("shdr set type elf64\n");
+    shdr->elf64->sh_type = value;
+  }
 
-    //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm
-    void elf_shdr_set_size(t_elf_sh *shdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("shdr set size elf32\n");
-          shdr->elf32->sh_size = (uint32_t) value;
-          return ;
-        }
-      printf("shdr set size elf64\n");
-      shdr->elf64->sh_size = value;
-    }
+  void elf_shdr_set_name(t_elf_sh *shdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("shdr set name elf32\n");
+        shdr->elf32->sh_name = (uint32_t) value;
+        return ;
+      }
+    printf("shdr set name elf64\n");
+    shdr->elf64->sh_name = value;
+  }
 
-    void elf_shdr_set_offset(t_elf_sh *shdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("shdr set offset elf32\n");
-          shdr->elf32->sh_offset = (uint32_t) value;
-          return ;
-        }
-      printf("shdr set offset elf64\n");
-      shdr->elf64->sh_offset = value;
-    }
+  void elf_shdr_set_link(t_elf_sh *shdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("shdr set link elf32\n");
+        shdr->elf32->sh_link = (uint32_t) value;
+        return ;
+      }
+    printf("shdr set link elf64\n");
+    shdr->elf64->sh_link = value;
+  }
 
-    void elf_shdr_set_flags(t_elf_sh *shdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("shdr set flags elf32\n");
-          shdr->elf32->sh_flags = (uint32_t) value;
-          return ;
-        }
-      printf("shdr set flags elf64\n");
-      shdr->elf64->sh_flags = value;
-    }
+  void elf_shdr_set_info(t_elf_sh *shdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("shdr set info elf32\n");
+        shdr->elf32->sh_info = (uint32_t) value;
+        return ;
+      }
+    printf("shdr set info elf64\n");
+    shdr->elf64->sh_info = value;
+  }
 
-    void elf_shdr_set_type(t_elf_sh *shdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("shdr set type elf32\n");
-          shdr->elf32->sh_type = (uint32_t) value;
-          return ;
-        }
-      printf("shdr set type elf64\n");
-      shdr->elf64->sh_type = value;
-    }
-
-    void elf_shdr_set_name(t_elf_sh *shdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("shdr set name elf32\n");
-          shdr->elf32->sh_name = (uint32_t) value;
-          return ;
-        }
-      printf("shdr set name elf64\n");
-      shdr->elf64->sh_name = value;
-    }
-
-    void elf_shdr_set_link(t_elf_sh *shdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("shdr set link elf32\n");
-          shdr->elf32->sh_link = (uint32_t) value;
-          return ;
-        }
-      printf("shdr set link elf64\n");
-      shdr->elf64->sh_link = value;
-    }
-
-    void elf_shdr_set_info(t_elf_sh *shdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("shdr set info elf32\n");
-          shdr->elf32->sh_info = (uint32_t) value;
-          return ;
-        }
-      printf("shdr set info elf64\n");
-      shdr->elf64->sh_info = value;
-    }
-
-    void elf_shdr_set_entsize(t_elf_sh *shdr, uint64_t value, unsigned char class)
-    {
-      if (class == ELFCLASS32) 
-        {
-          printf("shdr set entsize elf32\n");
-          shdr->elf32->sh_entsize = (uint32_t) value;
-          return ;
-        }
-      printf("shdr set entsize elf64\n");
-      shdr->elf64->sh_entsize = value;
-    }
-
+  void elf_shdr_set_entsize(t_elf_sh *shdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("shdr set entsize elf32\n");
+        shdr->elf32->sh_entsize = (uint32_t) value;
+        return ;
+      }
+    printf("shdr set entsize elf64\n");
+    shdr->elf64->sh_entsize = value;
+  }
+  // End Setter eh/ph/sh.
+  // Helper functions
   bool is_between(uint64_t lower_limit, uint64_t upper_limit, uint64_t value)
   {
     return (lower_limit <= value && value <= upper_limit);
   }
 
   uint64_t elf_get_program_ndx_from_addr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t addr)
-    {
-      t_elf_ph phdr;
-      uint64_t i;
-      uint64_t p_vaddr;
+  {
+    t_elf_ph phdr;
+    uint64_t i;
+    uint64_t p_vaddr;
 
-      i = 0;
-      while (++i < phnum) // Skip the first 
-        {
-          phdr = elf_get_program_header(ehdr, i);
-          p_vaddr = elf_get_program_header_vaddr(&phdr, class);
-  	//  is loadable phdr
-          if (PT_LOAD == elf_get_program_header_type(&phdr, class) && is_between(p_vaddr, p_vaddr + elf_get_program_header_filesz(&phdr, class) - 1, addr))
-            return  (i);
-        }
-      return  (i);
-    }
+    i = 0;
+    while (++i < phnum) // Skip the first 
+      {
+        phdr = elf_get_program_header(ehdr, i);
+        p_vaddr = elf_get_program_header_vaddr(&phdr, class);
+        //  is loadable phdr
+        if (PT_LOAD == elf_get_program_header_type(&phdr, class) && is_between(p_vaddr, p_vaddr + elf_get_program_header_filesz(&phdr, class) - 1, addr))
+  	return  (i);
+      }
+    return  (i);
+  }
 
   size_t elf_get_highest_offset_avalaible(t_elf_h *ehdr, unsigned char class, uint64_t shnum)
   {
@@ -328,48 +327,45 @@
     return  (highest_avalaible_addr);
   }
 
-    uint64_t elf_get_section_ndx_from_addr(t_elf_h *ehdr, size_t addr, unsigned char class, uint64_t shnum)
-    {
-      t_elf_sh		shdr;
-      uint64_t 		i;
-      uint64_t		sh_addr;
+  uint64_t elf_get_section_ndx_from_addr(t_elf_h *ehdr, size_t addr, unsigned char class, uint64_t shnum)
+  {
+    t_elf_sh		shdr;
+    uint64_t 		i;
+    uint64_t		sh_addr;
 
-      i = 0;
-      while (i++ < shnum) //run for each section_header
-        {
-          shdr = elf_get_section_header(ehdr, i);
-  	sh_addr = elf_get_section_header_addr(&shdr, class);
-          if (is_between(sh_addr, sh_addr + elf_get_section_header_size(&shdr, class) - 1, addr))
-            return (i);
-        }
-      return (i);
-    }
+    i = 0;
+    while (i++ < shnum) //run for each section_header
+      {
+        shdr = elf_get_section_header(ehdr, i);
+        sh_addr = elf_get_section_header_addr(&shdr, class);
+        if (is_between(sh_addr, sh_addr + elf_get_section_header_size(&shdr, class) - 1, addr))
+  	return (i);
+      }
+    return (i);
+  }
 
-    off_t get_mov_rax_jmp_rax_size(unsigned char class)
-    {
-      if (class == ELFCLASS32)
-        return (7);// b8 00 00 40 00 ff e0 -> b8 ="mov eax", value\nff eo="jmp rax"
-      return (12);// 48 b8 00 00 00 00 00 00 00 00 ff e0 -> 48 b8 = "mov rax", value
-    }
+  off_t get_mov_rax_jmp_rax_size(unsigned char class)
+  {
+    if (class == ELFCLASS32)
+      return (7);// b8 00 00 40 00 ff e0 -> b8 ="mov eax", value\nff eo="jmp rax"
+    return (12);// 48 b8 00 00 00 00 00 00 00 00 ff e0 -> 48 b8 = "mov rax", value
+  }
 
   off_t get_js_size(void)
   {
     return (6);//2 plus address
   }
 
-    // todo may swap endianess if necesary and we agree, adding the parameter.
-    typedef union u_type
-    {
-      unsigned char b;
-      uint32_t b4;
-      uint64_t b8;
-    } t_type;
+  // todo may swap endianess if necesary and we agree, adding the parameter.
+  typedef union u_type
+  {
+    uint8_t	b;
+    uint16_t	b2;
+    uint32_t	b4;
+    uint64_t	b8;
+  } t_type;
 
-    //size_t ft_mov(dst, offset, value); //mov the pointer to not overwrite
-    // if dst == NULL calculate the size.
-
-
-
+  //Begin dynamic Bytecode
   size_t ft_js(unsigned char *dst, size_t distance)
   {
     t_type hop = (t_type){.b8 = distance};
@@ -455,239 +451,239 @@
     return (written);
   }
 
-    size_t ft_mov_cl_from_rsp(void *dst, size_t offset) //mov the dst pointer to not overwrite.
-    {
-      size_t	written;
-      const t_type	off = (t_type){.b8 = offset};
+  size_t ft_mov_cl_from_rsp(void *dst, size_t offset) //mov the dst pointer to not overwrite.
+  {
+    size_t	written;
+    const t_type	off = (t_type){.b8 = offset};
 
-      written = 0;
-      if (dst)
-        memcpy(dst, "\x8a", 1);
-      written++;
-      if (!off.b8)
-        {
-          if (dst)
-            memcpy(dst + written, "\x0c", 1);
-        }
-      else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) // if offset and byte syze
-        {
-          if (dst)
-            memcpy(dst + written, "\x4c", 1);
-        }
-      else // if offset and > byte size
-        {
-          if (dst)
-            memcpy(dst + written, "\x8c", 1);
-        }
-      written++;
-      if (dst)
-        memcpy(dst + written, "\x24", 1);
-      written++;
-      if (off.b8)
-        {
-          /* if (dst) */
-            /* printf("off -> b value %u, b4 value %u, b8 value %lu\n", (uint32_t)off.b, off.b4, off.b8); */
-          if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
-            {
-              if (dst)
-                memcpy(dst + written, &off.b, sizeof (off.b)); 
-              written += sizeof (off.b);
-            }
-          else if ((uint64_t)off.b4 == off.b8 && off.b4 < 0x80000000)
-            {
-              if (dst)
-                memcpy(dst + written, &off.b4, sizeof (off.b4)); 
-              written += sizeof (off.b4);
-            }
-          else
-            {
-              if (dst)
-                memcpy(dst + written, &off.b8, sizeof (off.b8)); 
-              written += sizeof (off.b8);
-            }
+    written = 0;
+    if (dst)
+      memcpy(dst, "\x8a", 1);
+    written++;
+    if (!off.b8)
+      {
+        if (dst)
+  	memcpy(dst + written, "\x0c", 1);
+      }
+    else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) // if offset and byte syze
+      {
+        if (dst)
+  	memcpy(dst + written, "\x4c", 1);
+      }
+    else // if offset and > byte size
+      {
+        if (dst)
+  	memcpy(dst + written, "\x8c", 1);
+      }
+    written++;
+    if (dst)
+      memcpy(dst + written, "\x24", 1);
+    written++;
+    if (off.b8)
+      {
+        /* if (dst) */
+        /* printf("off -> b value %u, b4 value %u, b8 value %lu\n", (uint32_t)off.b, off.b4, off.b8); */
+        if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
+  	{
+  	  if (dst)
+  	    memcpy(dst + written, &off.b, sizeof (off.b)); 
+  	  written += sizeof (off.b);
+  	}
+        else if ((uint64_t)off.b4 == off.b8 && off.b4 < 0x80000000)
+  	{
+  	  if (dst)
+  	    memcpy(dst + written, &off.b4, sizeof (off.b4)); 
+  	  written += sizeof (off.b4);
+  	}
+        else
+  	{
+  	  if (dst)
+  	    memcpy(dst + written, &off.b8, sizeof (off.b8)); 
+  	  written += sizeof (off.b8);
+  	}
 
-        }
-      return (written);
-    }
+      }
+    return (written);
+  }
 
-    size_t ft_mov_rax_from_cl(void *dst, size_t offset) //mov the dst pointer to not overwrite.
-    {
-      size_t	written;
-      const t_type	off = (t_type){.b8 = offset};
+  size_t ft_mov_rax_from_cl(void *dst, size_t offset) //mov the dst pointer to not overwrite.
+  {
+    size_t	written;
+    const t_type	off = (t_type){.b8 = offset};
 
-      written = 0;
-      if (dst)
-        memcpy(dst, "\x88", 1);
-      written++;
-      if (!off.b8)
-        {
-          if (dst)
-            memcpy(dst + written, "\x08", 1);
-          return (++written);
-        }
-      if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) // if offset and byte syze
-        {
-          if (dst)
-            memcpy(dst + written, "\x48", 1);
-          written++;
-          if (dst)
-            memcpy(dst + written, &off.b, sizeof (off.b)); 
-          return (written + sizeof (off.b));
-        }
-      if (dst)
-        memcpy(dst + written, "\x88", 1);
-      written++;
-      if ((uint64_t)off.b4 == off.b8 && off.b4 < 0x80000000)
-        {
-          if (dst)
-            memcpy(dst + written, &off.b4, sizeof (off.b4)); 
-          return (written + sizeof (off.b4));
-        }
-      if (dst)
-        memcpy(dst + written, &off.b8, sizeof (off.b8)); 
-      return (written + sizeof (off.b8));
-    }
+    written = 0;
+    if (dst)
+      memcpy(dst, "\x88", 1);
+    written++;
+    if (!off.b8)
+      {
+        if (dst)
+  	memcpy(dst + written, "\x08", 1);
+        return (++written);
+      }
+    if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) // if offset and byte syze
+      {
+        if (dst)
+  	memcpy(dst + written, "\x48", 1);
+        written++;
+        if (dst)
+  	memcpy(dst + written, &off.b, sizeof (off.b)); 
+        return (written + sizeof (off.b));
+      }
+    if (dst)
+      memcpy(dst + written, "\x88", 1);
+    written++;
+    if ((uint64_t)off.b4 == off.b8 && off.b4 < 0x80000000)
+      {
+        if (dst)
+  	memcpy(dst + written, &off.b4, sizeof (off.b4)); 
+        return (written + sizeof (off.b4));
+      }
+    if (dst)
+      memcpy(dst + written, &off.b8, sizeof (off.b8)); 
+    return (written + sizeof (off.b8));
+  }
 
   // if dst == NULL calculate size.
   size_t ft_sub_asm_rsp(void *dst, uint64_t value, unsigned char class)//mov the dst pointer to not overwrite.
-   {
-     size_t	written;
-     const t_type	type = (t_type){.b8 = value};
+  {
+    size_t	written;
+    const t_type	type = (t_type){.b8 = value};
 
-     written = 0;
-     if (class == ELFCLASS64)
-       {
-         if (dst)
-           memcpy(dst, "\x48", 1);
-         written++;
-       }
-      if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8 && type.b < 0x80)
-        {
-          if (dst)
-            memcpy(dst + written, "\x83\xec", 2);
-          written += 2;
-          if (dst)
-            memcpy(dst + written, &type.b, sizeof (type.b));
-          written += sizeof(type.b);
-        }
-      else
-        {
-          if (dst)
-            memcpy(dst + written, "\x81\xec", 2);
-          written += 2;
-          if ((uint64_t)type.b4 == type.b8 && type.b4 < 0x80000000)
-            {
-              if (dst)
-                memcpy(dst + written, &type.b4, sizeof (type.b4));
-              written += sizeof(type.b4);
-            }
-          else
-            {
-              if (dst)
-                memcpy(dst + written, &type.b8, sizeof (type.b8));
-              written += sizeof(type.b8);
-            }
-        }
-      return (written);
-   }
+    written = 0;
+    if (class == ELFCLASS64)
+      {
+        if (dst)
+  	memcpy(dst, "\x48", 1);
+        written++;
+      }
+    if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8 && type.b < 0x80)
+      {
+        if (dst)
+  	memcpy(dst + written, "\x83\xec", 2);
+        written += 2;
+        if (dst)
+  	memcpy(dst + written, &type.b, sizeof (type.b));
+        written += sizeof(type.b);
+      }
+    else
+      {
+        if (dst)
+  	memcpy(dst + written, "\x81\xec", 2);
+        written += 2;
+        if ((uint64_t)type.b4 == type.b8 && type.b4 < 0x80000000)
+  	{
+  	  if (dst)
+  	    memcpy(dst + written, &type.b4, sizeof (type.b4));
+  	  written += sizeof(type.b4);
+  	}
+        else
+  	{
+  	  if (dst)
+  	    memcpy(dst + written, &type.b8, sizeof (type.b8));
+  	  written += sizeof(type.b8);
+  	}
+      }
+    return (written);
+  }
 
   size_t ft_sub_asm_rsp_buffer_byte(void *dst, uint64_t offset, unsigned char value, unsigned char class)//mov the dst pointer to not overwrite.
-   {
-     size_t	written;
-     const t_type	off = (t_type){.b8 = offset};
+  {
+    size_t	written;
+    const t_type	off = (t_type){.b8 = offset};
 
-     written = 0;
-     if (class == ELFCLASS64)
-       {
-         if (dst)
-           memcpy(dst, "\x80", 1);
-         written++;
-       }
+    written = 0;
+    if (class == ELFCLASS64)
+      {
+        if (dst)
+  	memcpy(dst, "\x80", 1);
+        written++;
+      }
 
-     if (!off.b8)
-       {
-         if (dst)
-           memcpy(dst + written, "\x2c", 1);//sub byte
-         written++;
-       }
-     else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
-       {
-         if (dst)
-           memcpy(dst + written, "\x6c", 1);//sub byte
-         written++;
-       }
-     else 
-       {
-         if (dst)
-           memcpy(dst + written, "\xac", 1);//sub byte
-         written++;
-       }
-     if (dst)
-       memcpy(dst + written, "\x24", 1);// rsp pointer
-     written++;
-     if (off.b8)
-       {
-         if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
-           {
-          if (dst)
-            memcpy(dst + written, &off.b, sizeof(off.b));
-          written += sizeof (off.b);
-           }
-         else
-           {
-             if (dst)
-               memcpy(dst + written, &off.b4, sizeof(off.b4));
-             written += sizeof (off.b4);
-           }
-       }
-     if (dst)
-       memcpy(dst + written, &value, sizeof (value));
-     written += sizeof(value);
-     return (written);
-   }
+    if (!off.b8)
+      {
+        if (dst)
+  	memcpy(dst + written, "\x2c", 1);//sub byte
+        written++;
+      }
+    else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
+      {
+        if (dst)
+  	memcpy(dst + written, "\x6c", 1);//sub byte
+        written++;
+      }
+    else 
+      {
+        if (dst)
+  	memcpy(dst + written, "\xac", 1);//sub byte
+        written++;
+      }
+    if (dst)
+      memcpy(dst + written, "\x24", 1);// rsp pointer
+    written++;
+    if (off.b8)
+      {
+        if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
+  	{
+  	  if (dst)
+  	    memcpy(dst + written, &off.b, sizeof(off.b));
+  	  written += sizeof (off.b);
+  	}
+        else
+  	{
+  	  if (dst)
+  	    memcpy(dst + written, &off.b4, sizeof(off.b4));
+  	  written += sizeof (off.b4);
+  	}
+      }
+    if (dst)
+      memcpy(dst + written, &value, sizeof (value));
+    written += sizeof(value);
+    return (written);
+  }
 
-   size_t ft_add_asm_rsp(void *dst, uint64_t value, unsigned char class)//mov the dst pointer to not overwrite.
-   {
-     size_t	written;
-     const t_type	type = (t_type){.b8 = value};
+  size_t ft_add_asm_rsp(void *dst, uint64_t value, unsigned char class)//mov the dst pointer to not overwrite.
+  {
+    size_t	written;
+    const t_type	type = (t_type){.b8 = value};
 
-     written = 0;
-     // test need 
-     if (class == ELFCLASS64)
-       {
-         if (dst)
-           memcpy(dst, "\x48", 1);
-         written++;
-       }
-      if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8 && type.b < 0x80)
-        {
-          if (dst)
-            memcpy(dst + written, "\x83\xc4", 2);
-          written += 2;
-          if (dst)
-            memcpy(dst + written, &type.b, sizeof (type.b));
-          written += sizeof(type.b);
-        }
-      else
-        {
-          if (dst)
-            memcpy(dst + written, "\x81\xc4", 2);
-          written += 2;
-          if ((uint64_t)type.b4 == type.b8 && type.b4 < 0x80000000)
-            {
-              if (dst)
-                memcpy(dst + written, &type.b4, sizeof (type.b4));
-              written += sizeof(type.b4);
-            }
-          else
-            {
-              if (dst)
-                memcpy(dst + written, &type.b8, sizeof (type.b8));
-              written += sizeof(type.b8);
-            }
-        }
-      return (written);
-   }
+    written = 0;
+    // test need 
+    if (class == ELFCLASS64)
+      {
+        if (dst)
+  	memcpy(dst, "\x48", 1);
+        written++;
+      }
+    if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8 && type.b < 0x80)
+      {
+        if (dst)
+  	memcpy(dst + written, "\x83\xc4", 2);
+        written += 2;
+        if (dst)
+  	memcpy(dst + written, &type.b, sizeof (type.b));
+        written += sizeof(type.b);
+      }
+    else
+      {
+        if (dst)
+  	memcpy(dst + written, "\x81\xc4", 2);
+        written += 2;
+        if ((uint64_t)type.b4 == type.b8 && type.b4 < 0x80000000)
+  	{
+  	  if (dst)
+  	    memcpy(dst + written, &type.b4, sizeof (type.b4));
+  	  written += sizeof(type.b4);
+  	}
+        else
+  	{
+  	  if (dst)
+  	    memcpy(dst + written, &type.b8, sizeof (type.b8));
+  	  written += sizeof(type.b8);
+  	}
+      }
+    return (written);
+  }
 
   typedef  union u_elf_addr
   {
@@ -700,6 +696,56 @@
     if (dst)
       memcpy(dst, "\xff\xe0", 2);
     return (2);
+  }
+
+  size_t set_xor_register_register(void *dst, t_registers reg, unsigned char class)
+  {
+    const char bytecode_regmap[] = {'\xc0', '\xc0', '\xdb', '\xdb', '\xc9', '\xc9', '\xff', '\xff', '\xf6', '\xf6', '\xed', '\xed', '\xc0', '\xc9', '\xd2', '\xdb', '\xe4','\xe4','\xe4', '\xed', '\xf6', '\xff'};
+    size_t bytes;
+
+    if (reg > R15 || (ELFCLASS32 == class && reg > R8))
+      return (-1);
+    bytes = 0;
+    if (ELFCLASS64 == class)
+      {
+        if (dst && reg >= R8 && reg <= R15)
+  	memcpy(dst + bytes, "\x4D", 1);
+        else if (dst)
+  	memcpy(dst + bytes, "\x48", 1);
+        bytes++;
+      }
+    if (dst)
+      memcpy(dst + bytes, "\x31", 1);
+    bytes++;
+    if (dst)
+      memcpy(dst + bytes, &bytecode_regmap[reg], 1);
+    return (++bytes);
+  }
+
+  size_t set_xor_register_size(void *dst, unsigned char class)
+  {
+    size_t xor_register_size;
+    t_registers reg;
+
+    if (ELFCLASS64 == class)
+      reg = RBX;// RAX gonna hold the value of entrypoint.
+    else
+      reg = EBX;
+    xor_register_size = 0;
+    while ((ELFCLASS64 == class && reg < R15) || reg < ESP)
+      {
+        if (dst)
+  	xor_register_size += set_xor_register_register(dst + xor_register_size, reg, class);
+        else
+  	xor_register_size += set_xor_register_register(NULL, reg, class);
+        if (reg >= R8)
+  	reg++; 
+        else
+  	reg += 2;
+        if (reg == RSP)//No xor rsp
+  	reg += 2;
+      }
+    return (xor_register_size);
   }
 
   void set_jmp_entrypoint(void *payload, uint64_t entrypoint, unsigned char class)
@@ -726,7 +772,7 @@
       }
     set_jmp_rax(payload + offset);
   }
-
+  // End dynamic Bytecode
   void encrypt(unsigned char *src, size_t size)
   {
     size_t i = 0;
@@ -734,11 +780,11 @@
       src[i++] += 13;
   }
 
-    /* void decrypt(char *payload, size_t size) */
-    /* { */
-    /*   while (size) */
-    /*     payload[--size] -= 13; */
-    /* } */
+  /* void decrypt(char *payload, size_t size) */
+  /* { */
+  /*   while (size) */
+  /*     payload[--size] -= 13; */
+  /* } */
 
   size_t decrypt_rot13_asm(unsigned char *dst, size_t payload_size, unsigned char class)
   {
@@ -755,6 +801,7 @@
       }
     return (written);
   }
+
   size_t set_mov_edi(void *dst, uint32_t value)
   {
     if (dst)
@@ -790,6 +837,7 @@
     return (written);
   }
 
+
   int generate_payload(void *elf_mmap, char **payload_ptr, size_t *payload_size)
   {
     // 1. Begin payload stuff
@@ -814,14 +862,18 @@
     if (lseek(cypher_payload_fd, 0, SEEK_SET) == -1)
       return (7);
     off_t jmp_size = get_mov_rax_jmp_rax_size(class);//Also xor all register.
-    const uint64_t cypher_payload_size = cypher_payload_fd_size + jmp_size;
+    size_t xor_register_size = set_xor_register_size(NULL, class);
+    const uint64_t cypher_payload_size = cypher_payload_fd_size + jmp_size + xor_register_size;
     unsigned char *cypher_payload = malloc(cypher_payload_size);
     if (!cypher_payload)
       return (8);
     if (read(cypher_payload_fd, cypher_payload, cypher_payload_fd_size) != cypher_payload_fd_size)
       return (9);
     close(cypher_payload_fd);
-    set_jmp_entrypoint(cypher_payload + cypher_payload_fd_size, e_entrypoint, class);
+    set_xor_register_size(cypher_payload + cypher_payload_fd_size, class);
+    set_jmp_entrypoint(cypher_payload + cypher_payload_fd_size + xor_register_size, e_entrypoint, class);
+    /* if (write(2, cypher_payload, cypher_payload_size) != (ssize_t)cypher_payload_size) */
+      /* return (10); */
     encrypt(cypher_payload, cypher_payload_size);
     //Read the first file
     size_t bytecode_buffer_size = 0;
@@ -904,8 +956,8 @@
     if (generated_bytecode_index != generated_bytecode_size)
       printf("generated_bytecode_size - generated_bytecode_index = %lu -> reverse: %lu\n", generated_bytecode_size - generated_bytecode_index, generated_bytecode_index - generated_bytecode_size);
 
-    if (write(2, generated_bytecode, generated_bytecode_size) != (ssize_t)generated_bytecode_size)
-      printf("error on write the generated bytecode\n");
+    /* if (write(2, generated_bytecode, generated_bytecode_size) != (ssize_t)generated_bytecode_size) */
+      /* printf("error on write the generated bytecode\n"); */
     ,*payload_size = generated_bytecode_size;
     ,*payload_ptr = generated_bytecode;
     return (0);
@@ -913,34 +965,34 @@
 
   static t_elf_ph get_n_loadable_and_exec_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t n)
   {
-      t_elf_ph phdr;
-      uint64_t ph_ndx;
-      uint64_t times_loadable_and_exec;
+    t_elf_ph phdr;
+    uint64_t ph_ndx;
+    uint64_t times_loadable_and_exec;
 
-      ph_ndx = 0;
-      times_loadable_and_exec = 0;
-      while (++ph_ndx < phnum)
-        {
-  	phdr = elf_get_program_header(ehdr, ph_ndx);
-  	if (PT_LOAD == elf_get_program_header_type(&phdr, class) && PF_X & elf_get_program_header_flags(&phdr, class))
-  	    times_loadable_and_exec++;
-  	if (times_loadable_and_exec == n)
-  	  return (phdr);
-        }
-      phdr.elf32 = NULL;
-      return (phdr);
+    ph_ndx = 0;
+    times_loadable_and_exec = 0;
+    while (++ph_ndx < phnum)
+      {
+        phdr = elf_get_program_header(ehdr, ph_ndx);
+        if (PT_LOAD == elf_get_program_header_type(&phdr, class) && PF_X & elf_get_program_header_flags(&phdr, class))
+  	times_loadable_and_exec++;
+        if (times_loadable_and_exec == n)
+  	return (phdr);
+      }
+    phdr.elf32 = NULL;
+    return (phdr);
   }
 
   static int validate_elf_headers(t_elf_h *ehdr, uint64_t *shnum, uint64_t *phnum, unsigned char *class)
   {
-      ,*shnum = elf_get_elfh_shnum(ehdr);
-      ,*phnum = elf_get_elfh_phnum(ehdr);
-      ,*class = elf_get_elfh_e_ident_class((unsigned char *)ehdr->elf32);
+    ,*shnum = elf_get_elfh_shnum(ehdr);
+    ,*phnum = elf_get_elfh_phnum(ehdr);
+    ,*class = elf_get_elfh_e_ident_class((unsigned char *)ehdr->elf32);
 
-      if (*shnum == 0 || *phnum == 0)
-          return 1;
+    if (*shnum == 0 || *phnum == 0)
+      return 1;
 
-      return 0;
+    return 0;
   }
 
   /* static int find_section_and_program_indices(t_elf_h *ehdr, uint64_t e_entrypoint, uint64_t shnum, uint64_t phnum, */
@@ -1120,7 +1172,7 @@
   }
 
   static int write_padding_and_payload(int packed, void **generated_bytecode, uint64_t payload_size,
-                                         uint64_t padding, uint64_t *writed)
+  				     uint64_t padding, uint64_t *writed)
   {
     printf("padding: %lu\n", padding);
     while (padding--)
@@ -1145,87 +1197,87 @@
                                              unsigned char class, uint64_t new_phdr_offset,
                                              uint64_t new_phdr_vaddr, uint64_t *writed, uint64_t payload_size)
   {
-      uint64_t shdr_struct_size = elf_get_section_header_struct_size(ehdr);
-      uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
-      t_elf_sh shdr_cp = (t_elf_sh){.elf32 = malloc(shdr_struct_size)};
-      uint64_t ndx_sh;
-      if (!shdr_cp.elf32)
-        return (12);
-      ndx_sh = 0;
-      t_elf_sh shdr = elf_get_section_header(ehdr, ndx_sh);
-      memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size);
-      printf("write shdr writed: %ld\n", *writed);
-      uint64_t shcp_offset;   
-      uint64_t padding = 16 - *writed % 16;
-      printf("padding: %lu\n", padding);
-      while (padding--)
+    uint64_t shdr_struct_size = elf_get_section_header_struct_size(ehdr);
+    uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
+    t_elf_sh shdr_cp = (t_elf_sh){.elf32 = malloc(shdr_struct_size)};
+    uint64_t ndx_sh;
+    if (!shdr_cp.elf32)
+      return (12);
+    ndx_sh = 0;
+    t_elf_sh shdr = elf_get_section_header(ehdr, ndx_sh);
+    memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size);
+    printf("write shdr writed: %ld\n", *writed);
+    uint64_t shcp_offset;   
+    uint64_t padding = 16 - *writed % 16;
+    printf("padding: %lu\n", padding);
+    while (padding--)
       {
         if (write(packed, "\0", 1) != 1)
   	return (1);
         writed[0]++;
       }
 
-      if (write(packed, shdr_cp.elf32, shdr_struct_size) != (ssize_t)shdr_struct_size)
-        return (2);
-      ,*writed += shdr_struct_size;
-      while (++ndx_sh < shnum)
+    if (write(packed, shdr_cp.elf32, shdr_struct_size) != (ssize_t)shdr_struct_size)
+      return (2);
+    ,*writed += shdr_struct_size;
+    while (++ndx_sh < shnum)
       {
-          shdr = elf_get_section_header(ehdr, ndx_sh);
-          shcp_offset = elf_get_section_header_offset(&shdr, class);
-          memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size);
-          if (increment_offset_phdr(ehdr, shcp_offset, phnum, class))
-  	  elf_shdr_set_offset(&shdr_cp, elf_get_section_header_offset(&shdr, class) + phdr_struct_size, class);
-  	if (write(packed, shdr_cp.elf32, shdr_struct_size) != (ssize_t)shdr_struct_size)
-  	  return (1);
-  	,*writed += shdr_struct_size;
+        shdr = elf_get_section_header(ehdr, ndx_sh);
+        shcp_offset = elf_get_section_header_offset(&shdr, class);
+        memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size);
+        if (increment_offset_phdr(ehdr, shcp_offset, phnum, class))
+  	elf_shdr_set_offset(&shdr_cp, elf_get_section_header_offset(&shdr, class) + phdr_struct_size, class);
+        if (write(packed, shdr_cp.elf32, shdr_struct_size) != (ssize_t)shdr_struct_size)
+  	return (1);
+        ,*writed += shdr_struct_size;
       }
-      //TODO set last shdr
-      //Modify  flags, name, type, address, offset, align, link, Info, Entsize
-      elf_shdr_set_addr(&shdr_cp, new_phdr_vaddr, class);
-      elf_shdr_set_offset(&shdr_cp, new_phdr_offset, class);
-      elf_shdr_set_size(&shdr_cp, payload_size, class);
-      elf_shdr_set_addralign(&shdr_cp, 16, class);
-      elf_shdr_set_name(&shdr_cp, elf_get_section_header_name(&shdr_cp, class) + 1, class);
-      elf_shdr_set_type(&shdr_cp, SHT_PROGBITS, class);
-      elf_shdr_set_flags(&shdr_cp, SHF_ALLOC | SHF_EXECINSTR, class);
-      elf_shdr_set_link(&shdr_cp, 0, class);
-      elf_shdr_set_info(&shdr_cp, 0, class);
-      elf_shdr_set_entsize(&shdr_cp, 0, class);
-      ,*writed += write(packed, shdr_cp.elf32, shdr_struct_size);
-      free(shdr_cp.elf32);
-      return 0;
+    //TODO set last shdr
+    //Modify  flags, name, type, address, offset, align, link, Info, Entsize
+    elf_shdr_set_addr(&shdr_cp, new_phdr_vaddr, class);
+    elf_shdr_set_offset(&shdr_cp, new_phdr_offset, class);
+    elf_shdr_set_size(&shdr_cp, payload_size, class);
+    elf_shdr_set_addralign(&shdr_cp, 16, class);
+    elf_shdr_set_name(&shdr_cp, elf_get_section_header_name(&shdr_cp, class) + 1, class);
+    elf_shdr_set_type(&shdr_cp, SHT_PROGBITS, class);
+    elf_shdr_set_flags(&shdr_cp, SHF_ALLOC | SHF_EXECINSTR, class);
+    elf_shdr_set_link(&shdr_cp, 0, class);
+    elf_shdr_set_info(&shdr_cp, 0, class);
+    elf_shdr_set_entsize(&shdr_cp, 0, class);
+    ,*writed += write(packed, shdr_cp.elf32, shdr_struct_size);
+    free(shdr_cp.elf32);
+    return 0;
   }
 
   int generated_packed_file(void *elf_mmap, size_t file_size, void *generated_bytecode, size_t payload_size, int packed)
   {
-      t_elf_h ehdr = (t_elf_h){.elf32 = elf_mmap};
-      uint64_t shnum;
-      uint64_t phnum;
-      unsigned char class;
-      uint64_t new_phdr_vaddr;
-      uint64_t new_phdr_offset;
-      uint64_t writed;
-      uint64_t new_e_entry;
-      uint64_t new_e_shoff;
-      /* uint64_t e_shoff = elf_get_elfh_shoff(&ehdr); */
-      /* uint64_t sh_size; */
-      /* uint64_t sh_offset; */
+    t_elf_h ehdr = (t_elf_h){.elf32 = elf_mmap};
+    uint64_t shnum;
+    uint64_t phnum;
+    unsigned char class;
+    uint64_t new_phdr_vaddr;
+    uint64_t new_phdr_offset;
+    uint64_t writed;
+    uint64_t new_e_entry;
+    uint64_t new_e_shoff;
+    /* uint64_t e_shoff = elf_get_elfh_shoff(&ehdr); */
+    /* uint64_t sh_size; */
+    /* uint64_t sh_offset; */
       
-      if (validate_elf_headers(&ehdr, &shnum, &phnum, &class))
-        return (1);
-      /* if (find_section_and_program_indices(&ehdr, e_entrypoint, shnum, phnum, class, &ndx_sh, &ndx_ph)) */
-      /*     return 10; */
-      if (prepare_info(&ehdr, class, &new_phdr_vaddr, phnum, &new_phdr_offset, &new_e_shoff, payload_size, shnum))
-        return (2);
-      new_e_entry = new_phdr_vaddr;
-      //New to check were i got the disalign offset and writed
-      writed = 0;
-      if (copy_and_modify_elf_header(&ehdr, packed, new_e_shoff, class, new_e_entry, phnum, shnum, &writed))
-        return (3);
-      printf("after copy and modify ehdr -> writed: %ld\n", writed);
-      if (write_program_headers(&ehdr, packed, phnum, new_phdr_offset, new_e_entry, class, payload_size, &writed))
-        return (4);
-      printf("after write phdrs -> writed: %ld\n", writed);
+    if (validate_elf_headers(&ehdr, &shnum, &phnum, &class))
+      return (1);
+    /* if (find_section_and_program_indices(&ehdr, e_entrypoint, shnum, phnum, class, &ndx_sh, &ndx_ph)) */
+    /*     return 10; */
+    if (prepare_info(&ehdr, class, &new_phdr_vaddr, phnum, &new_phdr_offset, &new_e_shoff, payload_size, shnum))
+      return (2);
+    new_e_entry = new_phdr_vaddr;
+    //New to check were i got the disalign offset and writed
+    writed = 0;
+    if (copy_and_modify_elf_header(&ehdr, packed, new_e_shoff, class, new_e_entry, phnum, shnum, &writed))
+      return (3);
+    printf("after copy and modify ehdr -> writed: %ld\n", writed);
+    if (write_program_headers(&ehdr, packed, phnum, new_phdr_offset, new_e_entry, class, payload_size, &writed))
+      return (4);
+    printf("after write phdrs -> writed: %ld\n", writed);
 
     const uint64_t ehdr_struct_size = elf_get_struct_size_elf_header((char *)ehdr.elf32);
     const uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
@@ -1246,49 +1298,49 @@
     return 0;
   }
 
-      int main(int argc, char **argv)
+  int main(int argc, char **argv)
+  {
+    //validation params
+    if (argc != 2)
       {
-        //validation params
-        if (argc != 2)
-          {
-            printf("usage: %s [filename]\n", *argv);
-            return (1);
-          }  	
-        //open file
-        int fd = open(argv[1], O_RDONLY); 
-        if (fd < 0)
-          return (2);
-        // get size file
-        const off_t file_size = lseek(fd, 0, SEEK_END);
-        if ((off_t) -1 == file_size || (off_t) -1 == lseek(fd, 0, SEEK_SET))
-          {
-            close(fd);
-            return (3);
-          }
-        // save on memory all the file
-        void *elf_mmap = mmap(NULL, file_size, PROT_READ, MAP_SHARED, fd, 0);
+        printf("usage: %s [filename]\n", *argv);
+        return (1);
+      }  	
+    //open file
+    int fd = open(argv[1], O_RDONLY); 
+    if (fd < 0)
+      return (2);
+    // get size file
+    const off_t file_size = lseek(fd, 0, SEEK_END);
+    if ((off_t) -1 == file_size || (off_t) -1 == lseek(fd, 0, SEEK_SET))
+      {
         close(fd);
-        if (!elf_mmap)
-           return (4);
-        // open the file where we gonna add the payload
-        int packed = open("woody", O_CREAT | O_TRUNC | O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
-        if (packed < 0)
-          {
-            munmap(elf_mmap, file_size);
-            return (5);
-          } // starting poc part
-        size_t generated_bytecode_size;
-        char *generated_bytecode = NULL;
-        if (generate_payload(elf_mmap, &generated_bytecode, &generated_bytecode_size))
-          return (6);
-        if (!generated_bytecode || !generated_bytecode_size)
-          return (7);
-        if (generated_packed_file(elf_mmap, file_size, generated_bytecode, generated_bytecode_size, packed))
-          return (8);
-        close(packed);
-        munmap(elf_mmap, file_size);
-        return (0);
+        return (3);
       }
+    // save on memory all the file
+    void *elf_mmap = mmap(NULL, file_size, PROT_READ, MAP_SHARED, fd, 0);
+    close(fd);
+    if (!elf_mmap)
+      return (4);
+    // open the file where we gonna add the payload
+    int packed = open("woody", O_CREAT | O_TRUNC | O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
+    if (packed < 0)
+      {
+        munmap(elf_mmap, file_size);
+        return (5);
+      } // starting poc part
+    size_t generated_bytecode_size;
+    char *generated_bytecode = NULL;
+    if (generate_payload(elf_mmap, &generated_bytecode, &generated_bytecode_size))
+      return (6);
+    if (!generated_bytecode || !generated_bytecode_size)
+      return (7);
+    if (generated_packed_file(elf_mmap, file_size, generated_bytecode, generated_bytecode_size, packed))
+      return (8);
+    close(packed);
+    munmap(elf_mmap, file_size);
+    return (0);
+  }
 #+end_src
 
 * Check argv, argc, envp in gdb
@@ -1332,7 +1384,7 @@ CLOSED: [2025-08-13 Wed 11:27]
 * TODO Check list before work on compress.
 ** DONE asm ld.
 CLOSED: [2025-08-13 Wed 11:41]
-** DONE asm ld argv.
+** DONE asm ld argv and .text section.
 CLOSED: [2025-08-13 Wed 13:48]
 *** DONE Phdr error
 CLOSED: [2025-08-13 Wed 13:47]
@@ -1425,8 +1477,379 @@ Segmentation fault #(Hello my friend nice to meet u;)
 #+begin_src shell
 
 #+end_src
-** payload xor all register minus r13 or similar
-** gcc
+** DONE payload xor all register minus r13 or similar
+CLOSED: [2025-08-14 Thu 13:25]
+#+begin_src shell
+#Current payload
+  ndisasm -b 64 bitecode.bin 
+  00000000  55                push rbp
+  00000001  4889E5            mov rbp,rsp
+  00000004  4883EC20          sub rsp,byte +0x20
+  00000008  31C0              xor eax,eax
+  0000000A  48B82E2E2E2E574F  mov rax,0x444f4f572e2e2e2e
+           -4F44
+  00000014  488945EA          mov [rbp-0x16],rax
+  00000018  48B84F44592E2E2E  mov rax,0xa2e2e2e2e59444f
+           -2E0A
+  00000022  488945F0          mov [rbp-0x10],rax
+  00000026  488D45EA          lea rax,[rbp-0x16]
+  0000002A  BA0E000000        mov edx,0xe
+  0000002F  4889C6            mov rsi,rax
+  00000032  BF01000000        mov edi,0x1
+  00000037  B801000000        mov eax,0x1
+  0000003C  0F05              syscall
+  0000003E  4883C420          add rsp,byte +0x20
+  00000042  5D                pop rbp
+  00000043  4831DB            xor rbx,rbx
+  00000046  4831C9            xor rcx,rcx
+  00000049  4831FF            xor rdi,rdi
+  0000004C  4831F6            xor rsi,rsi
+  0000004F  4831ED            xor rbp,rbp
+  00000052  4D31D2            xor r10,r10
+  00000055  4D31DB            xor r11,r11
+  00000058  4D31E4            xor r12,r12
+  0000005B  4D31E4            xor r12,r12
+  0000005E  4D31E4            xor r12,r12
+  00000061  4D31ED            xor r13,r13
+  00000064  4D31F6            xor r14,r14
+  00000067  48B8001040000000  mov rax,0x401000# func set dynamic value
+           -0000
+  00000071  FFE0              jmp rax         # jmp register value.
+#+end_src
+** TODO gcc
+./woody say not_found.
+#+begin_src shell
+      readelf -l gcc_main 
+      Entry point 0x401040
+      Program Headers:
+        Type           Offset             VirtAddr           PhysAddr
+                       FileSiz            MemSiz              Flags  Align
+        PHDR           0x0000000000000040 0x0000000000400040 0x0000000000400040
+                       0x00000000000002d8 0x00000000000002d8  R      0x8
+        INTERP         0x0000000000000318 0x0000000000400318 0x0000000000400318
+                       0x0000000000000050 0x0000000000000050  R      0x1
+            [Requesting program interpreter: /gnu/store/hw6g2kjayxnqi8rwpnmpraalxi0djkxc-glibc-2.39/lib/ld-linux-x86-64.so.2]
+        LOAD           0x0000000000000000 0x0000000000400000 0x0000000000400000
+                       0x00000000000005e0 0x00000000000005e0  R      0x1000
+        LOAD           0x0000000000001000 0x0000000000401000 0x0000000000401000
+                       0x0000000000000149 0x0000000000000149  R E    0x1000
+        LOAD           0x0000000000002000 0x0000000000402000 0x0000000000402000
+                       0x00000000000000e4 0x00000000000000e4  R      0x1000
+        LOAD           0x0000000000002dc8 0x0000000000403dc8 0x0000000000403dc8
+                       0x0000000000000250 0x0000000000000258  RW     0x1000
+        DYNAMIC        0x0000000000002dd8 0x0000000000403dd8 0x0000000000403dd8
+                       0x0000000000000200 0x0000000000000200  RW     0x8
+        NOTE           0x0000000000000368 0x0000000000400368 0x0000000000400368
+                       0x0000000000000040 0x0000000000000040  R      0x8
+        NOTE           0x00000000000003a8 0x00000000004003a8 0x00000000004003a8
+                       0x0000000000000020 0x0000000000000020  R      0x4
+        GNU_PROPERTY   0x0000000000000368 0x0000000000400368 0x0000000000400368
+                       0x0000000000000040 0x0000000000000040  R      0x8
+        GNU_EH_FRAME   0x0000000000002014 0x0000000000402014 0x0000000000402014
+                       0x000000000000002c 0x000000000000002c  R      0x4
+        GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000
+                       0x0000000000000000 0x0000000000000000  RW     0x10
+        GNU_RELRO      0x0000000000002dc8 0x0000000000403dc8 0x0000000000403dc8
+                       0x0000000000000238 0x0000000000000238  R      0x1
+
+       Section to Segment mapping:
+        Segment Sections...
+         00     
+         01     .interp 
+         02     .interp .note.gnu.property .note.ABI-tag .hash .gnu.hash .dynsym .dynstr .gnu.version .gnu.version_r .rela.dyn .rela.plt 
+         03     .init .plt .text .fini 
+         04     .rodata .eh_frame_hdr .eh_frame 
+         05     .init_array .fini_array .dynamic .got .got.plt .data .bss 
+         06     .dynamic 
+         07     .note.gnu.property 
+         08     .note.ABI-tag 
+         09     .note.gnu.property 
+         10     .eh_frame_hdr 
+         11     
+         12     .init_array .fini_array .dynamic .got 
+      readelf -l woody 
+      Entry point 0x405480
+      There are 14 program headers, starting at offset 64
+
+      Program Headers:
+        Type           Offset             VirtAddr           PhysAddr
+                       FileSiz            MemSiz              Flags  Align
+        PHDR           0x0000000000000040 0x0000000000400040 0x0000000000400040
+                       0x00000000000002d8 0x00000000000002d8  R      0x8
+        INTERP         0x0000000000000350 0x0000000000400318 0x0000000000400318
+                       0x0000000000000050 0x0000000000000050  R      0x1
+            [Requesting program interpreter: ib/ld-linux-x86-64.so.2]
+        LOAD           0x0000000000000000 0x0000000000400000 0x0000000000400000
+                       0x0000000000000618 0x0000000000000618  R      0x1000
+        LOAD           0x0000000000001000 0x0000000000401000 0x0000000000401000
+                       0x0000000000000149 0x0000000000000149  R E    0x1000
+        LOAD           0x0000000000002000 0x0000000000402000 0x0000000000402000
+                       0x00000000000000e4 0x00000000000000e4  R      0x1000
+        LOAD           0x0000000000002dc8 0x0000000000403dc8 0x0000000000403dc8
+                       0x0000000000000250 0x0000000000000258  RW     0x1000
+        DYNAMIC        0x0000000000002dd8 0x0000000000403dd8 0x0000000000403dd8
+                       0x0000000000000200 0x0000000000000200  RW     0x8
+        NOTE           0x00000000000003a0 0x0000000000400368 0x0000000000400368
+                       0x0000000000000040 0x0000000000000040  R      0x8
+        NOTE           0x00000000000003e0 0x00000000004003a8 0x00000000004003a8
+                       0x0000000000000020 0x0000000000000020  R      0x4
+        GNU_PROPERTY   0x00000000000003a0 0x0000000000400368 0x0000000000400368
+                       0x0000000000000040 0x0000000000000040  R      0x8
+        GNU_EH_FRAME   0x0000000000002014 0x0000000000402014 0x0000000000402014
+                       0x000000000000002c 0x000000000000002c  R      0x4
+        GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000
+                       0x0000000000000000 0x0000000000000000  RW     0x10
+        GNU_RELRO      0x0000000000002dc8 0x0000000000403dc8 0x0000000000403dc8
+                       0x0000000000000238 0x0000000000000238  R      0x1
+        LOAD           0x0000000000003480 0x0000000000405480 0x0000000000405480
+                       0x00000000000007e7 0x00000000000007e7  R E    0x1000#Packed phdr
+
+       Section to Segment mapping:
+        Segment Sections...
+         00     
+         01     .interp 
+         02     .interp .note.gnu.property .note.ABI-tag .hash .gnu.hash .dynsym .dynstr .gnu.version .gnu.version_r .rela.dyn .rela.plt 
+         03     .init .plt .text .fini 
+         04     .rodata .eh_frame_hdr .eh_frame 
+         05     .init_array .fini_array .dynamic .got .got.plt .data .bss 
+         06     .dynamic 
+         07     .note.gnu.property 
+         08     .note.ABI-tag 
+         09     .note.gnu.property 
+         10     .eh_frame_hdr 
+         11     
+         12     .init_array .fini_array .dynamic .got 
+         13     shstrtab# packed shdr 
+    __________________________________________________________________________
+     readelf -S gcc_main  woody 
+
+  File: gcc_main
+  There are 30 section headers, starting at offset 0x3478:
+
+  Section Headers:
+    [Nr] Name              Type             Address           Offset
+         Size              EntSize          Flags  Link  Info  Align
+    [ 0]                   NULL             0000000000000000  00000000
+         0000000000000000  0000000000000000           0     0     0
+    [ 1] .interp           PROGBITS         0000000000400318  00000318
+         0000000000000050  0000000000000000   A       0     0     1
+    [ 2] .note.gnu.pr[...] NOTE             0000000000400368  00000368
+         0000000000000040  0000000000000000   A       0     0     8
+    [ 3] .note.ABI-tag     NOTE             00000000004003a8  000003a8
+         0000000000000020  0000000000000000   A       0     0     4
+    [ 4] .hash             HASH             00000000004003c8  000003c8
+         0000000000000024  0000000000000004   A       6     0     8
+    [ 5] .gnu.hash         GNU_HASH         00000000004003f0  000003f0
+         000000000000001c  0000000000000000   A       6     0     8
+    [ 6] .dynsym           DYNSYM           0000000000400410  00000410
+         0000000000000060  0000000000000018   A       7     1     8
+    [ 7] .dynstr           STRTAB           0000000000400470  00000470
+         00000000000000ee  0000000000000000   A       0     0     1
+    [ 8] .gnu.version      VERSYM           000000000040055e  0000055e
+         0000000000000008  0000000000000002   A       6     0     2
+    [ 9] .gnu.version_r    VERNEED          0000000000400568  00000568
+         0000000000000030  0000000000000000   A       7     1     8
+    [10] .rela.dyn         RELA             0000000000400598  00000598
+         0000000000000030  0000000000000018   A       6     0     8
+    [11] .rela.plt         RELA             00000000004005c8  000005c8
+         0000000000000018  0000000000000018  AI       6    23     8
+    [12] .init             PROGBITS         0000000000401000  00001000
+         0000000000000017  0000000000000000  AX       0     0     4
+    [13] .plt              PROGBITS         0000000000401020  00001020
+         0000000000000020  0000000000000010  AX       0     0     16
+    [14] .text             PROGBITS         0000000000401040  00001040
+         0000000000000100  0000000000000000  AX       0     0     16
+    [15] .fini             PROGBITS         0000000000401140  00001140
+         0000000000000009  0000000000000000  AX       0     0     4
+    [16] .rodata           PROGBITS         0000000000402000  00002000
+         0000000000000012  0000000000000000   A       0     0     4
+    [17] .eh_frame_hdr     PROGBITS         0000000000402014  00002014
+         000000000000002c  0000000000000000   A       0     0     4
+    [18] .eh_frame         PROGBITS         0000000000402040  00002040
+         00000000000000a4  0000000000000000   A       0     0     8
+    [19] .init_array       INIT_ARRAY       0000000000403dc8  00002dc8
+         0000000000000008  0000000000000008  WA       0     0     8
+    [20] .fini_array       FINI_ARRAY       0000000000403dd0  00002dd0
+         0000000000000008  0000000000000008  WA       0     0     8
+    [21] .dynamic          DYNAMIC          0000000000403dd8  00002dd8
+         0000000000000200  0000000000000010  WA       7     0     8
+    [22] .got              PROGBITS         0000000000403fd8  00002fd8
+         0000000000000010  0000000000000008  WA       0     0     8
+    [23] .got.plt          PROGBITS         0000000000403fe8  00002fe8
+         0000000000000020  0000000000000008  WA       0     0     8
+    [24] .data             PROGBITS         0000000000404008  00003008
+         0000000000000010  0000000000000000  WA       0     0     8
+    [25] .bss              NOBITS           0000000000404018  00003018
+         0000000000000008  0000000000000000  WA       0     0     1
+    [26] .comment          PROGBITS         0000000000000000  00003018
+         0000000000000012  0000000000000001  MS       0     0     1
+    [27] .symtab           SYMTAB           0000000000000000  00003030
+         0000000000000240  0000000000000018          28     8     8
+    [28] .strtab           STRTAB           0000000000000000  00003270
+         00000000000000ff  0000000000000000           0     0     1
+    [29] .shstrtab         STRTAB           0000000000000000  0000336f
+         0000000000000103  0000000000000000           0     0     1
+  Key to Flags:
+    W (write), A (alloc), X (execute), M (merge), S (strings), I (info),
+    L (link order), O (extra OS processing required), G (group), T (TLS),
+    C (compressed), x (unknown), o (OS specific), E (exclude),
+    D (mbind), l (large), p (processor specific)
+
+  File: woody
+  There are 31 section headers, starting at offset 0x3c70:
+
+  Section Headers:
+    [Nr] Name              Type             Address           Offset
+         Size              EntSize          Flags  Link  Info  Align
+    [ 0]                   NULL             0000000000000000  00000000
+         0000000000000000  0000000000000000           0     0     0
+    [ 1] .interp           PROGBITS         0000000000400318  00000350
+         0000000000000050  0000000000000000   A       0     0     1
+    [ 2] .note.gnu.pr[...] NOTE             0000000000400368  000003a0
+         0000000000000040  0000000000000000   A       0     0     8
+    [ 3] .note.ABI-tag     NOTE             00000000004003a8  000003e0
+         0000000000000020  0000000000000000   A       0     0     4
+    [ 4] .hash             HASH             00000000004003c8  00000400
+         0000000000000024  0000000000000004   A       6     0     8
+    [ 5] .gnu.hash         GNU_HASH         00000000004003f0  00000428
+         000000000000001c  0000000000000000   A       6     0     8
+    [ 6] .dynsym           DYNSYM           0000000000400410  00000448
+         0000000000000060  0000000000000018   A       7     1     8
+    [ 7] .dynstr           STRTAB           0000000000400470  000004a8
+         00000000000000ee  0000000000000000   A       0     0     1
+    [ 8] .gnu.version      VERSYM           000000000040055e  00000596
+         0000000000000008  0000000000000002   A       6     0     2
+    [ 9] .gnu.version_r    VERNEED          0000000000400568  000005a0
+         0000000000000030  0000000000000000   A       7     1     8
+    [10] .rela.dyn         RELA             0000000000400598  000005d0
+         0000000000000030  0000000000000018   A       6     0     8
+    [11] .rela.plt         RELA             00000000004005c8  00000600
+         0000000000000018  0000000000000018  AI       6    23     8
+    [12] .init             PROGBITS         0000000000401000  00001000
+         0000000000000017  0000000000000000  AX       0     0     4
+    [13] .plt              PROGBITS         0000000000401020  00001020
+         0000000000000020  0000000000000010  AX       0     0     16
+    [14] .text             PROGBITS         0000000000401040  00001040
+         0000000000000100  0000000000000000  AX       0     0     16
+    [15] .fini             PROGBITS         0000000000401140  00001140
+         0000000000000009  0000000000000000  AX       0     0     4
+    [16] .rodata           PROGBITS         0000000000402000  00002000
+         0000000000000012  0000000000000000   A       0     0     4
+    [17] .eh_frame_hdr     PROGBITS         0000000000402014  00002014
+         000000000000002c  0000000000000000   A       0     0     4
+    [18] .eh_frame         PROGBITS         0000000000402040  00002040
+         00000000000000a4  0000000000000000   A       0     0     8
+    [19] .init_array       INIT_ARRAY       0000000000403dc8  00002dc8
+         0000000000000008  0000000000000008  WA       0     0     8
+    [20] .fini_array       FINI_ARRAY       0000000000403dd0  00002dd0
+         0000000000000008  0000000000000008  WA       0     0     8
+    [21] .dynamic          DYNAMIC          0000000000403dd8  00002dd8
+         0000000000000200  0000000000000010  WA       7     0     8
+    [22] .got              PROGBITS         0000000000403fd8  00002fd8
+         0000000000000010  0000000000000008  WA       0     0     8
+    [23] .got.plt          PROGBITS         0000000000403fe8  00002fe8
+         0000000000000020  0000000000000008  WA       0     0     8
+    [24] .data             PROGBITS         0000000000404008  00003008
+         0000000000000010  0000000000000000  WA       0     0     8
+    [25] .bss              NOBITS           0000000000404018  00003018
+         0000000000000008  0000000000000000  WA       0     0     1
+    [26] .comment          PROGBITS         0000000000000000  00003018
+         0000000000000012  0000000000000001  MS       0     0     1
+    [27] .symtab           SYMTAB           0000000000000000  00003030
+         0000000000000240  0000000000000018          28     8     8
+    [28] .strtab           STRTAB           0000000000000000  00003270
+         00000000000000ff  0000000000000000           0     0     1
+    [29] .shstrtab         STRTAB           0000000000000000  0000336f
+         0000000000000103  0000000000000000           0     0     1
+    [30] shstrtab          PROGBITS         0000000000405480  00003480
+         00000000000007e7  0000000000000000  AX       0     0     16
+    __________________________________________________________________________
+    Syms
+    readelf -s gcc_main  woody 
+
+    File: gcc_main
+
+    Symbol table '.dynsym' contains 4 entries:
+       Num:    Value          Size Type    Bind   Vis      Ndx Name
+         0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND 
+         1: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND _[...]@GLIBC_2.34 (2)
+         2: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND write@GLIBC_2.2.5 (3)
+         3: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND __gmon_start__
+
+    Symbol table '.symtab' contains 24 entries:
+       Num:    Value          Size Type    Bind   Vis      Ndx Name
+         0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND 
+         1: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS crt1.o
+         2: 00000000004003a8    32 OBJECT  LOCAL  DEFAULT    3 __abi_tag
+         3: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS main.c
+         4: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS 
+         5: 0000000000403dd8     0 OBJECT  LOCAL  DEFAULT   21 _DYNAMIC
+         6: 0000000000402014     0 NOTYPE  LOCAL  DEFAULT   17 __GNU_EH_FRAME_HDR
+         7: 0000000000403fe8     0 OBJECT  LOCAL  DEFAULT   23 _GLOBAL_OFFSET_TABLE_
+         8: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __libc_start_mai[...]
+         9: 0000000000404008     0 NOTYPE  WEAK   DEFAULT   24 data_start
+        10: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND write@GLIBC_2.2.5
+        11: 0000000000404018     0 NOTYPE  GLOBAL DEFAULT   24 _edata
+        12: 0000000000401140     0 FUNC    GLOBAL HIDDEN    15 _fini
+        13: 0000000000404008     0 NOTYPE  GLOBAL DEFAULT   24 __data_start
+        14: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND __gmon_start__
+        15: 0000000000404010     0 OBJECT  GLOBAL HIDDEN    24 __dso_handle
+        16: 0000000000402000     4 OBJECT  GLOBAL DEFAULT   16 _IO_stdin_used
+        17: 0000000000404020     0 NOTYPE  GLOBAL DEFAULT   25 _end
+        18: 0000000000401070     1 FUNC    GLOBAL HIDDEN    14 _dl_relocate_sta[...]
+        19: 0000000000401040    34 FUNC    GLOBAL DEFAULT   14 _start
+        20: 0000000000404018     0 NOTYPE  GLOBAL DEFAULT   25 __bss_start
+        21: 0000000000401126    26 FUNC    GLOBAL DEFAULT   14 main
+        22: 0000000000404018     0 OBJECT  GLOBAL HIDDEN    24 __TMC_END__
+        23: 0000000000401000     0 FUNC    GLOBAL HIDDEN    12 _init
+
+    File: woody
+
+    Symbol table '.dynsym' contains 4 entries:
+       Num:    Value          Size Type    Bind   Vis      Ndx Name
+         0: 0000000000000000 0x2000000001 NOTYPE  LOCAL  DEFAULT  UND bc.so.6
+         1: 0000000000000000 0x5f6e6f6d675f5f00 NOTYPE  LOCAL  DEFAULT  UND bc.so.6                                                                                  @libc-2.39/lib:/gnu/store/vvrjkcybmnygfcl4ddxs4hsbw0bxwwd4-gcc-11.4.0-lib/lib:/home/user/.guix-profile/lib (2)
+    readelf: Warning: local symbol 1 found at index >= .dynsym's sh_info value of 1
+         2: 735f6362696c5f5f 0x69616d5f74726174 FILE    <unknown>: 7 PROTECTED [<other>: 5c]  bad section index[ 95] <corrupt>                                                                                            @alxi0djkxc-glibc-2.39/lib:/gnu/store/vvrjkcybmnygfcl4ddxs4hsbw0bxwwd4-gcc-11.4.0-lib/lib:/home/user/.guix-profile/lib (3)
+         3: 735f63636762696c 0x696c00312e6f732e SRELC   <unknown>: 6 DEFAULT [<other>: 74]  bad section index[101] <corrupt>
+
+    Symbol table '.symtab' contains 24 entries:
+       Num:    Value          Size Type    Bind   Vis      Ndx Name
+         0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND 
+         1: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS crt1.o
+         2: 00000000004003a8    32 OBJECT  LOCAL  DEFAULT    3 __abi_tag
+         3: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS main.c
+         4: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS 
+         5: 0000000000403dd8     0 OBJECT  LOCAL  DEFAULT   21 _DYNAMIC
+         6: 0000000000402014     0 NOTYPE  LOCAL  DEFAULT   17 __GNU_EH_FRAME_HDR
+         7: 0000000000403fe8     0 OBJECT  LOCAL  DEFAULT   23 _GLOBAL_OFFSET_TABLE_
+         8: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __libc_start_mai[...]
+         9: 0000000000404008     0 NOTYPE  WEAK   DEFAULT   24 data_start
+        10: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND write@GLIBC_2.2.5
+        11: 0000000000404018     0 NOTYPE  GLOBAL DEFAULT   24 _edata
+        12: 0000000000401140     0 FUNC    GLOBAL HIDDEN    15 _fini
+        13: 0000000000404008     0 NOTYPE  GLOBAL DEFAULT   24 __data_start
+        14: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND __gmon_start__
+        15: 0000000000404010     0 OBJECT  GLOBAL HIDDEN    24 __dso_handle
+        16: 0000000000402000     4 OBJECT  GLOBAL DEFAULT   16 _IO_stdin_used
+        17: 0000000000404020     0 NOTYPE  GLOBAL DEFAULT   25 _end
+        18: 0000000000401070     1 FUNC    GLOBAL HIDDEN    14 _dl_relocate_sta[...]
+        19: 0000000000401040    34 FUNC    GLOBAL DEFAULT   14 _start
+        20: 0000000000404018     0 NOTYPE  GLOBAL DEFAULT   25 __bss_start
+        21: 0000000000401126    26 FUNC    GLOBAL DEFAULT   14 main
+        22: 0000000000404018     0 OBJECT  GLOBAL HIDDEN    24 __TMC_END__
+        23: 0000000000401000     0 FUNC    GLOBAL HIDDEN    12 _init
+  ______________________________________________________________________________
+  GDB
+  gdb woody
+Reading symbols from woody...
+
+warning: BFD: /home/user/Documents/woody-woodpacker/POC/woody: invalid string offset 1918989427 >= 238 for section `.dynstr'
+
+warning: BFD: /home/user/Documents/woody-woodpacker/POC/woody: invalid string offset 1920401518 >= 238 for section `.dynstr'
+(No debugging symbols found in woody)
+#Look like i screw up in some part Let's continue Tomorrow.
+#+end_src
 ** Payload x32
 ** asm ld x32
 ** asm ld x32 argv.
@@ -1436,4 +1859,3 @@ Segmentation fault #(Hello my friend nice to meet u;)
 * HOLD Multistage packer
 - Detect a already packer file and use that section/phdr. besides append new p/shdr. got a limit of phdr until overlap the first load & EXEC phdr vaddr
 - *Compress* the previous payload and append our payload.
-* 

@@ -84,6 +84,31 @@ CLOSED: [2025-06-19 Thu 17:45]
   bool	uint_mult_overflow(unsigned int times, unsigned int size);
   bool	unsigned_int_mult_overflow(uint64_t times, uint64_t size, uint64_t size_bits);
 
+    typedef enum e_register
+  {
+    RAX ,
+    EAX,
+    RBX,
+    EBX,
+    RCX,
+    ECX,
+    RDI,
+    EDI,
+    RSI,
+    ESI,
+    RBP,
+    EBP,
+    RSP,
+    ESP,
+    R8,
+    R9,
+    R10,
+    R11,
+    R12,
+    R13,
+    R14,
+    R15,
+  }	t_registers ;
 #+end_src
 
 

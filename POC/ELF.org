@@ -38,38 +38,41 @@ Elf header = ehdr = _h
 #+end_comment
 
 #+begin_src c :tangle include/format_elf.h 
-#ifndef FORMAT_ELF_H
-# define FORMAT_ELF_H
-# include <elf.h>    // Typedef ELFNN_*, ST_BIND, ...
-# include <stdint.h> // uint64_t
-# include <stdbool.h> // bool
-# include <unistd.h> // off_t
-# include <string.h> // memcmp
-# include "common.h" // overflows
+  #ifndef FORMAT_ELF_H
+  # define FORMAT_ELF_H
+  # ifndef DEBUG_LVL
+  #  define DEBUG_LVL 1
+  # endif
+  # include <elf.h>    // Typedef ELFNN_*, ST_BIND, ...
+  # include <stdint.h> // uint64_t
+  # include <stdbool.h> // bool
+  # include <unistd.h> // off_t
+  # include <string.h> // memcmp
+  # include "common.h" // overflows, enums registers
 
-   typedef union u_elf_h
-   {
-     Elf32_Ehdr	*elf32;
-     Elf64_Ehdr	*elf64;
-   }	t_elf_h;
+     typedef union u_elf_h
+     {
+       Elf32_Ehdr	*elf32;
+       Elf64_Ehdr	*elf64;
+     }	t_elf_h;
 
-   typedef union u_elf_ph
-   {
-     Elf32_Phdr	*elf32;
-     Elf64_Phdr	*elf64;
-   }	t_elf_ph;
+     typedef union u_elf_ph
+     {
+       Elf32_Phdr	*elf32;
+       Elf64_Phdr	*elf64;
+     }	t_elf_ph;
 
-   typedef union u_elf_sh
-   {
-     Elf32_Shdr	*elf32;
-     Elf64_Shdr	*elf64;
-   }	t_elf_sh;
+     typedef union u_elf_sh
+     {
+       Elf32_Shdr	*elf32;
+       Elf64_Shdr	*elf64;
+     }	t_elf_sh;
 
-   typedef union u_elf_sym
-   {
-     Elf32_Sym	*elf32;
-     Elf64_Sym	*elf64;
-   }	t_elf_sym;
+     typedef union u_elf_sym
+     {
+       Elf32_Sym	*elf32;
+       Elf64_Sym	*elf64;
+     }	t_elf_sym;
 #+end_src
 
 *** Validation ELF_header

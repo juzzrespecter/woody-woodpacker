@@ -1631,27 +1631,68 @@ ndisasm -b 32 payload_32.bin
 00000034  83C40E            add esp,byte +0xe
 #+end_src
 
-#+begin_src c :tangle payload/xor_asm.s
-  section .text
-      global _start
+#+begin_src asm :tangle payload/xor_asm.s
+  	section .text
+  	global _start
 
   _start:
-    xor ax, ax
-    xor bx, bx
-    xor cx, cx
-    xor dx, dx
-    xor si, si
-    xor di, di
-    xor r8, r8
-    xor r9, r9
-    xor r10, r10
-    xor r11, r11
-    xor r12, r12
-    ;; skip r13, e have the entry point in there
-    xor r14, r14
-    xor r15, r15
+  	xor rax, rax
+  	xor rbx, rbx
+  	xor rcx, rcx
+  	xor rdi, rdi
+  	xor rsi, rsi
+  	xor rbp, rbp
+  	xor rsp, rsp
+  	xor r8, r8
+  	xor r9, r9
+  	xor r10, r10
+  	xor r11, r11
+  	xor r12, r12
+  	xor r13, r13
+  	xor r14, r14
+  	xor r15, r15
+  	xor eax, eax
+  	xor ebx, ebx
+  	xor ecx, ecx
+  	xor edi, edi
+  	xor esi, esi
+  	xor ebp, ebp
+  	xor esp, esp
 #+end_src
 
+#+begin_src  c :tangle no
+  \x48\x31\xc0 -> xor rax, rax   
+  \x48\x31\xdb -> xor rbx, rbx 
+  \x48\x31\xc9 -> xor rcx, rcx 
+  \x48\x31\xff -> xor rdi, rdi 
+  \x48\x31\xf6 -> xor rsi, rsi 
+  \x48\x31\xed -> xor rbp, rbp 
+  \x4d\x31\xc0 -> xor r8, r8 
+  \x4d\x31\xc9 -> xor r9, r9 
+  \x4d\x31\xd2 -> xor r10, r10 
+  \x4d\x31\xdb -> xor r11, r11 
+  \x4d\x31\xe4 -> xor r12, r12 
+  \x4d\x31\xed -> xor r13, r13 
+  \x4d\x31\xf6 -> xor r14, r14 
+  \x4d\x31\xff -> xor r15, r15 
+  \x31\xc0 -> xor eax,eax 
+  \x31\xdb -> xor ebx,ebx 
+  \x31\xc9 -> xor ecx,ecx 
+  \x31\xff -> xor edi,edi 
+  \x31\xf6 -> xor esi,esi 
+  \x31\xed -> xor ebp,ebp 
+
+    \xdb, \xc9, \xc9, \xff, \xff, \xf6, \xf6, \xed, \xed, \xc0, \xc9, \xd2, \xdb, \xe4, \xed, \xf6, \xff
+
+
+
+    
+  \xdb
+  \xc9
+  \xff
+  \xf6
+  \xed
+#+end_src
 I would compress section ~.data & .text~
 
 
