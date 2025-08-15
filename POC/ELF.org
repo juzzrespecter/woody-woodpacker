@@ -73,6 +73,13 @@ Elf header = ehdr = _h
        Elf32_Sym	*elf32;
        Elf64_Sym	*elf64;
      }	t_elf_sym;
+
+       typedef union u_elf_dyn
+     {
+       Elf32_Dyn	*elf32;
+       Elf64_Dyn	*elf64;
+     }	t_elf_dyn;
+
 #+end_src
 
 *** Validation ELF_header
