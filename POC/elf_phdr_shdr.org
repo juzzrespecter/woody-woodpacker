@@ -344,12 +344,12 @@
     return (i);
   }
 
-  off_t get_mov_rax_jmp_rax_size(unsigned char class)
-  {
-    if (class == ELFCLASS32)
-      return (7);// b8 00 00 40 00 ff e0 -> b8 ="mov eax", value\nff eo="jmp rax"
-    return (12);// 48 b8 00 00 00 00 00 00 00 00 ff e0 -> 48 b8 = "mov rax", value
-  }
+  /* off_t get_mov_rax_jmp_rax_size(unsigned char class) */
+  /* { */
+  /*   if (class == ELFCLASS32) */
+  /*     return (7);// b8 00 00 40 00 ff e0 -> b8 ="mov eax", value\nff eo="jmp rax" */
+  /*   return (12);// 48 b8 00 00 00 00 00 00 00 00 ff e0 -> 48 b8 = "mov rax", value */
+  /* } */
 
   off_t get_js_size(void)
   {
@@ -691,19 +691,21 @@
     Elf64_Addr b64;
   }	t_elf_addr;
 
-  size_t set_jmp_rax(void *dst)
+  size_t set_jmp_r13(void *dst)
   {
     if (dst)
-      memcpy(dst, "\xff\xe0", 2);
-    return (2);
+      /* memcpy(dst, "\xff\xe0", 2); */
+      memcpy(dst, "\x41\xff\xe5", 3);
+    /* return (2); */
+    return (3);
   }
 
   size_t set_xor_register_register(void *dst, t_registers reg, unsigned char class)
   {
-    const char bytecode_regmap[] = {'\xc0', '\xc0', '\xdb', '\xdb', '\xc9', '\xc9', '\xff', '\xff', '\xf6', '\xf6', '\xed', '\xed', '\xc0', '\xc9', '\xd2', '\xdb', '\xe4','\xe4','\xe4', '\xed', '\xf6', '\xff'};
+    const char bytecode_regmap[] = {'\xc0', '\xc0', '\xdb', '\xdb', '\xc9', '\xc9', '\xd2', '\xd2', '\xff', '\xff', '\xf6', '\xf6', '\xed', '\xed', '\xe4', '\xe4', '\xc0', '\xc9', '\xd2','\xdb','\xe4', '\xed', '\xf6', '\xff'};
     size_t bytes;
 
-    if (reg > R15 || (ELFCLASS32 == class && reg > R8))
+    if (reg > R15 || (ELFCLASS32 == class && reg >= R8))
       return (-1);
     bytes = 0;
     if (ELFCLASS64 == class)
@@ -728,12 +730,14 @@
     t_registers reg;
 
     if (ELFCLASS64 == class)
-      reg = RBX;// RAX gonna hold the value of entrypoint.
+      reg = RAX;// RAX gonna hold the value of entrypoint.
     else
-      reg = EBX;
+      reg = EAX;
     xor_register_size = 0;
-    while ((ELFCLASS64 == class && reg < R15) || reg < ESP)
+    while ((ELFCLASS64 == class && reg <= R15) || reg < ESP)
       {
+        if (reg == R13)
+  	reg++;
         if (dst)
   	xor_register_size += set_xor_register_register(dst + xor_register_size, reg, class);
         else
@@ -747,31 +751,38 @@
       }
     return (xor_register_size);
   }
-
-  void set_jmp_entrypoint(void *payload, uint64_t entrypoint, unsigned char class)
+  // Need to make x32
+  size_t set_jmp_entrypoint(void *payload, uint64_t entrypoint, unsigned char class)
   {
     t_elf_addr u_entrypoint = (t_elf_addr){.b64 = entrypoint};
     size_t offset = 0;
 
     if (class == ELFCLASS64)
       {
-        memcpy(payload, "\x48", 1); //rex prefix x64
+        /* memcpy(payload, "\x48", 1); //rex prefix x64 */
+        if (payload)
+  	memcpy(payload, "\x49", 1);
         offset++;
+        if (payload)
+  	memcpy(payload + offset, "\xbd", 1); //mov r13
+        offset++;
+        if (payload)
+  	memcpy(payload + offset, &u_entrypoint.b64, sizeof (u_entrypoint.b64));
+        offset += sizeof (u_entrypoint.b64);
+        if (payload)
+  	offset += set_jmp_r13(payload + offset);
+        else
+  	offset += set_jmp_r13(NULL);
       }
-    memcpy(payload + offset, "\xb8", 1); //mov eax in case preceding rex is rax.
-    offset++;
-    if (class == ELFCLASS64)
+    else//Not working
       {
-        memcpy(payload + offset, &u_entrypoint.b64, sizeof (u_entrypoint.b64));
-        offset+= sizeof (u_entrypoint.b64);
-      }
-    else
-      {
-        memcpy(payload + offset, &u_entrypoint.b32, sizeof (u_entrypoint.b32));
+        if (payload)
+  	memcpy(payload + offset, &u_entrypoint.b32, sizeof (u_entrypoint.b32));
         offset+= sizeof (u_entrypoint.b32);
       }
-    set_jmp_rax(payload + offset);
+    return (offset);
   }
+
   // End dynamic Bytecode
   void encrypt(unsigned char *src, size_t size)
   {
@@ -845,7 +856,7 @@
     t_elf_h 		ehdr = (t_elf_h){.elf32 = elf_mmap};
     const uint64_t     e_entrypoint = elf_get_elfh_entry(&ehdr);
     /* const uint64_t 	shnum = elf_get_elfh_shnum(&ehdr); */
-    const uint64_t 	phnum = elf_get_elfh_phnum(&ehdr);
+    /* const uint64_t 	phnum = elf_get_elfh_phnum(&ehdr); */
     const unsigned char 	class = elf_get_elfh_e_ident_class(elf_mmap);
     // in case find the section show relevant info function.
 
@@ -861,7 +872,7 @@
       return (6);
     if (lseek(cypher_payload_fd, 0, SEEK_SET) == -1)
       return (7);
-    off_t jmp_size = get_mov_rax_jmp_rax_size(class);//Also xor all register.
+    off_t jmp_size = set_jmp_entrypoint(NULL, e_entrypoint, class);//Also xor all register.
     size_t xor_register_size = set_xor_register_size(NULL, class);
     const uint64_t cypher_payload_size = cypher_payload_fd_size + jmp_size + xor_register_size;
     unsigned char *cypher_payload = malloc(cypher_payload_size);
@@ -905,7 +916,7 @@
 
     uint32_t highest_loadable_vaddr;
     uint32_t mmap_size;
-    size_t generated_bytecode_size = bytecode_buffer_size + size_of_cp_payload_to_mmap + 3 * ft_sub_asm_rsp(NULL, cypher_payload_size, class) + jmp_size + set_jmp_rax(NULL) + get_js_size() + bytecode_after_mmap_fd_size + bytecode_until_mmap_fd_size + set_mov_edi(NULL, 0) + sizeof(mmap_size);
+    size_t generated_bytecode_size = bytecode_buffer_size + size_of_cp_payload_to_mmap + 3 * ft_sub_asm_rsp(NULL, cypher_payload_size, class) + jmp_size + set_jmp_r13(NULL) + get_js_size() + bytecode_after_mmap_fd_size + bytecode_until_mmap_fd_size + set_mov_edi(NULL, 0) + sizeof(mmap_size);
     ;
     char *generated_bytecode = malloc(generated_bytecode_size);
     if (!generated_bytecode)
@@ -931,7 +942,7 @@
     mmap_size = get_alignment_effective_addr(0x1000, cypher_payload_size);
     memcpy(generated_bytecode + generated_bytecode_index, &mmap_size, sizeof(mmap_size));
     generated_bytecode_index += sizeof(mmap_size);
-    highest_loadable_vaddr = elf_get_highest_loadable_vaddr_avalaible(&ehdr, class, phnum);
+    highest_loadable_vaddr = 0;/* elf_get_highest_loadable_vaddr_avalaible(&ehdr, class, phnum); */
 
     generated_bytecode_index += set_mov_edi(generated_bytecode + generated_bytecode_index, highest_loadable_vaddr);
     char *bytecode_after_mmap_buffer = malloc(bytecode_after_mmap_fd_size);
@@ -1355,6 +1366,55 @@
       return (shdr);
   }
 
+  bool in_array(void **arr, uint64_t arr_size, void *value)
+  {
+    while (arr_size && arr[arr_size - 1] != value)
+      arr_size--;
+    return (arr_size);// if arr_size == 0 False 
+  }
+
+  bool elf_is_addres_type_entry(uint64_t d_tag)
+  {
+    static void *address_type_arr[] = {(void *)DT_INIT, (void *)DT_FINI, (void *)DT_INIT_ARRAY, (void *)DT_FINI_ARRAY, (void *)DT_HASH, (void *)DT_GNU_HASH, (void *)DT_STRTAB, (void *)DT_SYMTAB, (void *)DT_PLTGOT, (void *)DT_JMPREL, (void *)DT_RELA, (void *)DT_VERNEED, (void *)DT_REL, (void *)DT_VERSYM};
+
+    return (in_array((void *)&address_type_arr[0], sizeof(address_type_arr) / sizeof(*address_type_arr), (void *)d_tag));
+  }
+
+  static int vaddr_to_offset_safe(t_elf_h *ehdr, uint64_t vaddr, uint64_t *offset, unsigned char class)
+  {
+      uint64_t phnum = elf_get_elfh_phnum(ehdr);
+      
+      for (uint64_t i = 0; i < phnum; i++) {
+          t_elf_ph phdr = elf_get_program_header(ehdr, i);
+          
+          if (elf_get_program_header_type(&phdr, class) == PT_LOAD) {
+              uint64_t vaddr_start = elf_get_program_header_vaddr(&phdr, class);
+              uint64_t memsz = elf_get_program_header_memsz(&phdr, class);
+              /* uint64_t filesz = elf_get_program_header_filesz(&phdr, class); */
+              uint64_t offset_start = elf_get_program_header_offset(&phdr, class);
+              uint64_t vaddr_end = vaddr_start + memsz;
+              
+              // Check if vaddr is within this segment
+              if (is_between(vaddr_start, vaddr_end - 1, vaddr)) {
+                  // Check if it's in the file-mapped portion
+  	      ,*offset = offset_start + (vaddr - vaddr_start);
+  	      return 0;  // Success
+  	                  }
+          }
+      }
+      
+      // Not found in any LOAD segment
+      ,*offset = (uint64_t)-1;
+      return -1;  // Not found
+  }
+
+  /* if (is_between(vaddr_start, vaddr_end -1, vaddr) && vaddr < vaddr_start + filesz) {// In file? */
+                  /* } else { */
+                      /* This is in the BSS portion or (not in file) */
+                      /* *offset = offset_start + (vaddr - vaddr_start); */
+                      /* return 0;  // In BSS, no file offset */
+                  /* } */
+
   int write_dyn(t_elf_h *ehdr, t_elf_sh *shdr, unsigned char class, uint32_t phnum, size_t *writed, int packed)
   {
     if (!shdr->elf32)
@@ -1374,6 +1434,8 @@
     // Update entries that point to shifted addresses
     uint64_t ndx_dyn = 0;
     uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
+    uint64_t offset;
+
 
     while (ndx_dyn < entry_count)
       {
@@ -1382,26 +1444,15 @@
         uint64_t d_tag = elf_get_dyn_tag(&dyn, class);
                   
         // Check if this entry contains a virtual address that needs updating
-        if (DT_INIT == d_tag
-  	  || DT_FINI == d_tag
-  	  || DT_INIT_ARRAY == d_tag
-  	  || DT_FINI_ARRAY == d_tag
-  	  || DT_HASH == d_tag
-  	  || DT_GNU_HASH == d_tag
-  	  || DT_STRTAB == d_tag
-  	  || DT_SYMTAB == d_tag
-  	  || DT_PLTGOT == d_tag
-  	  || DT_JMPREL == d_tag
-  	  || DT_RELA == d_tag
-  	  || DT_VERNEED == d_tag
-  	  || DT_REL == d_tag
-  	  || DT_VERSYM == d_tag)
+        if (elf_is_addres_type_entry(d_tag))
   	{ 
   	uint64_t d_val = elf_get_dyn_val(&dyn, class);
                       
   	// If this address is in the affected range, update it
   	//Change vaddr for offset.
-  	if (increment_offset_phdr(ehdr, d_val, phnum, class))
+  	if (vaddr_to_offset_safe(ehdr, d_val, &offset, class))
+  	  return (4);
+  	if (increment_offset_phdr(ehdr, offset, phnum, class))
   	  {
   	    printf("Updating DT_%ld from 0x%lx to 0x%lx\n", 
   		   d_tag, d_val, d_val + phdr_struct_size);
@@ -1724,341 +1775,358 @@ CLOSED: [2025-08-14 Thu 13:25]
 ** TODO gcc
 ./woody say not_found.
 #+begin_src shell
-          readelf -l gcc_main 
-          Entry point 0x401040
-          Program Headers:
-            Type           Offset             VirtAddr           PhysAddr
-                           FileSiz            MemSiz              Flags  Align
-            PHDR           0x0000000000000040 0x0000000000400040 0x0000000000400040
-                           0x00000000000002d8 0x00000000000002d8  R      0x8
-            INTERP         0x0000000000000318 0x0000000000400318 0x0000000000400318
-                           0x0000000000000050 0x0000000000000050  R      0x1
-                [Requesting program interpreter: /gnu/store/hw6g2kjayxnqi8rwpnmpraalxi0djkxc-glibc-2.39/lib/ld-linux-x86-64.so.2]
-            LOAD           0x0000000000000000 0x0000000000400000 0x0000000000400000
-                           0x00000000000005e0 0x00000000000005e0  R      0x1000
-            LOAD           0x0000000000001000 0x0000000000401000 0x0000000000401000
-                           0x0000000000000149 0x0000000000000149  R E    0x1000
-            LOAD           0x0000000000002000 0x0000000000402000 0x0000000000402000
-                           0x00000000000000e4 0x00000000000000e4  R      0x1000
-            LOAD           0x0000000000002dc8 0x0000000000403dc8 0x0000000000403dc8
-                           0x0000000000000250 0x0000000000000258  RW     0x1000
-            DYNAMIC        0x0000000000002dd8 0x0000000000403dd8 0x0000000000403dd8
-                           0x0000000000000200 0x0000000000000200  RW     0x8
-            NOTE           0x0000000000000368 0x0000000000400368 0x0000000000400368
-                           0x0000000000000040 0x0000000000000040  R      0x8
-            NOTE           0x00000000000003a8 0x00000000004003a8 0x00000000004003a8
-                           0x0000000000000020 0x0000000000000020  R      0x4
-            GNU_PROPERTY   0x0000000000000368 0x0000000000400368 0x0000000000400368
-                           0x0000000000000040 0x0000000000000040  R      0x8
-            GNU_EH_FRAME   0x0000000000002014 0x0000000000402014 0x0000000000402014
-                           0x000000000000002c 0x000000000000002c  R      0x4
-            GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000
-                           0x0000000000000000 0x0000000000000000  RW     0x10
-            GNU_RELRO      0x0000000000002dc8 0x0000000000403dc8 0x0000000000403dc8
-                           0x0000000000000238 0x0000000000000238  R      0x1
+              readelf -l gcc_main 
+              Entry point 0x401040
+              Program Headers:
+                Type           Offset             VirtAddr           PhysAddr
+                               FileSiz            MemSiz              Flags  Align
+                PHDR           0x0000000000000040 0x0000000000400040 0x0000000000400040
+                               0x00000000000002d8 0x00000000000002d8  R      0x8
+                INTERP         0x0000000000000318 0x0000000000400318 0x0000000000400318
+                               0x0000000000000050 0x0000000000000050  R      0x1
+                    [Requesting program interpreter: /gnu/store/hw6g2kjayxnqi8rwpnmpraalxi0djkxc-glibc-2.39/lib/ld-linux-x86-64.so.2]
+                LOAD           0x0000000000000000 0x0000000000400000 0x0000000000400000
+                               0x00000000000005e0 0x00000000000005e0  R      0x1000
+                LOAD           0x0000000000001000 0x0000000000401000 0x0000000000401000
+                               0x0000000000000149 0x0000000000000149  R E    0x1000
+                LOAD           0x0000000000002000 0x0000000000402000 0x0000000000402000
+                               0x00000000000000e4 0x00000000000000e4  R      0x1000
+                LOAD           0x0000000000002dc8 0x0000000000403dc8 0x0000000000403dc8
+                               0x0000000000000250 0x0000000000000258  RW     0x1000
+                DYNAMIC        0x0000000000002dd8 0x0000000000403dd8 0x0000000000403dd8
+                               0x0000000000000200 0x0000000000000200  RW     0x8
+                NOTE           0x0000000000000368 0x0000000000400368 0x0000000000400368
+                               0x0000000000000040 0x0000000000000040  R      0x8
+                NOTE           0x00000000000003a8 0x00000000004003a8 0x00000000004003a8
+                               0x0000000000000020 0x0000000000000020  R      0x4
+                GNU_PROPERTY   0x0000000000000368 0x0000000000400368 0x0000000000400368
+                               0x0000000000000040 0x0000000000000040  R      0x8
+                GNU_EH_FRAME   0x0000000000002014 0x0000000000402014 0x0000000000402014
+                               0x000000000000002c 0x000000000000002c  R      0x4
+                GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000
+                               0x0000000000000000 0x0000000000000000  RW     0x10
+                GNU_RELRO      0x0000000000002dc8 0x0000000000403dc8 0x0000000000403dc8
+                               0x0000000000000238 0x0000000000000238  R      0x1
 
-           Section to Segment mapping:
-            Segment Sections...
-             00     
-             01     .interp 
-             02     .interp .note.gnu.property .note.ABI-tag .hash .gnu.hash .dynsym .dynstr .gnu.version .gnu.version_r .rela.dyn .rela.plt 
-             03     .init .plt .text .fini 
-             04     .rodata .eh_frame_hdr .eh_frame 
-             05     .init_array .fini_array .dynamic .got .got.plt .data .bss 
-             06     .dynamic 
-             07     .note.gnu.property 
-             08     .note.ABI-tag 
-             09     .note.gnu.property 
-             10     .eh_frame_hdr 
-             11     
-             12     .init_array .fini_array .dynamic .got 
-          readelf -l woody 
-          Entry point 0x405480
-          There are 14 program headers, starting at offset 64
+               Section to Segment mapping:
+                Segment Sections...
+                 00     
+                 01     .interp 
+                 02     .interp .note.gnu.property .note.ABI-tag .hash .gnu.hash .dynsym .dynstr .gnu.version .gnu.version_r .rela.dyn .rela.plt 
+                 03     .init .plt .text .fini 
+                 04     .rodata .eh_frame_hdr .eh_frame 
+                 05     .init_array .fini_array .dynamic .got .got.plt .data .bss 
+                 06     .dynamic 
+                 07     .note.gnu.property 
+                 08     .note.ABI-tag 
+                 09     .note.gnu.property 
+                 10     .eh_frame_hdr 
+                 11     
+                 12     .init_array .fini_array .dynamic .got 
+              readelf -l woody 
+              Entry point 0x405480
+              There are 14 program headers, starting at offset 64
 
-          Program Headers:
-            Type           Offset             VirtAddr           PhysAddr
-                           FileSiz            MemSiz              Flags  Align
-            PHDR           0x0000000000000040 0x0000000000400040 0x0000000000400040
-                           0x00000000000002d8 0x00000000000002d8  R      0x8
-            INTERP         0x0000000000000350 0x0000000000400318 0x0000000000400318
-                           0x0000000000000050 0x0000000000000050  R      0x1
-                [Requesting program interpreter: ib/ld-linux-x86-64.so.2]
-            LOAD           0x0000000000000000 0x0000000000400000 0x0000000000400000
-                           0x0000000000000618 0x0000000000000618  R      0x1000
-            LOAD           0x0000000000001000 0x0000000000401000 0x0000000000401000
-                           0x0000000000000149 0x0000000000000149  R E    0x1000
-            LOAD           0x0000000000002000 0x0000000000402000 0x0000000000402000
-                           0x00000000000000e4 0x00000000000000e4  R      0x1000
-            LOAD           0x0000000000002dc8 0x0000000000403dc8 0x0000000000403dc8
-                           0x0000000000000250 0x0000000000000258  RW     0x1000
-            DYNAMIC        0x0000000000002dd8 0x0000000000403dd8 0x0000000000403dd8
-                           0x0000000000000200 0x0000000000000200  RW     0x8
-            NOTE           0x00000000000003a0 0x0000000000400368 0x0000000000400368
-                           0x0000000000000040 0x0000000000000040  R      0x8
-            NOTE           0x00000000000003e0 0x00000000004003a8 0x00000000004003a8
-                           0x0000000000000020 0x0000000000000020  R      0x4
-            GNU_PROPERTY   0x00000000000003a0 0x0000000000400368 0x0000000000400368
-                           0x0000000000000040 0x0000000000000040  R      0x8
-            GNU_EH_FRAME   0x0000000000002014 0x0000000000402014 0x0000000000402014
-                           0x000000000000002c 0x000000000000002c  R      0x4
-            GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000
-                           0x0000000000000000 0x0000000000000000  RW     0x10
-            GNU_RELRO      0x0000000000002dc8 0x0000000000403dc8 0x0000000000403dc8
-                           0x0000000000000238 0x0000000000000238  R      0x1
-            LOAD           0x0000000000003480 0x0000000000405480 0x0000000000405480
-                           0x00000000000007e7 0x00000000000007e7  R E    0x1000#Packed phdr
+              Program Headers:
+                Type           Offset             VirtAddr           PhysAddr
+                               FileSiz            MemSiz              Flags  Align
+                PHDR           0x0000000000000040 0x0000000000400040 0x0000000000400040
+                               0x00000000000002d8 0x00000000000002d8  R      0x8
+                INTERP         0x0000000000000350 0x0000000000400318 0x0000000000400318
+                               0x0000000000000050 0x0000000000000050  R      0x1
+                    [Requesting program interpreter: ib/ld-linux-x86-64.so.2]
+                LOAD           0x0000000000000000 0x0000000000400000 0x0000000000400000
+                               0x0000000000000618 0x0000000000000618  R      0x1000
+                LOAD           0x0000000000001000 0x0000000000401000 0x0000000000401000
+                               0x0000000000000149 0x0000000000000149  R E    0x1000
+                LOAD           0x0000000000002000 0x0000000000402000 0x0000000000402000
+                               0x00000000000000e4 0x00000000000000e4  R      0x1000
+                LOAD           0x0000000000002dc8 0x0000000000403dc8 0x0000000000403dc8
+                               0x0000000000000250 0x0000000000000258  RW     0x1000
+                DYNAMIC        0x0000000000002dd8 0x0000000000403dd8 0x0000000000403dd8
+                               0x0000000000000200 0x0000000000000200  RW     0x8
+                NOTE           0x00000000000003a0 0x0000000000400368 0x0000000000400368
+                               0x0000000000000040 0x0000000000000040  R      0x8
+                NOTE           0x00000000000003e0 0x00000000004003a8 0x00000000004003a8
+                               0x0000000000000020 0x0000000000000020  R      0x4
+                GNU_PROPERTY   0x00000000000003a0 0x0000000000400368 0x0000000000400368
+                               0x0000000000000040 0x0000000000000040  R      0x8
+                GNU_EH_FRAME   0x0000000000002014 0x0000000000402014 0x0000000000402014
+                               0x000000000000002c 0x000000000000002c  R      0x4
+                GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000
+                               0x0000000000000000 0x0000000000000000  RW     0x10
+                GNU_RELRO      0x0000000000002dc8 0x0000000000403dc8 0x0000000000403dc8
+                               0x0000000000000238 0x0000000000000238  R      0x1
+                LOAD           0x0000000000003480 0x0000000000405480 0x0000000000405480
+                               0x00000000000007e7 0x00000000000007e7  R E    0x1000#Packed phdr
 
-           Section to Segment mapping:
-            Segment Sections...
-             00     
-             01     .interp 
-             02     .interp .note.gnu.property .note.ABI-tag .hash .gnu.hash .dynsym .dynstr .gnu.version .gnu.version_r .rela.dyn .rela.plt 
-             03     .init .plt .text .fini 
-             04     .rodata .eh_frame_hdr .eh_frame 
-             05     .init_array .fini_array .dynamic .got .got.plt .data .bss 
-             06     .dynamic 
-             07     .note.gnu.property 
-             08     .note.ABI-tag 
-             09     .note.gnu.property 
-             10     .eh_frame_hdr 
-             11     
-             12     .init_array .fini_array .dynamic .got 
-             13     shstrtab# packed shdr 
-        __________________________________________________________________________
-         readelf -S gcc_main  woody 
+               Section to Segment mapping:
+                Segment Sections...
+                 00     
+                 01     .interp 
+                 02     .interp .note.gnu.property .note.ABI-tag .hash .gnu.hash .dynsym .dynstr .gnu.version .gnu.version_r .rela.dyn .rela.plt 
+                 03     .init .plt .text .fini 
+                 04     .rodata .eh_frame_hdr .eh_frame 
+                 05     .init_array .fini_array .dynamic .got .got.plt .data .bss 
+                 06     .dynamic 
+                 07     .note.gnu.property 
+                 08     .note.ABI-tag 
+                 09     .note.gnu.property 
+                 10     .eh_frame_hdr 
+                 11     
+                 12     .init_array .fini_array .dynamic .got 
+                 13     shstrtab# packed shdr 
+            __________________________________________________________________________
+             readelf -S gcc_main  woody 
 
-      File: gcc_main
-      There are 30 section headers, starting at offset 0x3478:
+          File: gcc_main
+          There are 30 section headers, starting at offset 0x3478:
 
-      Section Headers:
-        [Nr] Name              Type             Address           Offset
-             Size              EntSize          Flags  Link  Info  Align
-        [ 0]                   NULL             0000000000000000  00000000
-             0000000000000000  0000000000000000           0     0     0
-        [ 1] .interp           PROGBITS         0000000000400318  00000318
-             0000000000000050  0000000000000000   A       0     0     1
-        [ 2] .note.gnu.pr[...] NOTE             0000000000400368  00000368
-             0000000000000040  0000000000000000   A       0     0     8
-        [ 3] .note.ABI-tag     NOTE             00000000004003a8  000003a8
-             0000000000000020  0000000000000000   A       0     0     4
-        [ 4] .hash             HASH             00000000004003c8  000003c8
-             0000000000000024  0000000000000004   A       6     0     8
-        [ 5] .gnu.hash         GNU_HASH         00000000004003f0  000003f0
-             000000000000001c  0000000000000000   A       6     0     8
-        [ 6] .dynsym           DYNSYM           0000000000400410  00000410
-             0000000000000060  0000000000000018   A       7     1     8
-        [ 7] .dynstr           STRTAB           0000000000400470  00000470
-             00000000000000ee  0000000000000000   A       0     0     1
-        [ 8] .gnu.version      VERSYM           000000000040055e  0000055e
-             0000000000000008  0000000000000002   A       6     0     2
-        [ 9] .gnu.version_r    VERNEED          0000000000400568  00000568
-             0000000000000030  0000000000000000   A       7     1     8
-        [10] .rela.dyn         RELA             0000000000400598  00000598
-             0000000000000030  0000000000000018   A       6     0     8
-        [11] .rela.plt         RELA             00000000004005c8  000005c8
-             0000000000000018  0000000000000018  AI       6    23     8
-        [12] .init             PROGBITS         0000000000401000  00001000
-             0000000000000017  0000000000000000  AX       0     0     4
-        [13] .plt              PROGBITS         0000000000401020  00001020
-             0000000000000020  0000000000000010  AX       0     0     16
-        [14] .text             PROGBITS         0000000000401040  00001040
-             0000000000000100  0000000000000000  AX       0     0     16
-        [15] .fini             PROGBITS         0000000000401140  00001140
-             0000000000000009  0000000000000000  AX       0     0     4
-        [16] .rodata           PROGBITS         0000000000402000  00002000
-             0000000000000012  0000000000000000   A       0     0     4
-        [17] .eh_frame_hdr     PROGBITS         0000000000402014  00002014
-             000000000000002c  0000000000000000   A       0     0     4
-        [18] .eh_frame         PROGBITS         0000000000402040  00002040
-             00000000000000a4  0000000000000000   A       0     0     8
-        [19] .init_array       INIT_ARRAY       0000000000403dc8  00002dc8
-             0000000000000008  0000000000000008  WA       0     0     8
-        [20] .fini_array       FINI_ARRAY       0000000000403dd0  00002dd0
-             0000000000000008  0000000000000008  WA       0     0     8
-        [21] .dynamic          DYNAMIC          0000000000403dd8  00002dd8
-             0000000000000200  0000000000000010  WA       7     0     8
-        [22] .got              PROGBITS         0000000000403fd8  00002fd8
-             0000000000000010  0000000000000008  WA       0     0     8
-        [23] .got.plt          PROGBITS         0000000000403fe8  00002fe8
-             0000000000000020  0000000000000008  WA       0     0     8
-        [24] .data             PROGBITS         0000000000404008  00003008
-             0000000000000010  0000000000000000  WA       0     0     8
-        [25] .bss              NOBITS           0000000000404018  00003018
-             0000000000000008  0000000000000000  WA       0     0     1
-        [26] .comment          PROGBITS         0000000000000000  00003018
-             0000000000000012  0000000000000001  MS       0     0     1
-        [27] .symtab           SYMTAB           0000000000000000  00003030
-             0000000000000240  0000000000000018          28     8     8
-        [28] .strtab           STRTAB           0000000000000000  00003270
-             00000000000000ff  0000000000000000           0     0     1
-        [29] .shstrtab         STRTAB           0000000000000000  0000336f
-             0000000000000103  0000000000000000           0     0     1
-      Key to Flags:
-        W (write), A (alloc), X (execute), M (merge), S (strings), I (info),
-        L (link order), O (extra OS processing required), G (group), T (TLS),
-        C (compressed), x (unknown), o (OS specific), E (exclude),
-        D (mbind), l (large), p (processor specific)
+          Section Headers:
+            [Nr] Name              Type             Address           Offset
+                 Size              EntSize          Flags  Link  Info  Align
+            [ 0]                   NULL             0000000000000000  00000000
+                 0000000000000000  0000000000000000           0     0     0
+            [ 1] .interp           PROGBITS         0000000000400318  00000318
+                 0000000000000050  0000000000000000   A       0     0     1
+            [ 2] .note.gnu.pr[...] NOTE             0000000000400368  00000368
+                 0000000000000040  0000000000000000   A       0     0     8
+            [ 3] .note.ABI-tag     NOTE             00000000004003a8  000003a8
+                 0000000000000020  0000000000000000   A       0     0     4
+            [ 4] .hash             HASH             00000000004003c8  000003c8
+                 0000000000000024  0000000000000004   A       6     0     8
+            [ 5] .gnu.hash         GNU_HASH         00000000004003f0  000003f0
+                 000000000000001c  0000000000000000   A       6     0     8
+            [ 6] .dynsym           DYNSYM           0000000000400410  00000410
+                 0000000000000060  0000000000000018   A       7     1     8
+            [ 7] .dynstr           STRTAB           0000000000400470  00000470
+                 00000000000000ee  0000000000000000   A       0     0     1
+            [ 8] .gnu.version      VERSYM           000000000040055e  0000055e
+                 0000000000000008  0000000000000002   A       6     0     2
+            [ 9] .gnu.version_r    VERNEED          0000000000400568  00000568
+                 0000000000000030  0000000000000000   A       7     1     8
+            [10] .rela.dyn         RELA             0000000000400598  00000598
+                 0000000000000030  0000000000000018   A       6     0     8
+            [11] .rela.plt         RELA             00000000004005c8  000005c8
+                 0000000000000018  0000000000000018  AI       6    23     8
+            [12] .init             PROGBITS         0000000000401000  00001000
+                 0000000000000017  0000000000000000  AX       0     0     4
+            [13] .plt              PROGBITS         0000000000401020  00001020
+                 0000000000000020  0000000000000010  AX       0     0     16
+            [14] .text             PROGBITS         0000000000401040  00001040
+                 0000000000000100  0000000000000000  AX       0     0     16
+            [15] .fini             PROGBITS         0000000000401140  00001140
+                 0000000000000009  0000000000000000  AX       0     0     4
+            [16] .rodata           PROGBITS         0000000000402000  00002000
+                 0000000000000012  0000000000000000   A       0     0     4
+            [17] .eh_frame_hdr     PROGBITS         0000000000402014  00002014
+                 000000000000002c  0000000000000000   A       0     0     4
+            [18] .eh_frame         PROGBITS         0000000000402040  00002040
+                 00000000000000a4  0000000000000000   A       0     0     8
+            [19] .init_array       INIT_ARRAY       0000000000403dc8  00002dc8
+                 0000000000000008  0000000000000008  WA       0     0     8
+            [20] .fini_array       FINI_ARRAY       0000000000403dd0  00002dd0
+                 0000000000000008  0000000000000008  WA       0     0     8
+            [21] .dynamic          DYNAMIC          0000000000403dd8  00002dd8
+                 0000000000000200  0000000000000010  WA       7     0     8
+            [22] .got              PROGBITS         0000000000403fd8  00002fd8
+                 0000000000000010  0000000000000008  WA       0     0     8
+            [23] .got.plt          PROGBITS         0000000000403fe8  00002fe8
+                 0000000000000020  0000000000000008  WA       0     0     8
+            [24] .data             PROGBITS         0000000000404008  00003008
+                 0000000000000010  0000000000000000  WA       0     0     8
+            [25] .bss              NOBITS           0000000000404018  00003018
+                 0000000000000008  0000000000000000  WA       0     0     1
+            [26] .comment          PROGBITS         0000000000000000  00003018
+                 0000000000000012  0000000000000001  MS       0     0     1
+            [27] .symtab           SYMTAB           0000000000000000  00003030
+                 0000000000000240  0000000000000018          28     8     8
+            [28] .strtab           STRTAB           0000000000000000  00003270
+                 00000000000000ff  0000000000000000           0     0     1
+            [29] .shstrtab         STRTAB           0000000000000000  0000336f
+                 0000000000000103  0000000000000000           0     0     1
+          Key to Flags:
+            W (write), A (alloc), X (execute), M (merge), S (strings), I (info),
+            L (link order), O (extra OS processing required), G (group), T (TLS),
+            C (compressed), x (unknown), o (OS specific), E (exclude),
+            D (mbind), l (large), p (processor specific)
 
-      File: woody
-      There are 31 section headers, starting at offset 0x3c70:
+          File: woody
+          There are 31 section headers, starting at offset 0x3c70:
 
-      Section Headers:
-        [Nr] Name              Type             Address           Offset
-             Size              EntSize          Flags  Link  Info  Align
-        [ 0]                   NULL             0000000000000000  00000000
-             0000000000000000  0000000000000000           0     0     0
-        [ 1] .interp           PROGBITS         0000000000400318  00000350
-             0000000000000050  0000000000000000   A       0     0     1
-        [ 2] .note.gnu.pr[...] NOTE             0000000000400368  000003a0
-             0000000000000040  0000000000000000   A       0     0     8
-        [ 3] .note.ABI-tag     NOTE             00000000004003a8  000003e0
-             0000000000000020  0000000000000000   A       0     0     4
-        [ 4] .hash             HASH             00000000004003c8  00000400
-             0000000000000024  0000000000000004   A       6     0     8
-        [ 5] .gnu.hash         GNU_HASH         00000000004003f0  00000428
-             000000000000001c  0000000000000000   A       6     0     8
-        [ 6] .dynsym           DYNSYM           0000000000400410  00000448
-             0000000000000060  0000000000000018   A       7     1     8
-        [ 7] .dynstr           STRTAB           0000000000400470  000004a8
-             00000000000000ee  0000000000000000   A       0     0     1
-        [ 8] .gnu.version      VERSYM           000000000040055e  00000596
-             0000000000000008  0000000000000002   A       6     0     2
-        [ 9] .gnu.version_r    VERNEED          0000000000400568  000005a0
-             0000000000000030  0000000000000000   A       7     1     8
-        [10] .rela.dyn         RELA             0000000000400598  000005d0
-             0000000000000030  0000000000000018   A       6     0     8
-        [11] .rela.plt         RELA             00000000004005c8  00000600
-             0000000000000018  0000000000000018  AI       6    23     8
-        [12] .init             PROGBITS         0000000000401000  00001000
-             0000000000000017  0000000000000000  AX       0     0     4
-        [13] .plt              PROGBITS         0000000000401020  00001020
-             0000000000000020  0000000000000010  AX       0     0     16
-        [14] .text             PROGBITS         0000000000401040  00001040
-             0000000000000100  0000000000000000  AX       0     0     16
-        [15] .fini             PROGBITS         0000000000401140  00001140
-             0000000000000009  0000000000000000  AX       0     0     4
-        [16] .rodata           PROGBITS         0000000000402000  00002000
-             0000000000000012  0000000000000000   A       0     0     4
-        [17] .eh_frame_hdr     PROGBITS         0000000000402014  00002014
-             000000000000002c  0000000000000000   A       0     0     4
-        [18] .eh_frame         PROGBITS         0000000000402040  00002040
-             00000000000000a4  0000000000000000   A       0     0     8
-        [19] .init_array       INIT_ARRAY       0000000000403dc8  00002dc8
-             0000000000000008  0000000000000008  WA       0     0     8
-        [20] .fini_array       FINI_ARRAY       0000000000403dd0  00002dd0
-             0000000000000008  0000000000000008  WA       0     0     8
-        [21] .dynamic          DYNAMIC          0000000000403dd8  00002dd8
-             0000000000000200  0000000000000010  WA       7     0     8
-        [22] .got              PROGBITS         0000000000403fd8  00002fd8
-             0000000000000010  0000000000000008  WA       0     0     8
-        [23] .got.plt          PROGBITS         0000000000403fe8  00002fe8
-             0000000000000020  0000000000000008  WA       0     0     8
-        [24] .data             PROGBITS         0000000000404008  00003008
-             0000000000000010  0000000000000000  WA       0     0     8
-        [25] .bss              NOBITS           0000000000404018  00003018
-             0000000000000008  0000000000000000  WA       0     0     1
-        [26] .comment          PROGBITS         0000000000000000  00003018
-             0000000000000012  0000000000000001  MS       0     0     1
-        [27] .symtab           SYMTAB           0000000000000000  00003030
-             0000000000000240  0000000000000018          28     8     8
-        [28] .strtab           STRTAB           0000000000000000  00003270
-             00000000000000ff  0000000000000000           0     0     1
-        [29] .shstrtab         STRTAB           0000000000000000  0000336f
-             0000000000000103  0000000000000000           0     0     1
-        [30] shstrtab          PROGBITS         0000000000405480  00003480
-             00000000000007e7  0000000000000000  AX       0     0     16
-        __________________________________________________________________________
-        Syms
-        readelf -s gcc_main  woody 
+          Section Headers:
+            [Nr] Name              Type             Address           Offset
+                 Size              EntSize          Flags  Link  Info  Align
+            [ 0]                   NULL             0000000000000000  00000000
+                 0000000000000000  0000000000000000           0     0     0
+            [ 1] .interp           PROGBITS         0000000000400318  00000350
+                 0000000000000050  0000000000000000   A       0     0     1
+            [ 2] .note.gnu.pr[...] NOTE             0000000000400368  000003a0
+                 0000000000000040  0000000000000000   A       0     0     8
+            [ 3] .note.ABI-tag     NOTE             00000000004003a8  000003e0
+                 0000000000000020  0000000000000000   A       0     0     4
+            [ 4] .hash             HASH             00000000004003c8  00000400
+                 0000000000000024  0000000000000004   A       6     0     8
+            [ 5] .gnu.hash         GNU_HASH         00000000004003f0  00000428
+                 000000000000001c  0000000000000000   A       6     0     8
+            [ 6] .dynsym           DYNSYM           0000000000400410  00000448
+                 0000000000000060  0000000000000018   A       7     1     8
+            [ 7] .dynstr           STRTAB           0000000000400470  000004a8
+                 00000000000000ee  0000000000000000   A       0     0     1
+            [ 8] .gnu.version      VERSYM           000000000040055e  00000596
+                 0000000000000008  0000000000000002   A       6     0     2
+            [ 9] .gnu.version_r    VERNEED          0000000000400568  000005a0
+                 0000000000000030  0000000000000000   A       7     1     8
+            [10] .rela.dyn         RELA             0000000000400598  000005d0
+                 0000000000000030  0000000000000018   A       6     0     8
+            [11] .rela.plt         RELA             00000000004005c8  00000600
+                 0000000000000018  0000000000000018  AI       6    23     8
+            [12] .init             PROGBITS         0000000000401000  00001000
+                 0000000000000017  0000000000000000  AX       0     0     4
+            [13] .plt              PROGBITS         0000000000401020  00001020
+                 0000000000000020  0000000000000010  AX       0     0     16
+            [14] .text             PROGBITS         0000000000401040  00001040
+                 0000000000000100  0000000000000000  AX       0     0     16
+            [15] .fini             PROGBITS         0000000000401140  00001140
+                 0000000000000009  0000000000000000  AX       0     0     4
+            [16] .rodata           PROGBITS         0000000000402000  00002000
+                 0000000000000012  0000000000000000   A       0     0     4
+            [17] .eh_frame_hdr     PROGBITS         0000000000402014  00002014
+                 000000000000002c  0000000000000000   A       0     0     4
+            [18] .eh_frame         PROGBITS         0000000000402040  00002040
+                 00000000000000a4  0000000000000000   A       0     0     8
+            [19] .init_array       INIT_ARRAY       0000000000403dc8  00002dc8
+                 0000000000000008  0000000000000008  WA       0     0     8
+            [20] .fini_array       FINI_ARRAY       0000000000403dd0  00002dd0
+                 0000000000000008  0000000000000008  WA       0     0     8
+            [21] .dynamic          DYNAMIC          0000000000403dd8  00002dd8
+                 0000000000000200  0000000000000010  WA       7     0     8
+            [22] .got              PROGBITS         0000000000403fd8  00002fd8
+                 0000000000000010  0000000000000008  WA       0     0     8
+            [23] .got.plt          PROGBITS         0000000000403fe8  00002fe8
+                 0000000000000020  0000000000000008  WA       0     0     8
+            [24] .data             PROGBITS         0000000000404008  00003008
+                 0000000000000010  0000000000000000  WA       0     0     8
+            [25] .bss              NOBITS           0000000000404018  00003018
+                 0000000000000008  0000000000000000  WA       0     0     1
+            [26] .comment          PROGBITS         0000000000000000  00003018
+                 0000000000000012  0000000000000001  MS       0     0     1
+            [27] .symtab           SYMTAB           0000000000000000  00003030
+                 0000000000000240  0000000000000018          28     8     8
+            [28] .strtab           STRTAB           0000000000000000  00003270
+                 00000000000000ff  0000000000000000           0     0     1
+            [29] .shstrtab         STRTAB           0000000000000000  0000336f
+                 0000000000000103  0000000000000000           0     0     1
+            [30] shstrtab          PROGBITS         0000000000405480  00003480
+                 00000000000007e7  0000000000000000  AX       0     0     16
+            __________________________________________________________________________
+            Syms
+            readelf -s gcc_main  woody 
 
-        File: gcc_main
+            File: gcc_main
 
-        Symbol table '.dynsym' contains 4 entries:
-           Num:    Value          Size Type    Bind   Vis      Ndx Name
-             0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND 
-             1: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND _[...]@GLIBC_2.34 (2)
-             2: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND write@GLIBC_2.2.5 (3)
-             3: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND __gmon_start__
+            Symbol table '.dynsym' contains 4 entries:
+               Num:    Value          Size Type    Bind   Vis      Ndx Name
+                 0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND 
+                 1: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND _[...]@GLIBC_2.34 (2)
+                 2: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND write@GLIBC_2.2.5 (3)
+                 3: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND __gmon_start__
 
-        Symbol table '.symtab' contains 24 entries:
-           Num:    Value          Size Type    Bind   Vis      Ndx Name
-             0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND 
-             1: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS crt1.o
-             2: 00000000004003a8    32 OBJECT  LOCAL  DEFAULT    3 __abi_tag
-             3: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS main.c
-             4: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS 
-             5: 0000000000403dd8     0 OBJECT  LOCAL  DEFAULT   21 _DYNAMIC
-             6: 0000000000402014     0 NOTYPE  LOCAL  DEFAULT   17 __GNU_EH_FRAME_HDR
-             7: 0000000000403fe8     0 OBJECT  LOCAL  DEFAULT   23 _GLOBAL_OFFSET_TABLE_
-             8: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __libc_start_mai[...]
-             9: 0000000000404008     0 NOTYPE  WEAK   DEFAULT   24 data_start
-            10: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND write@GLIBC_2.2.5
-            11: 0000000000404018     0 NOTYPE  GLOBAL DEFAULT   24 _edata
-            12: 0000000000401140     0 FUNC    GLOBAL HIDDEN    15 _fini
-            13: 0000000000404008     0 NOTYPE  GLOBAL DEFAULT   24 __data_start
-            14: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND __gmon_start__
-            15: 0000000000404010     0 OBJECT  GLOBAL HIDDEN    24 __dso_handle
-            16: 0000000000402000     4 OBJECT  GLOBAL DEFAULT   16 _IO_stdin_used
-            17: 0000000000404020     0 NOTYPE  GLOBAL DEFAULT   25 _end
-            18: 0000000000401070     1 FUNC    GLOBAL HIDDEN    14 _dl_relocate_sta[...]
-            19: 0000000000401040    34 FUNC    GLOBAL DEFAULT   14 _start
-            20: 0000000000404018     0 NOTYPE  GLOBAL DEFAULT   25 __bss_start
-            21: 0000000000401126    26 FUNC    GLOBAL DEFAULT   14 main
-            22: 0000000000404018     0 OBJECT  GLOBAL HIDDEN    24 __TMC_END__
-            23: 0000000000401000     0 FUNC    GLOBAL HIDDEN    12 _init
+            Symbol table '.symtab' contains 24 entries:
+               Num:    Value          Size Type    Bind   Vis      Ndx Name
+                 0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND 
+                 1: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS crt1.o
+                 2: 00000000004003a8    32 OBJECT  LOCAL  DEFAULT    3 __abi_tag
+                 3: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS main.c
+                 4: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS 
+                 5: 0000000000403dd8     0 OBJECT  LOCAL  DEFAULT   21 _DYNAMIC
+                 6: 0000000000402014     0 NOTYPE  LOCAL  DEFAULT   17 __GNU_EH_FRAME_HDR
+                 7: 0000000000403fe8     0 OBJECT  LOCAL  DEFAULT   23 _GLOBAL_OFFSET_TABLE_
+                 8: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __libc_start_mai[...]
+                 9: 0000000000404008     0 NOTYPE  WEAK   DEFAULT   24 data_start
+                10: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND write@GLIBC_2.2.5
+                11: 0000000000404018     0 NOTYPE  GLOBAL DEFAULT   24 _edata
+                12: 0000000000401140     0 FUNC    GLOBAL HIDDEN    15 _fini
+                13: 0000000000404008     0 NOTYPE  GLOBAL DEFAULT   24 __data_start
+                14: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND __gmon_start__
+                15: 0000000000404010     0 OBJECT  GLOBAL HIDDEN    24 __dso_handle
+                16: 0000000000402000     4 OBJECT  GLOBAL DEFAULT   16 _IO_stdin_used
+                17: 0000000000404020     0 NOTYPE  GLOBAL DEFAULT   25 _end
+                18: 0000000000401070     1 FUNC    GLOBAL HIDDEN    14 _dl_relocate_sta[...]
+                19: 0000000000401040    34 FUNC    GLOBAL DEFAULT   14 _start
+                20: 0000000000404018     0 NOTYPE  GLOBAL DEFAULT   25 __bss_start
+                21: 0000000000401126    26 FUNC    GLOBAL DEFAULT   14 main
+                22: 0000000000404018     0 OBJECT  GLOBAL HIDDEN    24 __TMC_END__
+                23: 0000000000401000     0 FUNC    GLOBAL HIDDEN    12 _init
 
-        File: woody
+            File: woody
 
-        Symbol table '.dynsym' contains 4 entries:
-           Num:    Value          Size Type    Bind   Vis      Ndx Name
-             0: 0000000000000000 0x2000000001 NOTYPE  LOCAL  DEFAULT  UND bc.so.6
-             1: 0000000000000000 0x5f6e6f6d675f5f00 NOTYPE  LOCAL  DEFAULT  UND bc.so.6                                                                                  @libc-2.39/lib:/gnu/store/vvrjkcybmnygfcl4ddxs4hsbw0bxwwd4-gcc-11.4.0-lib/lib:/home/user/.guix-profile/lib (2)
-        readelf: Warning: local symbol 1 found at index >= .dynsym's sh_info value of 1
-             2: 735f6362696c5f5f 0x69616d5f74726174 FILE    <unknown>: 7 PROTECTED [<other>: 5c]  bad section index[ 95] <corrupt>                                                                                            @alxi0djkxc-glibc-2.39/lib:/gnu/store/vvrjkcybmnygfcl4ddxs4hsbw0bxwwd4-gcc-11.4.0-lib/lib:/home/user/.guix-profile/lib (3)
-             3: 735f63636762696c 0x696c00312e6f732e SRELC   <unknown>: 6 DEFAULT [<other>: 74]  bad section index[101] <corrupt>
+            Symbol table '.dynsym' contains 4 entries:
+               Num:    Value          Size Type    Bind   Vis      Ndx Name
+                 0: 0000000000000000 0x2000000001 NOTYPE  LOCAL  DEFAULT  UND bc.so.6
+                 1: 0000000000000000 0x5f6e6f6d675f5f00 NOTYPE  LOCAL  DEFAULT  UND bc.so.6                                                                                  @libc-2.39/lib:/gnu/store/vvrjkcybmnygfcl4ddxs4hsbw0bxwwd4-gcc-11.4.0-lib/lib:/home/user/.guix-profile/lib (2)
+            readelf: Warning: local symbol 1 found at index >= .dynsym's sh_info value of 1
+                 2: 735f6362696c5f5f 0x69616d5f74726174 FILE    <unknown>: 7 PROTECTED [<other>: 5c]  bad section index[ 95] <corrupt>                                                                                            @alxi0djkxc-glibc-2.39/lib:/gnu/store/vvrjkcybmnygfcl4ddxs4hsbw0bxwwd4-gcc-11.4.0-lib/lib:/home/user/.guix-profile/lib (3)
+                 3: 735f63636762696c 0x696c00312e6f732e SRELC   <unknown>: 6 DEFAULT [<other>: 74]  bad section index[101] <corrupt>
 
-        Symbol table '.symtab' contains 24 entries:
-           Num:    Value          Size Type    Bind   Vis      Ndx Name
-             0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND 
-             1: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS crt1.o
-             2: 00000000004003a8    32 OBJECT  LOCAL  DEFAULT    3 __abi_tag
-             3: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS main.c
-             4: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS 
-             5: 0000000000403dd8     0 OBJECT  LOCAL  DEFAULT   21 _DYNAMIC
-             6: 0000000000402014     0 NOTYPE  LOCAL  DEFAULT   17 __GNU_EH_FRAME_HDR
-             7: 0000000000403fe8     0 OBJECT  LOCAL  DEFAULT   23 _GLOBAL_OFFSET_TABLE_
-             8: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __libc_start_mai[...]
-             9: 0000000000404008     0 NOTYPE  WEAK   DEFAULT   24 data_start
-            10: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND write@GLIBC_2.2.5
-            11: 0000000000404018     0 NOTYPE  GLOBAL DEFAULT   24 _edata
-            12: 0000000000401140     0 FUNC    GLOBAL HIDDEN    15 _fini
-            13: 0000000000404008     0 NOTYPE  GLOBAL DEFAULT   24 __data_start
-            14: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND __gmon_start__
-            15: 0000000000404010     0 OBJECT  GLOBAL HIDDEN    24 __dso_handle
-            16: 0000000000402000     4 OBJECT  GLOBAL DEFAULT   16 _IO_stdin_used
-            17: 0000000000404020     0 NOTYPE  GLOBAL DEFAULT   25 _end
-            18: 0000000000401070     1 FUNC    GLOBAL HIDDEN    14 _dl_relocate_sta[...]
-            19: 0000000000401040    34 FUNC    GLOBAL DEFAULT   14 _start
-            20: 0000000000404018     0 NOTYPE  GLOBAL DEFAULT   25 __bss_start
-            21: 0000000000401126    26 FUNC    GLOBAL DEFAULT   14 main
-            22: 0000000000404018     0 OBJECT  GLOBAL HIDDEN    24 __TMC_END__
-            23: 0000000000401000     0 FUNC    GLOBAL HIDDEN    12 _init
-      ______________________________________________________________________________
-      GDB
-      gdb woody
-    Reading symbols from woody...
+            Symbol table '.symtab' contains 24 entries:
+               Num:    Value          Size Type    Bind   Vis      Ndx Name
+                 0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND 
+                 1: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS crt1.o
+                 2: 00000000004003a8    32 OBJECT  LOCAL  DEFAULT    3 __abi_tag
+                 3: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS main.c
+                 4: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS 
+                 5: 0000000000403dd8     0 OBJECT  LOCAL  DEFAULT   21 _DYNAMIC
+                 6: 0000000000402014     0 NOTYPE  LOCAL  DEFAULT   17 __GNU_EH_FRAME_HDR
+                 7: 0000000000403fe8     0 OBJECT  LOCAL  DEFAULT   23 _GLOBAL_OFFSET_TABLE_
+                 8: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __libc_start_mai[...]
+                 9: 0000000000404008     0 NOTYPE  WEAK   DEFAULT   24 data_start
+                10: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND write@GLIBC_2.2.5
+                11: 0000000000404018     0 NOTYPE  GLOBAL DEFAULT   24 _edata
+                12: 0000000000401140     0 FUNC    GLOBAL HIDDEN    15 _fini
+                13: 0000000000404008     0 NOTYPE  GLOBAL DEFAULT   24 __data_start
+                14: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND __gmon_start__
+                15: 0000000000404010     0 OBJECT  GLOBAL HIDDEN    24 __dso_handle
+                16: 0000000000402000     4 OBJECT  GLOBAL DEFAULT   16 _IO_stdin_used
+                17: 0000000000404020     0 NOTYPE  GLOBAL DEFAULT   25 _end
+                18: 0000000000401070     1 FUNC    GLOBAL HIDDEN    14 _dl_relocate_sta[...]
+                19: 0000000000401040    34 FUNC    GLOBAL DEFAULT   14 _start
+                20: 0000000000404018     0 NOTYPE  GLOBAL DEFAULT   25 __bss_start
+                21: 0000000000401126    26 FUNC    GLOBAL DEFAULT   14 main
+                22: 0000000000404018     0 OBJECT  GLOBAL HIDDEN    24 __TMC_END__
+                23: 0000000000401000     0 FUNC    GLOBAL HIDDEN    12 _init
+          ______________________________________________________________________________
+          GDB
+          gdb woody
+        Reading symbols from woody...
 
-    warning: BFD: /home/user/Documents/woody-woodpacker/POC/woody: invalid string offset 1918989427 >= 238 for section `.dynstr'
+        warning: BFD: /home/user/Documents/woody-woodpacker/POC/woody: invalid string offset 1918989427 >= 238 for section `.dynstr'
 
-    warning: BFD: /home/user/Documents/woody-woodpacker/POC/woody: invalid string offset 1920401518 >= 238 for section `.dynstr'
-    (No debugging symbols found in woody)
-    #Look like i screw up in some part Let's continue Tomorrow.
-  __ New error__ Still working in the previous scenarios.
-  ./woody
-  ./woody: error while loading shared libraries: ./woody: unsupported version 11619 of Verneed record
-  The error happend cause i modify offset and vaddr  of section that are refered in .dinamic section and not update vaddr inside the .dinamic section.
-  // Need to add logic to handle dinamic.
+        warning: BFD: /home/user/Documents/woody-woodpacker/POC/woody: invalid string offset 1920401518 >= 238 for section `.dynstr'
+        (No debugging symbols found in woody)
+        #Look like i screw up in some part Let's continue Tomorrow.
+      __ New error__ Still working in the previous scenarios.
+      ./woody
+      ./woody: error while loading shared libraries: ./woody: unsupported version 11619 of Verneed record
+      The error happend cause i modify offset and vaddr  of section that are refered in .dinamic section and not update vaddr inside the .dinamic section.
+      // Need to add logic to handle dinamic.
+      // Need to tx vaddr to offset.
+      // In case bss if i move the offset and the vaddr i don't care that there isn't offset in the file, i move the vaddr.
+      // For know work with dynamic entries but segfault on somewhere.
+      ./woody
+    ....WOODY....
+    Hello World!
+    Segmentation fault
+    segfault in exit maybe not zero all registers.
+  PDTE  change rax to r13 to hold entrypoint.
+  //49 movabs
+  //bd
+  // number as register 8B
+    49 bd 00 60 cd 00 29 	movabs r13,0x7f2900cd6000
+    42:	7f 00 00
+  // jmp r13
+  41 ff e5
+
 #+end_src
 ** Payload x32
 ** asm ld x32

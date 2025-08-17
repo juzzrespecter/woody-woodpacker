@@ -86,12 +86,14 @@ CLOSED: [2025-06-19 Thu 17:45]
 
     typedef enum e_register
   {
-    RAX ,
+    RAX,
     EAX,
     RBX,
     EBX,
     RCX,
     ECX,
+    RDX,
+    EDX,
     RDI,
     EDI,
     RSI,
