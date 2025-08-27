@@ -350,13 +350,17 @@
   /*     return (7);// b8 00 00 40 00 ff e0 -> b8 ="mov eax", value\nff eo="jmp rax" */
   /*   return (12);// 48 b8 00 00 00 00 00 00 00 00 ff e0 -> 48 b8 = "mov rax", value */
   /* } */
+  off_t get_je_size(void)
+  {
+    return (6);//3 plus address
+  }
 
   off_t get_js_size(void)
   {
     return (6);//2 plus address
+
   }
 
-  // todo may swap endianess if necesary and we agree, adding the parameter.
   typedef union u_type
   {
     uint8_t	b;
@@ -366,6 +370,18 @@
   } t_type;
 
   //Begin dynamic Bytecode
+  size_t ft_je(unsigned char *dst, size_t distance)
+  {
+    t_type hop = (t_type){.b8 = distance};
+    size_t written;
+
+    written = 0;
+    memcpy(dst + written, "\x0f\x84", 2);
+    written += 2;
+    memcpy(dst + written, &hop.b4, sizeof(hop.b4));
+    return (written + sizeof(hop.b4));
+  }
+
   size_t ft_js(unsigned char *dst, size_t distance)
   {
     t_type hop = (t_type){.b8 = distance};
@@ -594,11 +610,12 @@
 
     written = 0;
     if (class == ELFCLASS64)
-      {
+      printf("Elf64\n");
+      /* { */
         if (dst)
   	memcpy(dst, "\x80", 1);
         written++;
-      }
+      /* } */
 
     if (!off.b8)
       {
@@ -774,11 +791,17 @@
         else
   	offset += set_jmp_r13(NULL);
       }
-    else//Not working
+    else
       {
+        if (payload)
+  	memcpy(payload + offset, "\x68", 1);
+        offset++;
         if (payload)
   	memcpy(payload + offset, &u_entrypoint.b32, sizeof (u_entrypoint.b32));
         offset+= sizeof (u_entrypoint.b32);
+        if (payload)
+  	memcpy(payload + offset, "\xc3", 1);
+        offset++;
       }
     return (offset);
   }
@@ -897,7 +920,12 @@
     bytecode_buffer_size += decrypt_rot13_asm(NULL, cypher_payload_size, class);
 
     size_t size_of_cp_payload_to_mmap = copy_payload_to_mmap(NULL, cypher_payload_size); // + 4. 
-    int bytecode_until_mmap_fd = open("bytecode/open_mmap_until_mmap_size.bin", O_RDONLY);
+    int bytecode_until_mmap_fd;
+    if (class == ELFCLASS64)
+      bytecode_until_mmap_fd = open("bytecode/open_mmap_until_mmap_size.bin", O_RDONLY);
+    else
+      bytecode_until_mmap_fd = open("bytecode/open_mmap_until_mmap_size_32.bin", O_RDONLY);
+
     if (bytecode_until_mmap_fd < 0)
       return (1);
     const off_t bytecode_until_mmap_fd_size = lseek(bytecode_until_mmap_fd,0, SEEK_END);
@@ -905,7 +933,11 @@
       return (6);
     if (lseek(bytecode_until_mmap_fd, 0, SEEK_SET) == -1)
       return (7);
-    int bytecode_after_mmap_fd = open("bytecode/open_mmap_after_mmap_addr.bin", O_RDONLY);
+    int bytecode_after_mmap_fd;
+    if (class == ELFCLASS64)
+      bytecode_after_mmap_fd = open("bytecode/open_mmap_after_mmap_addr.bin", O_RDONLY);
+    else
+      bytecode_after_mmap_fd = open("bytecode/open_mmap_after_mmap_addr_32.bin", O_RDONLY);
     if (bytecode_after_mmap_fd < 0)
       return (1);
     const off_t bytecode_after_mmap_fd_size = lseek(bytecode_after_mmap_fd,0, SEEK_END);
@@ -914,9 +946,9 @@
     if (lseek(bytecode_after_mmap_fd, 0, SEEK_SET) == -1)
       return (7);
 
-    uint32_t highest_loadable_vaddr;
+    /* uint32_t highest_loadable_vaddr; */
     uint32_t mmap_size;
-    size_t generated_bytecode_size = bytecode_buffer_size + size_of_cp_payload_to_mmap + 3 * ft_sub_asm_rsp(NULL, cypher_payload_size, class) + jmp_size + set_jmp_r13(NULL) + get_js_size() + bytecode_after_mmap_fd_size + bytecode_until_mmap_fd_size + set_mov_edi(NULL, 0) + sizeof(mmap_size);
+    size_t generated_bytecode_size = bytecode_buffer_size + size_of_cp_payload_to_mmap + 3 * ft_sub_asm_rsp(NULL, cypher_payload_size, class) + jmp_size + set_jmp_r13(NULL) + get_js_size() + bytecode_after_mmap_fd_size + bytecode_until_mmap_fd_size + sizeof(mmap_size);
     ;
     char *generated_bytecode = malloc(generated_bytecode_size);
     if (!generated_bytecode)
@@ -942,9 +974,8 @@
     mmap_size = get_alignment_effective_addr(0x1000, cypher_payload_size);
     memcpy(generated_bytecode + generated_bytecode_index, &mmap_size, sizeof(mmap_size));
     generated_bytecode_index += sizeof(mmap_size);
-    highest_loadable_vaddr = 0;/* elf_get_highest_loadable_vaddr_avalaible(&ehdr, class, phnum); */
+    /* highest_loadable_vaddr = 0;/\* elf_get_highest_loadable_vaddr_avalaible(&ehdr, class, phnum); *\/ */
 
-    generated_bytecode_index += set_mov_edi(generated_bytecode + generated_bytecode_index, highest_loadable_vaddr);
     char *bytecode_after_mmap_buffer = malloc(bytecode_after_mmap_fd_size);
     if (!bytecode_after_mmap_buffer)
       return (8);
@@ -954,7 +985,10 @@
     memcpy(generated_bytecode + generated_bytecode_index, bytecode_after_mmap_buffer, bytecode_after_mmap_fd_size);
     generated_bytecode_index += bytecode_after_mmap_fd_size;
 
-    generated_bytecode_index += ft_js((void *)generated_bytecode + generated_bytecode_index, size_of_cp_payload_to_mmap + 4 + jmp_size); // jmp 4 cause the address need 4 bytes and jmp_size got a mov_rax_jmp_rax append at the end of mmap_copy
+    if (ELFCLASS64 == class)
+      generated_bytecode_index += ft_js((void *)generated_bytecode + generated_bytecode_index, size_of_cp_payload_to_mmap + 4 + jmp_size); // jmp 4 cause the address need 4 bytes and jmp_size got a mov_rax_jmp_rax append at the end of mmap_copy
+    else
+      generated_bytecode_index += ft_je((void *)generated_bytecode + generated_bytecode_index, size_of_cp_payload_to_mmap + 4 + jmp_size); // jmp 4 cause the address need 4 bytes and jmp_size got a mov_rax_jmp_rax append at the end of mmap_copy
     // copy payload to mmap
     generated_bytecode_index += copy_payload_to_mmap((void *)generated_bytecode + generated_bytecode_index, cypher_payload_size);
 
@@ -1248,6 +1282,7 @@
                                              unsigned char class, uint64_t new_phdr_offset,
                                              uint64_t new_phdr_vaddr, uint64_t *writed, uint64_t payload_size)
   {
+    const uint64_t alignment = 16;
     uint64_t shdr_struct_size = elf_get_section_header_struct_size(ehdr);
     uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
     t_elf_sh shdr_cp = (t_elf_sh){.elf32 = malloc(shdr_struct_size)};
@@ -1255,11 +1290,15 @@
     if (!shdr_cp.elf32)
       return (12);
     printf("writed %lu\n", *writed);
-    uint64_t padding_size = 16 - *writed % 16;
+    uint64_t padding_size = alignment - *writed % alignment;
     printf("padding to begin Shdr: %lu\n", padding_size);
-    if (padding(packed, padding_size))
-      return (1);
-    writed[0] += padding_size;
+
+    if (padding_size != alignment)
+      {
+        if (padding(packed, padding_size))
+  	return (1);
+        writed[0] += padding_size;
+      }
     ndx_sh = 0;
     t_elf_sh shdr = elf_get_section_header(ehdr, ndx_sh);
     memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size);
@@ -1284,7 +1323,6 @@
   	return (1);
         ,*writed += shdr_struct_size;
       }
-    //TODO set last shdr
     //Modify  flags, name, type, address, offset, align, link, Info, Entsize
     elf_shdr_set_addr(&shdr_cp, new_phdr_vaddr, class);
     elf_shdr_set_offset(&shdr_cp, new_phdr_offset, class);
@@ -1540,7 +1578,6 @@
     writed += write(packed, elf_mmap + writed, num_bytes - writed);//Write content previous to e_shoff better skip the alignment bits for use less space.
     // Add here the .dinamic in case needed.
     printf("after write the content previous to e_shoff-> writed: %ld\n", writed);
-    // TODO Something is wrong on padding may i don't calculate nice the new_offset.
     printf("new_phdr_offset: %lu\nwrited: %ld\n", new_phdr_offset, writed);
     if (write_padding_and_payload(packed, &generated_bytecode, payload_size,
   				new_phdr_offset - writed, &writed))
@@ -1549,8 +1586,8 @@
     if (write_remaining_section_headers(&ehdr, packed, phnum, shnum, class,
   				      new_phdr_offset, new_phdr_vaddr, &writed, payload_size))
       return (6);
-    writed += write(packed, elf_mmap + writed, file_size - writed);//Write the rest of the file
-    printf("Successfully packed\n");
+    /* writed += write(packed, elf_mmap + writed, file_size - writed);//Write the rest of the file */
+    printf("Successfully packed %lu\n", file_size);
     return 0;
   }
 
@@ -2128,10 +2165,15 @@ CLOSED: [2025-08-14 Thu 13:25]
   41 ff e5
 
 #+end_src
-** Payload x32
-** asm ld x32
-** asm ld x32 argv.
-** gcc x32.
+** DONE Section is broke i need to fix it.
+CLOSED: [2025-08-26 Tue 13:02]
+** DONE Payload x32
+CLOSED: [2025-08-27 Wed 09:33]
+** DONE asm ld x32
+CLOSED: [2025-08-27 Wed 09:33]
+** DONE asm ld x32 argv.
+CLOSED: [2025-08-27 Wed 09:33]
+** TODO gcc x32.
 * TODO Compress.
 - Shdr .text & .data.
 * HOLD Multistage packer

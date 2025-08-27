@@ -1,6 +1,4 @@
 #+title: Common functions.
-* TODO Modify makefile to create a test program and add directory and subdirectories for srcs/cmn,elf,pe,mach-o,cipher,compress, tangle in this subdirectories and org property to put each data in a directory and create it if doesn't exist.
-SCHEDULED: <2025-06-24 Tue>
 
 * DONE Add overflow functs.
 CLOSED: [2025-06-19 Thu 17:45]

@@ -36,7 +36,10 @@ Modify makefile to compile the differents targets and start testing with it.
    [X] check the paylod  appear. ~objdump -M intel -D file | tail~
    [X] check the payload.bin is fine ~ndisasm -b {32,64} file~.
    [X] Test that work.
+   [X] Get byte code ~ndisasm -b 64 bytecode/open_mmap_until_mmap_size.bin | awk '{for(i=1; i<=length($2); i+=2) {byte = substr($2, i, 2);if (byte != "") ;{printf "\\x%s", byte}}}'~
    [X] Get byte code ~objdump -M intel --disassemble=_start binary_file | awk 'NR > 7 {for(i=1; i<=NF; i++) if ($i ~ /^[0-9a-fA-F]+$/ && length($i) == 2) printf "\\x%s", $i;}'~
+
+** 
      
 
 #+begin_src c :tangle srcs/elf/POC/add_instructions.c :mkdirp yes
@@ -1258,20 +1261,29 @@ CLOSED: [2025-07-12 Sat 14:46]
 - State "DONE"       from "TODO"       [2025-07-12 Sat 14:46]
 :END:
 #+begin_src shell
-  ./test_add_instruction a.out 2> generated_bytecode                         #remove the 0 of 0xXX
-  ndisasm -b64 generated_bytecode  | grep byte| awk -F, '{ printf "\\%s", substr($2, 2)}'
+      ./test_add_instruction a.out 2> generated_bytecode                         #remove the 0 of 0xXX
+      ndisasm -b64 generated_bytecode  | grep byte| awk -F, '{ printf "\\%s", substr($2, 2)}'
+      
+      ndisasm -b 64 bytecode/open_mmap_until_mmap_size.bin | awk '{
+    for(i=1; i<=length($2); i+=2) {
+        byte = substr($2, i, 2)
+        if (byte != "") {
+            printf "\\x%s", byte
+        }
+    }
+}'
 
-  printf > buffer_generated_copy '\x55\x48\x89\xe5\x48\x83\xec\x20\x31\xc0\x48\xb8\x2e\x2e\x2e\x2e\x57\x4f\x4f\x44\x48\x89\x45\xea\x48\xb8\x4f\x44\x59\x2e\x2e\x2e\x2e\xa\x48\x89\x45\xf0\x48\x8d\x45\xea\xba\xe\x0\x0\x0\x48\x89\xc6\xbf\x1\x0\x0\x0\xb8\x1\x0\x0\x0\xf\x5\x48\x83\xc4\x20\x5d\x48\xb8\x0\x10\x40\x0\x0\x0\x0\x0\xff\xe0'
-  diff buffer_generated_copy payload.bin
-  echo $?
-  they got diff size cause the buffer_generated_copy got thet pop rbx and mov rax .ntrypoint and jmp.
-  but if we take the first 67 bytes are equal
-  dd if=buffer_generate_copy bs=1 count=67 | diff - payload_64.bin
-67+0 records in
-67+0 records out
-67 bytes copied, 0.000119056 s, 563 kB/s
-name@name:~/Documents/woody-woodpacker/POC$ echo $?
-0
+      printf > buffer_generated_copy '\x55\x48\x89\xe5\x48\x83\xec\x20\x31\xc0\x48\xb8\x2e\x2e\x2e\x2e\x57\x4f\x4f\x44\x48\x89\x45\xea\x48\xb8\x4f\x44\x59\x2e\x2e\x2e\x2e\xa\x48\x89\x45\xf0\x48\x8d\x45\xea\xba\xe\x0\x0\x0\x48\x89\xc6\xbf\x1\x0\x0\x0\xb8\x1\x0\x0\x0\xf\x5\x48\x83\xc4\x20\x5d\x48\xb8\x0\x10\x40\x0\x0\x0\x0\x0\xff\xe0'
+      diff buffer_generated_copy payload.bin
+      echo $?
+      they got diff size cause the buffer_generated_copy got thet pop rbx and mov rax .ntrypoint and jmp.
+      but if we take the first 67 bytes are equal
+      dd if=buffer_generate_copy bs=1 count=67 | diff - payload_64.bin
+    67+0 records in
+    67+0 records out
+    67 bytes copied, 0.000119056 s, 563 kB/s
+    name@name:~/Documents/woody-woodpacker/POC$ echo $?
+    0
 
 #+end_src
 ** DONE decrypt in run time.
