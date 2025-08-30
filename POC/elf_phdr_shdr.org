@@ -566,6 +566,8 @@
     size_t	written;
     const t_type	type = (t_type){.b8 = value};
 
+    if (ELFCLASS32 == class && type.b8 != type.b4)
+      return (-1);
     written = 0;
     if (class == ELFCLASS64)
       {
@@ -576,8 +578,16 @@
     if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8 && type.b < 0x80)
       {
         if (dst)
-  	memcpy(dst + written, "\x83\xec", 2);
-        written += 2;
+  	memcpy(dst + written, "\x83", 1);
+        written++;
+        if (dst)
+  	{
+  	  /* if (ELFCLASS64 == class) */
+  	    memcpy(dst+written, "\xec", 1);
+  	  /* else */
+  	    /* memcpy(dst+written, "\xe8", 1); */
+  	}
+        written++;
         if (dst)
   	memcpy(dst + written, &type.b, sizeof (type.b));
         written += sizeof(type.b);
@@ -585,8 +595,16 @@
     else
       {
         if (dst)
-  	memcpy(dst + written, "\x81\xec", 2);
-        written += 2;
+  	{
+  	  if (ELFCLASS64 == class)
+  	    {
+  	      memcpy(dst + written, "\x81\xec", 2);
+  	      written ++;
+  	    }
+  	  else
+  	    memcpy(dst + written, "\x2d", 1);
+  	}
+        written ++;
         if ((uint64_t)type.b4 == type.b8 && type.b4 < 0x80000000)
   	{
   	  if (dst)
@@ -768,7 +786,7 @@
       }
     return (xor_register_size);
   }
-  // Need to make x32
+
   size_t set_jmp_entrypoint(void *payload, uint64_t entrypoint, unsigned char class)
   {
     t_elf_addr u_entrypoint = (t_elf_addr){.b64 = entrypoint};
@@ -794,13 +812,13 @@
     else
       {
         if (payload)
-  	memcpy(payload + offset, "\x68", 1);
-        offset++;
+  	memcpy(payload + offset, "\x81\x04\x24", 3);// add DWORD [esp]
+        offset+= 3;
         if (payload)
   	memcpy(payload + offset, &u_entrypoint.b32, sizeof (u_entrypoint.b32));
-        offset+= sizeof (u_entrypoint.b32);
+        offset += sizeof (u_entrypoint.b32);
         if (payload)
-  	memcpy(payload + offset, "\xc3", 1);
+  	memcpy(payload + offset, "\xc3", 1);//ret
         offset++;
       }
     return (offset);
@@ -871,6 +889,79 @@
     return (written);
   }
 
+  int get_file_size(int fd, off_t *file_size)
+  {
+    ,*file_size = lseek(fd, 0, SEEK_END);
+    if (*file_size == -1)
+      {
+        perror("Failed to seek the end of file");
+        return (1);
+      }
+    if (lseek(fd, 0, SEEK_SET) == -1)
+      {
+        perror("Failed to seek the begin of file");
+        return (1);
+      }
+    return (0);
+  }
+
+  static t_elf_ph get_n_loadable_and_exec_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t n)
+  {
+    t_elf_ph phdr;
+    uint64_t ph_ndx;
+    uint64_t times_loadable_and_exec;
+
+    ph_ndx = 0;
+    times_loadable_and_exec = 0;
+    while (++ph_ndx < phnum)
+      {
+        phdr = elf_get_program_header(ehdr, ph_ndx);
+        if (PT_LOAD == elf_get_program_header_type(&phdr, class) && PF_X & elf_get_program_header_flags(&phdr, class))
+  	times_loadable_and_exec++;
+        if (times_loadable_and_exec == n)
+  	return (phdr);
+      }
+    phdr.elf32 = NULL;
+    return (phdr);
+  }
+
+  static bool increment_offset_phdr(t_elf_h *ehdr, uint64_t offset, uint64_t phnum, unsigned char class)
+  {
+    uint64_t ehdr_struct_size = elf_get_struct_size_elf_header((char *)ehdr->elf32);
+    t_elf_ph phdr_loadable_and_exec_first = get_n_loadable_and_exec_phdr(ehdr, class, phnum, 1);
+    uint64_t phdr_loadable_and_exec_first_offset = elf_get_program_header_offset(&phdr_loadable_and_exec_first, class);
+
+    return (offset > ehdr_struct_size && offset < phdr_loadable_and_exec_first_offset);
+  }
+
+  uint32_t get_new_e_entrypoint(t_elf_h *ehdr, unsigned char class)
+  {
+    uint64_t phnum = elf_get_elfh_phnum(ehdr);
+    uint64_t shnum = elf_get_elfh_shnum(ehdr);
+    uint64_t new_phdr_vaddr = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum);
+    uint64_t new_phdr_offset = elf_get_highest_offset_avalaible(ehdr, class, shnum);
+
+    const uint64_t new_align = 0x1000;
+    const uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
+    new_phdr_vaddr = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum);
+    if (increment_offset_phdr(ehdr, new_phdr_offset, phnum, class))// I think shouldn't go throught this way.
+      new_phdr_offset += phdr_struct_size;
+    if (new_phdr_vaddr % new_align == new_phdr_offset % new_align) 
+      printf("all fine with addr and offset aligned\n");
+    else
+      {
+        if (new_phdr_vaddr % new_align > new_phdr_offset % new_align)
+  	new_phdr_offset += new_phdr_vaddr % new_align - new_phdr_offset % new_align;
+        else
+  	new_phdr_vaddr += new_phdr_offset % new_align - new_phdr_vaddr % new_align;
+      }
+    if (new_phdr_offset % 16)
+      {
+        new_phdr_vaddr += 16 - new_phdr_vaddr % 16;
+        new_phdr_offset += 16 - new_phdr_offset % 16;
+      }
+    return ((uint32_t)new_phdr_vaddr);
+  }
 
   int generate_payload(void *elf_mmap, char **payload_ptr, size_t *payload_size)
   {
@@ -883,6 +974,39 @@
     const unsigned char 	class = elf_get_elfh_e_ident_class(elf_mmap);
     // in case find the section show relevant info function.
 
+    int eip_pre_hc_vaddr_fd;
+    off_t eip_pre_hc_vaddr_fd_size;
+    if (ELFCLASS32 == class)
+      eip_pre_hc_vaddr_fd = open("bytecode/eip_pre_hc_vaddr_32.bin", O_RDONLY);
+    /* else */
+    if (eip_pre_hc_vaddr_fd < 0)
+      return (5);
+    if (get_file_size(eip_pre_hc_vaddr_fd, &eip_pre_hc_vaddr_fd_size) || !eip_pre_hc_vaddr_fd_size)
+      return (5);
+    int eip_post_hc_vaddr_fd;
+    if (ELFCLASS32 == class)
+      eip_post_hc_vaddr_fd = open("bytecode/eip_post_hc_vaddr_32.bin", O_RDONLY);
+    /* else */
+    if (eip_post_hc_vaddr_fd < 0)
+      return (5);
+    off_t eip_post_hc_vaddr_fd_size;
+    if (get_file_size(eip_post_hc_vaddr_fd, &eip_post_hc_vaddr_fd_size) || !eip_post_hc_vaddr_fd_size)
+      return (5);
+    size_t eip_size = eip_post_hc_vaddr_fd_size + eip_pre_hc_vaddr_fd_size + sizeof(uint32_t);
+    char *eip_buffer = malloc(eip_size);
+    if (!eip_buffer)
+      return (5);
+    if (read(eip_pre_hc_vaddr_fd, eip_buffer, eip_pre_hc_vaddr_fd_size) != eip_pre_hc_vaddr_fd_size)
+      return (5);
+
+    uint32_t new_e_entry = get_new_e_entrypoint(&ehdr, class);
+    printf("new_e_entry_payload %x\n", new_e_entry);
+    memcpy(eip_buffer + eip_pre_hc_vaddr_fd_size, &new_e_entry, sizeof(new_e_entry));
+    if (read(eip_post_hc_vaddr_fd, eip_buffer + eip_pre_hc_vaddr_fd_size + sizeof(new_e_entry), eip_post_hc_vaddr_fd_size) != eip_post_hc_vaddr_fd_size)
+      return (5);
+
+   
+
     int cypher_payload_fd;
     if (class == ELFCLASS64)
       cypher_payload_fd = open("bytecode/payload_64.bin", O_RDONLY);
@@ -890,11 +1014,9 @@
       cypher_payload_fd = open("bytecode/payload_32.bin", O_RDONLY);
     if (cypher_payload_fd < 0)
       return (5);
-    const off_t cypher_payload_fd_size = lseek(cypher_payload_fd,0, SEEK_END);
-    if (cypher_payload_fd_size == -1)
-      return (6);
-    if (lseek(cypher_payload_fd, 0, SEEK_SET) == -1)
-      return (7);
+    off_t cypher_payload_fd_size;
+    if (get_file_size(cypher_payload_fd, &cypher_payload_fd_size ) || !cypher_payload_fd_size)
+        return (6);
     off_t jmp_size = set_jmp_entrypoint(NULL, e_entrypoint, class);//Also xor all register.
     size_t xor_register_size = set_xor_register_size(NULL, class);
     const uint64_t cypher_payload_size = cypher_payload_fd_size + jmp_size + xor_register_size;
@@ -910,7 +1032,8 @@
       /* return (10); */
     encrypt(cypher_payload, cypher_payload_size);
     //Read the first file
-    size_t bytecode_buffer_size = 0;
+
+    size_t bytecode_buffer_size = eip_size;
     size_t cypher_payload_index = 0;
     while (cypher_payload_index < cypher_payload_size)
       {
@@ -954,7 +1077,9 @@
     if (!generated_bytecode)
       return (10);
     size_t generated_bytecode_index = 0;
-    generated_bytecode_index += ft_sub_asm_rsp(generated_bytecode, cypher_payload_size, class);
+    memcpy(generated_bytecode + generated_bytecode_index, eip_buffer, eip_size);
+        generated_bytecode_index = eip_size;
+    generated_bytecode_index += ft_sub_asm_rsp(generated_bytecode + generated_bytecode_index, cypher_payload_size, class);
     cypher_payload_index = 0;
     while (cypher_payload_index < cypher_payload_size)
       {
@@ -1028,25 +1153,7 @@
     return (phdr);
   }
 
-  static t_elf_ph get_n_loadable_and_exec_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t n)
-  {
-    t_elf_ph phdr;
-    uint64_t ph_ndx;
-    uint64_t times_loadable_and_exec;
 
-    ph_ndx = 0;
-    times_loadable_and_exec = 0;
-    while (++ph_ndx < phnum)
-      {
-        phdr = elf_get_program_header(ehdr, ph_ndx);
-        if (PT_LOAD == elf_get_program_header_type(&phdr, class) && PF_X & elf_get_program_header_flags(&phdr, class))
-  	times_loadable_and_exec++;
-        if (times_loadable_and_exec == n)
-  	return (phdr);
-      }
-    phdr.elf32 = NULL;
-    return (phdr);
-  }
 
   static int validate_elf_headers(t_elf_h *ehdr, uint64_t *shnum, uint64_t *phnum, unsigned char *class)
   {
@@ -1097,14 +1204,7 @@
   /*     return (phdr); */
   /* } */
 
-  static bool increment_offset_phdr(t_elf_h *ehdr, uint64_t offset, uint64_t phnum, unsigned char class)
-  {
-    uint64_t ehdr_struct_size = elf_get_struct_size_elf_header((char *)ehdr->elf32);
-    t_elf_ph phdr_loadable_and_exec_first = get_n_loadable_and_exec_phdr(ehdr, class, phnum, 1);
-    uint64_t phdr_loadable_and_exec_first_offset = elf_get_program_header_offset(&phdr_loadable_and_exec_first, class);
 
-    return (offset > ehdr_struct_size && offset < phdr_loadable_and_exec_first_offset);
-  }
 
   bool padding(int packed, size_t num)
   {
@@ -2173,7 +2273,23 @@ CLOSED: [2025-08-27 Wed 09:33]
 CLOSED: [2025-08-27 Wed 09:33]
 ** DONE asm ld x32 argv.
 CLOSED: [2025-08-27 Wed 09:33]
-** TODO gcc x32.
+** DONE gcc -m32.
+CLOSED: [2025-08-30 Sat 17:27]
+ I am using docker for that
+*** DONE Error with aslr
+CLOSED: [2025-08-30 Sat 17:27]
+Solution take eip|rip - elf_entrypoint (I got it need Hardcode dinamically xD).
+#+begin_src asm
+  mov eax, eip
+  mov ebx, 0xFFF
+  and eax, -4096; -> 0xfffff000
+  sub eax, 0x403000; -> Hard code from new entrypoint. -> eax = run_time_base
+  ....
+  add eax, 0x401060 -> Hard code from prev entrypoint. 
+  pop eax,
+  ret
+
+#+end_src
 * TODO Compress.
 - Shdr .text & .data.
 * HOLD Multistage packer
