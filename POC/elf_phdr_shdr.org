@@ -786,6 +786,37 @@
       }
     return (xor_register_size);
   }
+  size_t add_r13(void *dst, uint64_t value)
+  {
+    size_t written;
+    t_type val = (t_type){.b8=value};
+
+    written = 0;
+    if (dst)
+      memcpy(dst+ written, "\x49\x81\xc5", 3);
+    written +=3;
+    if (val.b4 == val.b8)
+      {
+        if (dst)
+  	  memcpy(dst + written, &val.b4, sizeof(val.b4));
+        written += sizeof(val.b4);
+      }
+    else
+      {
+        if (dst)
+  	  memcpy(dst + written, &val.b8, sizeof(val.b8));
+        written += sizeof(val.b8);
+      }
+    return (written);
+  }
+
+
+  size_t pop_r13(void *dst)
+  {
+    if (dst)
+      memcpy(dst, "\x41\x5d", 2);
+    return (2);
+  }
 
   size_t set_jmp_entrypoint(void *payload, uint64_t entrypoint, unsigned char class)
   {
@@ -805,9 +836,17 @@
   	memcpy(payload + offset, &u_entrypoint.b64, sizeof (u_entrypoint.b64));
         offset += sizeof (u_entrypoint.b64);
         if (payload)
+  	{
+  	offset += pop_r13(payload + offset);
+  	offset += add_r13(payload + offset, u_entrypoint.b64);
   	offset += set_jmp_r13(payload + offset);
+  	}
         else
+  	{
+  	offset += pop_r13(NULL);
+  	offset += add_r13(NULL, u_entrypoint.b64);
   	offset += set_jmp_r13(NULL);
+  	}
       }
     else
       {
@@ -963,6 +1002,10 @@
     return ((uint32_t)new_phdr_vaddr);
   }
 
+
+
+
+
   int generate_payload(void *elf_mmap, char **payload_ptr, size_t *payload_size)
   {
     // 1. Begin payload stuff
@@ -978,6 +1021,8 @@
     off_t eip_pre_hc_vaddr_fd_size;
     if (ELFCLASS32 == class)
       eip_pre_hc_vaddr_fd = open("bytecode/eip_pre_hc_vaddr_32.bin", O_RDONLY);
+    else
+      eip_pre_hc_vaddr_fd = open("bytecode/eip_pre_hc_vaddr_64.bin", O_RDONLY);
     /* else */
     if (eip_pre_hc_vaddr_fd < 0)
       return (5);
@@ -986,6 +1031,9 @@
     int eip_post_hc_vaddr_fd;
     if (ELFCLASS32 == class)
       eip_post_hc_vaddr_fd = open("bytecode/eip_post_hc_vaddr_32.bin", O_RDONLY);
+    else
+      eip_post_hc_vaddr_fd = open("bytecode/eip_post_hc_vaddr_64.bin", O_RDONLY);
+
     /* else */
     if (eip_post_hc_vaddr_fd < 0)
       return (5);
