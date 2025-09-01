@@ -2326,7 +2326,7 @@ CLOSED: [2025-08-30 Sat 17:27]
  I am using docker for that
 *** DONE Error with aslr
 CLOSED: [2025-08-30 Sat 17:27]
-Solution take eip|rip - elf_entrypoint (I got it need Hardcode dinamically xD).
+Solution take eip|rip - elf_entrypoint (I got it 'Hardcode' dinamically xD).
 #+begin_src asm
   mov eax, eip
   mov ebx, 0xFFF
