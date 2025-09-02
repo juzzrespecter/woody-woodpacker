@@ -1,0 +1,562 @@
+#+title: Check_Compress
+#+begin_src c :tangle srcs/elf/POC/check_compress.c
+  #include "format_elf.h"
+  #include <string.h>
+  #include <stdbool.h>
+  #include <unistd.h>
+  #include <stdio.h>
+  #include <stdint.h>
+  #include <fcntl.h>
+  #include <sys/mman.h>
+  #include <stdlib.h> //Malloc
+
+  //REL
+  size_t compress(const char* source, char* dest, int inputSize)
+  {
+      const char* end = source + inputSize;
+      char* destStart = dest;
+
+      while (source < end) {
+          unsigned char times = 1;
+  	
+          // Find the longest match
+          while (times < 255 && *source == source[times] && source + times < end)
+  	  times++;
+
+          // Write the match times
+          ,*dest++ = times;
+          ,*dest++ = *source;
+          source += times;
+      }
+      size_t size_compress = dest - destStart;
+      return (size_compress);
+  }
+
+  // For general text better use 32.
+  #define COMPRESS_LZ77_MAX_MATCH_LEN 17
+  #define COMPRESS_LZ77_MIN_MATCH_LEN 3
+  #define COMPRESS_LZ77_SLIDING_WINDOW_SIZE 0x1000
+
+
+  typedef struct s_lz77
+  {
+    unsigned int distance: 12;
+    unsigned int len: 4;
+    char byte;
+  }	t_lz77;
+
+  typedef struct s_list
+  {
+  	void			*content;
+  	struct s_list	*next;
+  }	t_list;
+
+  t_list	*ft_lstnew(void *content)
+  {
+  	t_list	*node;
+
+  	node = malloc(sizeof(t_list));
+  	if (!node)
+  		return (NULL);
+  	node->content = content;
+  	node->next = NULL;
+  	return (node);
+  }
+
+  t_lz77 *create_lz77_tkn(size_t len, size_t distance, char byte)
+  {
+    t_lz77 *tkn = malloc(sizeof(*tkn));
+
+    if (tkn)
+      {
+        if (len >= COMPRESS_LZ77_MIN_MATCH_LEN)
+  	tkn->len = len - (COMPRESS_LZ77_MIN_MATCH_LEN - 1);
+        else
+  	tkn->len = 0;
+        /* tkn->len = len; */
+        tkn->distance = distance;
+        tkn->byte = byte;
+      }
+    return (tkn);
+  }
+
+  t_list	*ft_lstlast(t_list *lst)
+  {
+  	if (!lst)
+  		return (NULL);
+  	while (lst->next)
+  		lst = lst->next;
+  	return (lst);
+  }
+
+  int	ft_lstsize(t_list *lst)
+  {
+  	int	lst_num;
+
+  	if (!(size_t)lst)
+  		return (0);
+  	lst_num = 1;
+  	while (lst->next)
+  	{
+  		lst_num++;
+  		lst = lst->next;
+  	}
+  	return (lst_num);
+  }
+
+  void	ft_lstadd_back(t_list **lst, t_list *new)
+  {
+  	t_list	*lst_last;
+
+  	if (!new || !lst)
+  		return ;
+  	if (*lst == NULL)
+  		,*lst = new;
+  	else
+  	{
+  		lst_last = ft_lstlast(*lst);
+  		lst_last->next = new;
+  	}
+  }
+
+  void	ft_lstdelone(t_list *lst, void (*del)(void *))
+  {
+  	if (!lst || !del)
+  		return ;
+  	del(lst->content);
+  	free(lst);
+  }
+
+  void	ft_lstclear(t_list **lst, void (*del)(void *))
+  {
+  	t_list	*node;
+  	t_list	*tmp;
+
+  	if (!lst || !*lst)
+  		return ;
+  	node = *lst;
+  	while (node)
+  	{
+  		tmp = node->next;
+  		ft_lstdelone(node, del);
+  		node = tmp;
+  	}
+  	,*lst = NULL;
+  }
+
+  void	ft_lstiter(t_list *lst, void (*f)(void *))
+  {
+  	t_list	*node;
+
+  	if (!lst)
+  		return ;
+  	node = lst;
+  	while (node)
+  	{
+  		f(node->content);
+  		node = node->next;
+  	}
+  }
+
+
+
+
+  /* int try_self_extend_pattern(const char *sliding_window, size_t sliding_window_start, size_t sliding_window_end, size_t sliding_window_buffer_size, size_t pattern_len */
+  /*                            const char *src, size_t src_len, size_t *extended_len) */
+  /* { */
+  /*     *extended_len = pattern_len; */
+  /*     // Change pattern cause is readed backwards.  */
+  /*     // Try to extend the pattern as far as it goes */
+  /*     while (*extended_len < COMPRESS_LZ77_MAX_MATCH_LEN && */
+  /*            *extended_len < src_len && get_sliding_window_char_from_end(sliding_window, sliding_window_end, sliding_window_buffer_size, *extended_len % pattern_len) == src[extended_len]) */
+  /*             (*extended_len)++; */
+      
+  /*     return (*extended_len > pattern_len); */
+  /* } */
+
+  void add_sliding_window(char *buffer, size_t *buffer_start, size_t *buffer_end, size_t *buffer_size, const char *data, size_t len)
+  {
+      size_t i;
+      
+      // Add data to ring buffer - new data goes at the end
+      i = 0;
+      while (i < len)
+      {
+          // Add new byte to end of buffer
+          buffer[*buffer_end] = data[i];
+          ,*buffer_end = (*buffer_end + 1) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+          
+          // Update size
+          if (*buffer_size < COMPRESS_LZ77_SLIDING_WINDOW_SIZE)
+              (*buffer_size)++;
+          else
+              ,*buffer_start = (*buffer_start + 1) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+  	i++;
+      }
+      if (*buffer_size == COMPRESS_LZ77_SLIDING_WINDOW_SIZE && *buffer_start == *buffer_end)
+        ,*buffer_start = (*buffer_start + 1) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+
+  }
+
+  // Access buffer from end backwards (most recent first)
+  char get_sliding_window_char_from_end(const char *buffer, size_t buffer_end, size_t buffer_size, size_t backward_index)
+  {
+      if (!buffer_size || backward_index >= buffer_size)
+          return 0; // Out of bounds
+     size_t target_pos = (buffer_end - 1 - backward_index + COMPRESS_LZ77_SLIDING_WINDOW_SIZE) 
+                         % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+      return buffer[target_pos]; 
+  }
+
+  char get_sliding_window_char(const char *buffer, size_t buffer_start, size_t buffer_size, size_t index)
+  {
+    if (!buffer || !buffer_size || index >= buffer_size)
+      return (0);
+    size_t actual_index = (buffer_start + index) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+    return (buffer[actual_index]);
+  }
+
+  int lz77_compress_find_best_match(const char *sliding_window, size_t sliding_window_start, size_t sliding_window_end, size_t sliding_window_buffer_size, const char *src, size_t src_len, size_t *best_distance, size_t *best_len)
+  {
+    size_t search_pos;
+    size_t match_len;
+    size_t window_ndx;
+    size_t sliding_window_start_reached;
+
+    if (!sliding_window||! src)
+      return (-1);
+    ,*best_distance = 0;
+    ,*best_len = 0;
+    sliding_window_start_reached = 0;
+    search_pos = sliding_window_end;//
+    match_len = 0;
+    while (sliding_window_buffer_size && !sliding_window_start_reached && src_len && *best_len != COMPRESS_LZ77_MAX_MATCH_LEN)
+      {
+        search_pos = (search_pos - 1 + COMPRESS_LZ77_SLIDING_WINDOW_SIZE) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+        if (search_pos == sliding_window_start)
+  	sliding_window_start_reached = 1;
+        match_len = 0;
+        window_ndx = (search_pos + match_len) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+        while (match_len < COMPRESS_LZ77_MAX_MATCH_LEN && match_len < src_len && window_ndx < sliding_window_buffer_size
+  	     && get_sliding_window_char(sliding_window, sliding_window_start, sliding_window_buffer_size, window_ndx) == src[match_len])
+  	{
+  	  match_len++;
+  	  window_ndx = (search_pos + match_len) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+  	}
+        if (COMPRESS_LZ77_MAX_MATCH_LEN < match_len)
+  	match_len = COMPRESS_LZ77_MAX_MATCH_LEN;
+        if (match_len >= COMPRESS_LZ77_MIN_MATCH_LEN &&match_len > *best_len)
+  	{
+  	  ,*best_len = match_len;
+  	  ,*best_distance = (sliding_window_end - search_pos + COMPRESS_LZ77_SLIDING_WINDOW_SIZE) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+  	  if (!*best_distance || *best_distance > sliding_window_buffer_size)
+  	    {
+  	      ,*best_distance = 0;
+  	      ,*best_len = 0;
+  	    }
+  	}
+      }
+    return (0);
+  }
+
+  /* int lz77_compress_find_best_match_with_extension(const char *sliding_window, size_t sliding_window_start, size_t sliding_window_end, size_t sliding_window_buffer_size const char *src, size_t src_len, size_t *best_distance, size_t *best_len) */
+  /* { */
+  /*   size_t len; */
+  /*   if (lz77_compress_find_best_match(sliding_window, sliding_window_start, sliding_window_end, sliding_window_buffer_size, src, src_len, best_distance, best_len)) */
+  /*     return (-1); */
+  /*   if (*best_len == *best_distance && *best_len < COMPRESS_LZ77_MAX_MATCH_LEN */
+  /*       && try_self_extend_pattern(sliding_window, sliding_window_start, sliding_window_end, sliding_window_buffer_size, *best_len, src, src_len, &len))  */
+  /*       *best_len = len; */
+  /*   if (*best_len < COMPRESS_LZ77_MIN_MATCH_LEN) */
+  /*     {// I don't think would be nice but just need to give a check what give better results. */
+  /*       *best_len = 0; */
+  /*       *best_distance = 0; */
+  /*     } */
+  /*     return (0); */
+  /* } */
+
+  /* int calculate_match_score(size_t len, size_t distance) */
+  /* { */
+  /*     if (len < COMPRESS_LZ77_MIN_MATCH_LEN) */
+  /*         return -1; // Not worth encoding as match */
+      
+  /*     // Bytes saved by match */
+  /*     int savings = len * 8; // 8 bits per byte */
+      
+  /*     // Encoding overhead penalty */
+  /*     int overhead = 24; // Roughly 3 bytes for (distance, length, next_char) */
+      
+  /*     // Distance penalty (further = slower decompression) */
+  /*     int distance_penalty = 0; */
+  /*     if (distance > 1024) */
+  /*         distance_penalty = 16; */
+  /*     else if (distance > 256) */
+  /*         distance_penalty = 8; */
+  /*     else if (distance > 64) */
+  /*         distance_penalty = 4; */
+      
+  /*     return savings - overhead - distance_penalty; */
+  /* } */
+  int dbg(size_t token_count)
+  {
+    return (token_count);
+  }
+
+  t_list *lz77_compress_list(const char *src, size_t src_len)
+  {
+    char sliding_window[COMPRESS_LZ77_SLIDING_WINDOW_SIZE];
+    size_t sliding_window_end = 0;
+    size_t sliding_window_start = 0;
+    size_t sliding_window_buffer_size = 0;
+    size_t distance;
+    size_t len;
+    t_list *tokens_lst;
+    t_list *token_lst;
+    t_lz77 *token;
+    char		byte;
+    size_t token_count;
+    size_t total_input_processed;
+    size_t og_src_len = src_len;
+    size_t literal_count = 0;
+    size_t match_count = 0;
+    size_t total_match_length = 0;
+
+    token_count = 0;
+    total_input_processed = 0;
+    tokens_lst = NULL;
+    while (src_len)
+      {
+        dbg(sliding_window_start == sliding_window_end);
+        if (lz77_compress_find_best_match(&sliding_window[0], sliding_window_start, sliding_window_end, sliding_window_buffer_size, src, src_len, &distance, &len))
+  	{
+  	  ft_lstclear(&tokens_lst, free);
+  	  return (tokens_lst);
+  	}
+        byte = 0;
+        if (len >= src_len)
+  	printf("Ignored next byte inside the token\n");
+        else
+  	byte = src[len];
+
+        token = create_lz77_tkn(len, distance, byte);
+        if (byte != '\n')
+  	printf("(%lu, %lu, %c)\t", distance, len, byte);
+        else
+  	printf("(%lu, %lu, \\n)\t", distance, len);
+        if (!len)
+  	literal_count++;
+        else
+  	{
+  	  match_count++;
+  	  total_match_length += len;
+  	}
+  	
+        if (!token)
+  	{
+  	  ft_lstclear(&tokens_lst, free);
+  	  return (tokens_lst);
+  	}
+        token_lst = ft_lstnew(token);
+        if (!token_lst)
+  	{
+  	  free(token);
+  	  ft_lstclear(&tokens_lst, free);
+  	  return (tokens_lst);
+  	}
+        ft_lstadd_back(&tokens_lst, tokens_lst);
+        len++;// INFO If delete this line all len should be + 1
+        add_sliding_window(sliding_window, &sliding_window_start, &sliding_window_end, &sliding_window_buffer_size, src, len);
+        src += len;
+        if (len > src_len)
+  	{
+  	  len = src_len;
+  	  src_len = 0;
+  	}
+        else
+  	src_len -= len;
+        token_count++;
+        total_input_processed += len;
+        printf("Total tokens: %zu\t", token_count);
+        printf("Total input processed: %zu\t", total_input_processed);
+        printf("Original input size: %zu\t", og_src_len);
+        printf("window_start %lu\t", sliding_window_start);
+        printf("window_end %lu\t", sliding_window_end);
+        printf("Tokens per byte: %.2f\n", (double)token_count / total_input_processed);
+      }
+    printf("Literals: %ld, Matches: %ld\n", literal_count, match_count);
+    printf("Average match length: %.2f\n", (double)total_match_length / match_count);
+    printf("Compression efficiency: %.2f%%\n", (double)(literal_count + match_count) / total_input_processed * 100);
+    return (tokens_lst);
+  }
+
+  int lz77_compress(char *src, size_t src_len, int fd)
+  {
+    t_list *tokens = lz77_compress_list(src, src_len);
+    t_list *tmp;
+    t_lz77 *token;
+    size_t compress_size;
+
+    if (!tokens)
+      return (-1);
+    tmp = tokens;
+    // Write original size.
+    compress_size = ft_lstsize(tmp) * sizeof(*token);
+    printf("compress_size %lu, src_size %lu, compress_ratio %f\n", compress_size, src_len, (double)compress_size / src_len);
+    if (compress_size > src_len)
+      printf("don't compress\n");
+    write(fd, &compress_size, sizeof(compress_size));
+    while (tmp)
+      {
+        token = tmp->content;
+        if (!token)//Shouldn't happend.
+  	return (-1);
+        write(fd, token, sizeof(*token));
+        tmp = tmp->next;
+      }
+    ft_lstclear(&tokens, free);
+    return (0);
+  }
+
+  int lz77_decompress(char *src, size_t src_len)
+  {
+    if (!src || !src_len)
+      return (-1);
+
+    return (0);
+  }
+
+  int decompress(const char* source, char* dest, int inputSize)
+  {
+      const char *end = source + inputSize;
+      unsigned char times;
+
+      while (source < end)
+        {
+  	times = *source;
+  	source++;
+  	if (source == end)
+  	  continue;
+  	while (times--)
+  	   ,*dest++ = *source;
+  	source++;
+        }
+      return (0);
+  }
+
+  int main(int argc, char **argv)
+  {
+    //validation params
+    if (argc != 2)
+      {
+        printf("usage: %s [filename]\n", *argv);
+        return (1);
+      }  	
+    //open file
+    int fd = open(argv[1], O_RDONLY); 
+    if (fd < 0)
+      return (2);
+    // get size file
+    const off_t file_size = lseek(fd, 0, SEEK_END);
+    if ((off_t) -1 == file_size || (off_t) -1 == lseek(fd, 0, SEEK_SET))
+      {
+        close(fd);
+        return (3);
+      }
+    // save on memory all the file
+    void *elf_mmap = mmap(NULL, file_size, PROT_READ, MAP_SHARED, fd, 0);
+    close(fd);
+    if (!elf_mmap)
+      return (4);
+    int i;
+    if (lz77_compress(elf_mmap, file_size, 2))
+      i = 5;
+    munmap(elf_mmap, file_size);
+    return (i);
+  }
+#+end_src
+
+#+begin_src shell :tangle no
+                    if Compression efficiency > 33 not compress, the file would be bigger than not compress.
+                        With len + 0.
+                        ###################### large_data_section.
+                        (50, 15, )	Total tokens: 1774	Total input processed: 15792	Original input size: 15792	window_start 3506	window_end 3505	Tokens per byte: 0.11
+                        Literals: 127, Matches: 1647
+                        Average match length: 8.51
+                        Compression efficiency: 11.23%
+                        ######################################## section .text of this executable.
+                            (18, 15, )	Total tokens: 43155	Total input processed: 113808	Original input size: 113808	window_start 3218	window_end 3217	Tokens per byte: 0.38
+                            Literals: 228, Matches: 42927
+                            Average match length: 1.65
+                            Compression efficiency: 37.92%
+                      ######################################## data_section.bin gcc_main
+                            Literals: 12, Matches: 13
+                    Average match length: 3.31
+                    Compression efficiency: 36.76%
+                    ######################################## .text_gcc_mainx64
+                    (47, 1, )	Total tokens: 103	Total input processed: 256	Original input size: 256	window_start 0	window_end 257	Tokens per byte: 0.40
+            Literals: 50, Matches: 53
+            Average match length: 2.91
+            Compression efficiency: 40.23%
+            ######################################## data_section.bin
+            (0, 0, ?)	Total tokens: 25	Total input processed: 68	Original input size: 68	window_start 0	window_end 68	Tokens per byte: 0.37
+          Literals: 12, Matches: 13
+          Average match length: 3.31
+          Compression efficiency: 36.76%
+            #########################################################################
+                    Len + 1       #########################################################################
+        ######################################## large_data_program
+        	    (51, 14, )	Total tokens: 1974	Total input processed: 15792	Original input size: 15792	window_start 3506	window_end 3505	Tokens per byte: 0.12
+      Literals: 659, Matches: 1315
+      Average match length: 10.51
+      Compression efficiency: 12.50% -> 13.66% -> 11.23%
+      (0, 0, �)	Total tokens: 2548	Total input processed: 14779	Original input size: 14779	window_start 2492	window_end 2491	Tokens per byte: 0.17
+      ######################################## .text_check_compress
+    Literals: 634, Matches: 1914
+    Average match length: 6.39
+    Compression efficiency: 17.24% ->  + 2 19.83 -> 37.83%
+    ######################################## .text_gcc_main
+    (0, 0, �)	Total tokens: 122	Total input processed: 256	Original input size: 256	window_start 0	window_end 256	Tokens per byte: 0.48
+  Literals: 95, Matches: 27
+  Average match length: 4.96
+  Compression efficiency: 47.66%
+  ######################################## data_section.bin
+  check_compress
+    Literals: 634, Matches: 1914
+    Average match length: 6.39
+    Compression efficiency: 17.24% -> 19.83 -> 37.83%
+    ######################################## .text_gcc_main
+    0, 0, �)	Total tokens: 122	Total input processed: 256	Original input size: 256	window_start 0	window_end 256	Tokens per byte: 0.48
+  Literals: 95, Matches: 27
+  Average match length: 4.96
+  Compression efficiency: 47.66%
+
+             #########################################################################
+                    Len + 2 #########################################################################
+
+                    With small files loss compression
+                    With medium files loss little compression
+                    With big files gain compression
+                    Literals: 27, Matches: 6
+                    Average match length: 5.83
+                    Compression efficiency: 48.53%
+                    ##### large data
+                (53, 12, )	Total tokens: 2157	Total input processed: 15792	Original input size: 15792	window_start 3506	window_end 3505	Tokens per byte: 0.14
+                  Literals: 1042, Matches: 1115
+                  Average match length: 12.23
+                  Compression efficiency: 13.66%
+                  ###  .text_check_section
+                (0, 0, �)	Total tokens: 2930	Total input processed: 14779	Original input size: 14779	window_start 2492	window_end 2491	Tokens per byte: 0.20
+                Literals: 1293, Matches: 1637
+                Average match length: 7.24
+                Compression efficiency: 19.83% -> 37.92
+                ### .text_gcc_mainx64
+                (0, 0, �)	Total tokens: 141	Total input processed: 256	Original input size: 256	window_start 0	window_end 256	Tokens per byte: 0.55
+              Literals: 124, Matches: 17
+              Average match length: 6.76
+              Compression efficiency: 55.08%
+  ### data_section.bin
+  	    (0, 0, ?)	Total tokens: 33	Total input processed: 68	Original input size: 68	window_start 0	window_end 68	Tokens per byte: 0.49
+Literals: 27, Matches: 6
+Average match length: 5.83
+Compression efficiency: 48.53%
+#+end_src
