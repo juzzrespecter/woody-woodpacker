@@ -2,7 +2,7 @@
 
 * Makefile
 
-#+begin_src  Makefile :tangle Makefile
+#+begin_src  c :tangle Makefile
   MAKEFLAGS				:=	--no-print-directory
   SHELL					:=	/bin/sh
   INCLUDE-DIR				:=	./include/
@@ -55,6 +55,8 @@
   POC_CHECK_COMPRESS			:= $(ELF_PARSER-SRCS) $(CMN-SRCS) elf/POC/check_compress
   CHECK_SECTION			:= test_check_section
   POC_CHECK_SECTION			:= $(ELF_PARSER-SRCS) $(CMN-SRCS) elf/POC/elf_phdr_shdr
+  CHECK_PACKER			:= test_check_packer
+  POC_CHECK_PACKER			:= $(ELF_PARSER-SRCS) $(CMN-SRCS) elf/POC/elf_phdr_shdr
 
 
   BUILD					:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(SRC)))
@@ -63,7 +65,7 @@
 
   BUILD-POC_CHECK_COMPRESS		:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(POC_CHECK_COMPRESS)))
   BUILD-POC_CHECK_SECTION		:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(POC_CHECK_SECTION)))
-
+  BUILD-POC_CHECK_PACKER		:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(POC_CHECK_PACKER)))
   # Makefile
 
   # Detect the operating system
@@ -105,7 +107,8 @@
   	$(CC) $(CFLAGS) -o $@ $(BUILD-POC_CHECK_COMPRESS) $(LINKINGFLAGS)
   $(CHECK_SECTION): $(BUILD-POC_CHECK_SECTION)
   	$(CC) $(CFLAGS) -o $@ $(BUILD-POC_CHECK_SECTION) $(LINKINGFLAGS)
-
+  $(CHECK_PACKER): $(BUILD-POC_CHECK_PACKER)
+  	$(CC) $(CFLAGS) -o $@ $(BUILD-POC_CHECK_PACKER) $(LINKINGFLAGS)
 
   $(BUILD-DIR):
   	@mkdir -p $@

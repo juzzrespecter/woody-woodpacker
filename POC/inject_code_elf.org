@@ -38,10 +38,7 @@ Modify makefile to compile the differents targets and start testing with it.
    [X] Test that work.
    [X] Get byte code ~ndisasm -b 64 bytecode/open_mmap_until_mmap_size.bin | awk '{for(i=1; i<=length($2); i+=2) {byte = substr($2, i, 2);if (byte != "") ;{printf "\\x%s", byte}}}'~
    [X] Get byte code ~objdump -M intel --disassemble=_start binary_file | awk 'NR > 7 {for(i=1; i<=NF; i++) if ($i ~ /^[0-9a-fA-F]+$/ && length($i) == 2) printf "\\x%s", $i;}'~
-
-** 
-     
-
+   
 #+begin_src c :tangle srcs/elf/POC/add_instructions.c :mkdirp yes
     // TODO May create a struct file with mmap and size ?
     #include "format_elf.h"
@@ -1651,6 +1648,7 @@ ndisasm -b 32 payload_32.bin
   	xor rax, rax
   	xor rbx, rbx
   	xor rcx, rcx
+  	xor rdx, rdx
   	xor rdi, rdi
   	xor rsi, rsi
   	xor rbp, rbp
@@ -1666,6 +1664,7 @@ ndisasm -b 32 payload_32.bin
   	xor eax, eax
   	xor ebx, ebx
   	xor ecx, ecx
+  	xor edx, edx
   	xor edi, edi
   	xor esi, esi
   	xor ebp, ebp
@@ -1705,6 +1704,5 @@ ndisasm -b 32 payload_32.bin
   \xf6
   \xed
 #+end_src
-I would compress section ~.data & .text~
 
 

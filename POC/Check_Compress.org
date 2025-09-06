@@ -9,7 +9,7 @@
   #include <fcntl.h>
   #include <sys/mman.h>
   #include <stdlib.h> //Malloc
-
+  #include <ctype.h> // toupper
   //REL
   size_t compress(const char* source, char* dest, int inputSize)
   {
@@ -43,7 +43,7 @@
     unsigned int distance: 12;
     unsigned int len: 4;
     char byte;
-  }	t_lz77;
+  }	__attribute__((packed)) t_lz77;
 
   typedef struct s_list
   {
@@ -297,10 +297,10 @@
       
   /*     return savings - overhead - distance_penalty; */
   /* } */
-  int dbg(size_t token_count)
-  {
-    return (token_count);
-  }
+  /* static int dbg(size_t token_count) */
+  /* { */
+  /*   return (token_count); */
+  /* } */
 
   t_list *lz77_compress_list(const char *src, size_t src_len)
   {
@@ -326,7 +326,6 @@
     tokens_lst = NULL;
     while (src_len)
       {
-        dbg(sliding_window_start == sliding_window_end);
         if (lz77_compress_find_best_match(&sliding_window[0], sliding_window_start, sliding_window_end, sliding_window_buffer_size, src, src_len, &distance, &len))
   	{
   	  ft_lstclear(&tokens_lst, free);
@@ -363,7 +362,7 @@
   	  ft_lstclear(&tokens_lst, free);
   	  return (tokens_lst);
   	}
-        ft_lstadd_back(&tokens_lst, tokens_lst);
+        ft_lstadd_back(&tokens_lst, token_lst);
         len++;// INFO If delete this line all len should be + 1
         add_sliding_window(sliding_window, &sliding_window_start, &sliding_window_end, &sliding_window_buffer_size, src, len);
         src += len;
@@ -400,16 +399,18 @@
       return (-1);
     tmp = tokens;
     // Write original size.
-    compress_size = ft_lstsize(tmp) * sizeof(*token);
+    compress_size = ft_lstsize(tmp) * sizeof(*token) + sizeof(compress_size);
     printf("compress_size %lu, src_size %lu, compress_ratio %f\n", compress_size, src_len, (double)compress_size / src_len);
     if (compress_size > src_len)
       printf("don't compress\n");
+    compress_size = src_len;
     write(fd, &compress_size, sizeof(compress_size));
     while (tmp)
       {
         token = tmp->content;
         if (!token)//Shouldn't happend.
   	return (-1);
+        /* if (tmp == tokens) */
         write(fd, token, sizeof(*token));
         tmp = tmp->next;
       }
@@ -417,12 +418,63 @@
     return (0);
   }
 
-  int lz77_decompress(char *src, size_t src_len)
+
+  int lz77_decompress(const char *compressed_data, size_t compressed_size, int fd)
   {
-    if (!src || !src_len)
+    size_t original_size;
+    char *output;
+    char window[COMPRESS_LZ77_SLIDING_WINDOW_SIZE] = {0};
+    size_t window_start = 0, window_end = 0, window_size = 0, output_pos = 0;
+    const char *current = compressed_data + sizeof(size_t);
+    size_t length;
+    t_lz77 *token;
+    if (!compressed_data || compressed_size < sizeof(size_t))
       return (-1);
 
-    return (0);
+    memcpy(&original_size, compressed_data, sizeof(size_t));
+    output = malloc(original_size); 
+    if (!output)
+      return (-1);
+      
+    // Use your existing sliding window functions
+    while ((current + sizeof(*token)) <= (compressed_data + compressed_size) && output_pos < original_size) {
+      token = (t_lz77*)current;
+          
+      // Unified processing
+      length = 0;
+      if (token->len > 0)
+        length = (token->len + 2);
+          
+      // Copy referenced data using your get function
+      for (size_t i = 0; token->distance && i < length && output_pos < original_size; i++) {
+        // For decompression, we want to read from (distance) positions back
+  	size_t backward_idx = window_end - length; // 1 = most recent
+  	printf("backward_idx %lu\n, window_size %lu\n", backward_idx, window_size);
+  	if (backward_idx == window_size)
+  	    break;
+  	char byte = get_sliding_window_char(window, window_start, window_size, backward_idx + i);
+  	output[output_pos++] = byte;
+        }
+          
+      // Add next character
+      if (output_pos < original_size)
+        output[output_pos++] = token->byte;
+          
+      // Update window using your add function
+      add_sliding_window(window, &window_start, &window_end, &window_size,
+  		       output + (output_pos - length - 1), length + 1);
+          
+      current += sizeof(t_lz77);
+    }
+      
+    if (output_pos == original_size) {
+      write(fd, output, output_pos);
+      free(output);
+      return (0);
+    }
+      
+    free(output);
+    return (-1);
   }
 
   int decompress(const char* source, char* dest, int inputSize)
@@ -446,13 +498,13 @@
   int main(int argc, char **argv)
   {
     //validation params
-    if (argc != 2)
+    if (argc != 3 || (toupper(argv[1][0]) != 'C' && toupper(argv[1][0]) != 'U'))
       {
-        printf("usage: %s [filename]\n", *argv);
+        printf("usage: %s [C/U] [filename]\n", *argv);
         return (1);
-      }  	
+      }
     //open file
-    int fd = open(argv[1], O_RDONLY); 
+    int fd = open(argv[2], O_RDONLY); 
     if (fd < 0)
       return (2);
     // get size file
@@ -468,8 +520,17 @@
     if (!elf_mmap)
       return (4);
     int i;
-    if (lz77_compress(elf_mmap, file_size, 2))
-      i = 5;
+    i = 0;
+    if (toupper(argv[1][0]) == 'C')
+      {
+        if (lz77_compress(elf_mmap, file_size, 2))
+  	i = 5;
+      }
+    else
+      {
+        if (lz77_decompress(elf_mmap, file_size, 2))
+  	i = 5;
+      }
     munmap(elf_mmap, file_size);
     return (i);
   }
@@ -560,3 +621,65 @@ Literals: 27, Matches: 6
 Average match length: 5.83
 Compression efficiency: 48.53%
 #+end_src
+
+#+begin_src c :tangle no
+  int lz77_decompress(const char *compressed_data, size_t compressed_size)
+  {
+    size_t original_size;
+    char *output = malloc(original_size);
+    char window[COMPRESS_LZ77_SLIDING_WINDOW_SIZE] = {0};
+    size_t window_start = 0, window_end = 0, window_size = 0, output_pos = 0;
+    const char *current = compressed_data + sizeof(size_t);
+    size_t length;
+    t_lz77 *token;
+    if (!compressed_data || compressed_size < sizeof(size_t))
+      return (-1);
+
+    memcpy(&original_size, compressed_data, sizeof(size_t));
+      
+    if (!output)
+      return (-1);
+      
+    // Use your existing sliding window functions
+    while ((current + sizeof(*token)) < (compressed_data + compressed_size) && output_pos < original_size) {
+      token = (t_lz77*)current;
+          
+      // Unified processing
+      length = 0;
+      if (token->len > 0)
+        length = (token->len + 2);
+          
+      // Copy referenced data using your get function
+      for (size_t i = 0; i < length && output_pos < original_size; i++) {
+        // For decompression, we want to read from (distance) positions back
+        if (token->distance > 0 && token->distance <= window_size) {
+  	size_t backward_idx = token->distance - 1; // 1 = most recent
+  	char byte = get_sliding_window_char_from_end(window, window_end, window_size, backward_idx + i);
+  	output[output_pos++] = byte;
+        }
+      }
+          
+      // Add next character
+      if (output_pos < original_size)
+        output[output_pos++] = token->byte;
+          
+      // Update window using your add function
+      add_sliding_window(window, &window_start, &window_end, &window_size,
+  		       output + (output_pos - length - 1), length + 1);
+          
+      current += sizeof(t_lz77);
+    }
+      
+    if (output_pos == original_size) {
+      write(1, output, output_pos);
+      free(output);
+      return (0);
+    }
+      
+    free(output);
+    return (-1);
+  }
+
+#+end_src
+# auxv https://articles.manugarg.com/aboutelfauxiliaryvectors
+

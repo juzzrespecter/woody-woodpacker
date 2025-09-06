@@ -1,7 +1,49 @@
-#+title: elf_phdr_shdr
-#+begin_src c :tangle srcs/elf/POC/elf_phdr_shdr.c
-  #include "format_elf.h"
+#+title: Packed_file
+Test further packed file.
+* ASLR?
+PIE == ~Elfh_type == ET_DYN~
+- add the diff between expected vaddr and real vaddr
+  In case no aslr activate the ~diff == 0 and no real deal ~
+NOPIE = ~Elfh_type == ET_EXEC~
+** Solution less optimized for ET_EXEC but less code/conditions.
+random_address_offset = elf_addr - current_addr;
+if random_adress_offset  == 0 no issue generic code less checks ...
+mmap_address = elf_address + random_address 
+
+There’s field need to change in auxiliary vectors:
+AT_PHDR, the program headers offset
+AT_PHNUM, the number of program headers
+AT_ENTRY, the program’s entry point
+AT_BASE = used for .interp if exist 
+#+begin_src c :tangle no /*https://github.com/torvalds/linux/blob/v3.19/include/uapi/linux/auxvec.h*/
+  #define AT_NULL         0               /* End of vector */
+  #define AT_IGNORE       1               /* Entry should be ignored */
+  #define AT_EXECFD       2               /* File descriptor of program */
+  #define AT_PHDR         3               /* Program headers for program */
+  #define AT_PHENT        4               /* Size of program header entry */
+  #define AT_PHNUM        5               /* Number of program headers */
+  #define AT_PAGESZ       6               /* System page size */
+  #define AT_BASE         7               /* Base address of interpreter */
+  #define AT_FLAGS        8               /* Flags */
+  #define AT_ENTRY        9               /* Entry point of program */
+  #define AT_NOTELF       10              /* Program is not ELF */
+  #define AT_UID          11              /* Real uid */
+  #define AT_EUID         12              /* Effective uid */
+  #define AT_GID          13              /* Real gid */
+  #define AT_EGID         14              /* Effective gid */
+  #define AT_CLKTCK       17              /* Frequency of times() */
+  /* Pointer to the global system page used for system calls and other nice things.  */
+  #define AT_SYSINFO      32
+  #define AT_SYSINFO_EHDR 33
+#+end_src
+* SElinux
+Don't allow to got a mmap with Write and exec. First write then mprotect Read|EXEC
+* CLeaning mmap
+Add to a compress file syscall, pop rdx, ret -
+*  Coding
+#+begin_src c :tangle srcs/elf/POC/packed.c
   #include <string.h>
+  #include "format_elf.h"
   #include <stdbool.h>
   #include <unistd.h>
   #include <stdio.h>
@@ -23,6 +65,7 @@
 
     return (*(uint8_t *)&num == 1);
   }
+
   // Begin setter eh/ph/sh
   void elf_phdr_set_memsz(t_elf_ph *phdr, uint64_t value, unsigned char class)
   {
@@ -108,6 +151,30 @@
     ehdr->elf64->e_shoff = value;
   }
 
+  void elf_ehdr_set_shentsize(t_elf_h *ehdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("ehdr set shoff elf32\n");
+        ehdr->elf32->e_shentsize = (uint32_t) value;
+        return ;
+      }
+    printf("ehdr set shoff elf64\n");
+    ehdr->elf64->e_shentsize = value;
+  }
+
+  void elf_ehdr_set_shstrndx(t_elf_h *ehdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("ehdr set shoff elf32\n");
+        ehdr->elf32->e_shstrndx = (uint32_t) value;
+        return ;
+      }
+    printf("ehdr set shoff elf64\n");
+    ehdr->elf64->e_shstrndx = value;
+  }
+
   void elf_ehdr_set_entry(t_elf_h *ehdr, uint64_t value, unsigned char class)
   {
     if (class == ELFCLASS32) 
@@ -143,134 +210,6 @@
     printf("ehdr set shnum elf64\n");
     ehdr->elf64->e_shnum = value;
   }
-
-  void elf_shdr_set_addralign(t_elf_sh *shdr, uint64_t value, unsigned char class)
-  {
-    if (class == ELFCLASS32) 
-      {
-        printf("shdr set addralign elf32\n");
-        shdr->elf32->sh_addralign = (uint32_t) value;
-        return ;
-      }
-    printf("shdr set addralign elf64\n");
-    shdr->elf64->sh_addralign = value;
-  }
-
-  void elf_shdr_set_addr(t_elf_sh *shdr, uint64_t value, unsigned char class)
-  {
-    if (class == ELFCLASS32) 
-      {
-        printf("shdr set addr elf32\n");
-        shdr->elf32->sh_addr = (uint32_t) value;
-        return ;
-      }
-    printf("shdr set addr elf64\n");
-    shdr->elf64->sh_addr = value;
-  }
-
-  //setters Warning no use the mmap pointer will modify the og file or couldn't write cause no write perm
-  void elf_shdr_set_size(t_elf_sh *shdr, uint64_t value, unsigned char class)
-  {
-    if (class == ELFCLASS32) 
-      {
-        printf("shdr set size elf32\n");
-        shdr->elf32->sh_size = (uint32_t) value;
-        return ;
-      }
-    printf("shdr set size elf64\n");
-    shdr->elf64->sh_size = value;
-  }
-
-  void elf_shdr_set_offset(t_elf_sh *shdr, uint64_t value, unsigned char class)
-  {
-    if (class == ELFCLASS32) 
-      {
-        printf("shdr set offset elf32\n");
-        shdr->elf32->sh_offset = (uint32_t) value;
-        return ;
-      }
-    printf("shdr set offset elf64\n");
-    shdr->elf64->sh_offset = value;
-  }
-
-  void elf_shdr_set_flags(t_elf_sh *shdr, uint64_t value, unsigned char class)
-  {
-    if (class == ELFCLASS32) 
-      {
-        printf("shdr set flags elf32\n");
-        shdr->elf32->sh_flags = (uint32_t) value;
-        return ;
-      }
-    printf("shdr set flags elf64\n");
-    shdr->elf64->sh_flags = value;
-  }
-
-  void elf_shdr_set_type(t_elf_sh *shdr, uint64_t value, unsigned char class)
-  {
-    if (class == ELFCLASS32) 
-      {
-        printf("shdr set type elf32\n");
-        shdr->elf32->sh_type = (uint32_t) value;
-        return ;
-      }
-    printf("shdr set type elf64\n");
-    shdr->elf64->sh_type = value;
-  }
-
-  void elf_shdr_set_name(t_elf_sh *shdr, uint64_t value, unsigned char class)
-  {
-    if (class == ELFCLASS32) 
-      {
-        printf("shdr set name elf32\n");
-        shdr->elf32->sh_name = (uint32_t) value;
-        return ;
-      }
-    printf("shdr set name elf64\n");
-    shdr->elf64->sh_name = value;
-  }
-
-  void elf_shdr_set_link(t_elf_sh *shdr, uint64_t value, unsigned char class)
-  {
-    if (class == ELFCLASS32) 
-      {
-        printf("shdr set link elf32\n");
-        shdr->elf32->sh_link = (uint32_t) value;
-        return ;
-      }
-    printf("shdr set link elf64\n");
-    shdr->elf64->sh_link = value;
-  }
-
-  void elf_shdr_set_info(t_elf_sh *shdr, uint64_t value, unsigned char class)
-  {
-    if (class == ELFCLASS32) 
-      {
-        printf("shdr set info elf32\n");
-        shdr->elf32->sh_info = (uint32_t) value;
-        return ;
-      }
-    printf("shdr set info elf64\n");
-    shdr->elf64->sh_info = value;
-  }
-
-  void elf_shdr_set_entsize(t_elf_sh *shdr, uint64_t value, unsigned char class)
-  {
-    if (class == ELFCLASS32) 
-      {
-        printf("shdr set entsize elf32\n");
-        shdr->elf32->sh_entsize = (uint32_t) value;
-        return ;
-      }
-    printf("shdr set entsize elf64\n");
-    shdr->elf64->sh_entsize = value;
-  }
-  // End Setter eh/ph/sh.
-  // Helper functions
-  bool is_between(uint64_t lower_limit, uint64_t upper_limit, uint64_t value)
-  {
-    return (lower_limit <= value && value <= upper_limit);
-  }
-
   uint64_t elf_get_program_ndx_from_addr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t addr)
   {
     t_elf_ph phdr;
@@ -307,11 +246,28 @@
     return  (highest_avalaible_offset);
   }
 
+  size_t elf_is_gnu_stack_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
+  {
+    t_elf_ph phdr;
+    uint64_t i;
+
+    i = 0;
+    while (++i < phnum) // Skip the first 
+      {
+        phdr = elf_get_program_header(ehdr, i);
+        if (elf_get_program_header_type(&phdr, class) == PT_GNU_STACK) // If not loadable ignore
+  	return (1);
+      }
+    return  (0);
+  }
+
   size_t elf_get_highest_loadable_vaddr_avalaible(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
   {
     t_elf_ph phdr;
     uint64_t i;
     size_t p_vaddr;
+    size_t p_end_vaddr;
+    size_t p_memsz;
     size_t highest_avalaible_addr = 0;
 
     i = 0;
@@ -321,35 +277,14 @@
         if (elf_get_program_header_type(&phdr, class) != PT_LOAD) // If not loadable ignore
   	continue ;
         p_vaddr = elf_get_program_header_vaddr(&phdr, class);
-        if (highest_avalaible_addr <= p_vaddr)
-  	highest_avalaible_addr = get_alignment_effective_addr(elf_get_program_header_align(&phdr, class), p_vaddr + elf_get_program_header_memsz(&phdr, class));
+        p_memsz = elf_get_program_header_memsz(&phdr, class);
+        p_end_vaddr = p_vaddr + p_memsz;
+        if (highest_avalaible_addr <= p_end_vaddr)
+  	highest_avalaible_addr = get_alignment_effective_addr(elf_get_program_header_align(&phdr, class), p_end_vaddr);
       }
     return  (highest_avalaible_addr);
   }
 
-  uint64_t elf_get_section_ndx_from_addr(t_elf_h *ehdr, size_t addr, unsigned char class, uint64_t shnum)
-  {
-    t_elf_sh		shdr;
-    uint64_t 		i;
-    uint64_t		sh_addr;
-
-    i = 0;
-    while (i++ < shnum) //run for each section_header
-      {
-        shdr = elf_get_section_header(ehdr, i);
-        sh_addr = elf_get_section_header_addr(&shdr, class);
-        if (is_between(sh_addr, sh_addr + elf_get_section_header_size(&shdr, class) - 1, addr))
-  	return (i);
-      }
-    return (i);
-  }
-
-  /* off_t get_mov_rax_jmp_rax_size(unsigned char class) */
-  /* { */
-  /*   if (class == ELFCLASS32) */
-  /*     return (7);// b8 00 00 40 00 ff e0 -> b8 ="mov eax", value\nff eo="jmp rax" */
-  /*   return (12);// 48 b8 00 00 00 00 00 00 00 00 ff e0 -> 48 b8 = "mov rax", value */
-  /* } */
   off_t get_je_size(void)
   {
     return (6);//3 plus address
@@ -358,7 +293,6 @@
   off_t get_js_size(void)
   {
     return (6);//2 plus address
-
   }
 
   typedef union u_type
@@ -786,6 +720,7 @@
       }
     return (xor_register_size);
   }
+
   size_t add_r13(void *dst, uint64_t value)
   {
     size_t written;
@@ -1001,10 +936,6 @@
       }
     return ((uint32_t)new_phdr_vaddr);
   }
-
-
-
-
 
   int generate_payload(void *elf_mmap, char **payload_ptr, size_t *payload_size)
   {
@@ -1269,64 +1200,35 @@
   }
 
   static int prepare_info(t_elf_h *ehdr, unsigned char class, uint64_t *new_phdr_vaddr,
-  			uint64_t phnum, uint64_t *new_phdr_offset, uint64_t *new_shoff,
-  			uint64_t payload_size, uint64_t shnum)
+  			uint64_t phnum)
   {
     /* t_elf_ph phdr = get_farest_phdr_offset_add_filesz(ehdr, class, phnum); */
     const uint64_t new_align = 0x1000;
     const uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
     ,*new_phdr_vaddr = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum);
-    ,*new_phdr_offset = elf_get_highest_offset_avalaible(ehdr, class, shnum);
-    if (increment_offset_phdr(ehdr, *new_phdr_offset, phnum, class))// I think shouldn't go throught this way.
-      ,*new_phdr_offset += phdr_struct_size;
-    if (*new_phdr_vaddr % new_align == *new_phdr_offset % new_align) 
-      printf("all fine with addr and offset aligned\n");
-    else
-      {
-        printf("need to modify a little addr or offset aligned\n");
-        printf("new_phdr_offset = %lu\n new_phdr_vaddr = %lu\n", *new_phdr_offset, *new_phdr_vaddr);
-        printf("new_phdr_offset = 0x%lx\n new_phdr_vaddr = 0x%lx\n", *new_phdr_offset, *new_phdr_vaddr);
-        printf("new_phdr_offset %% 0x1000 = %lu\n new_phdr_vaddr %% 0x1000 = %lu\n", *new_phdr_offset % new_align, *new_phdr_vaddr % new_align);
-        printf("new_phdr_offset %% 0x1000 = 0x%lx\n new_phdr_vaddr %% 0x1000 = 0x%lx\n", *new_phdr_offset % new_align, *new_phdr_vaddr % new_align);
-        if (*new_phdr_vaddr % new_align > *new_phdr_offset % new_align)
-  	,*new_phdr_offset += *new_phdr_vaddr % new_align - *new_phdr_offset % new_align;
-        else
-  	,*new_phdr_vaddr += *new_phdr_offset % new_align - *new_phdr_vaddr % new_align;
-      }
-    printf("new_phdr_offset = 0x%lx\n new_phdr_vaddr = 0x%lx\n", *new_phdr_offset, *new_phdr_vaddr);
-    if (*new_phdr_offset % 16)
-      {
-        ,*new_phdr_vaddr += 16 - *new_phdr_vaddr % 16;
-        ,*new_phdr_offset += 16 - *new_phdr_offset % 16;
-        printf("after 16 alignment new_phdr_offset = 0x%lx\n new_phdr_vaddr = 0x%lx\n", *new_phdr_offset, *new_phdr_vaddr);
-      }
-    ,*new_shoff = *new_phdr_offset + payload_size;
-    printf("previos to check alignment\n");
-    printf("new_shoff= 0x%lx\n", *new_shoff);
-    printf("new_shoff = %ld\n", *new_shoff);
-    if (*new_shoff % 16)
-      {
-        ,*new_shoff += 16 - *new_shoff % 16;
-        printf("after check alignment\n");
-        printf("new_shoff = 0x%lx\n", *new_shoff);
-        printf("new_shoff = %ld\n", *new_shoff);
-      }
+    printf("new_phdr_vaddr %% 0x1000 = %lu\n",*new_phdr_vaddr % new_align);
+    printf("new_phdr_vaddr %% 0x1000 = 0x%lx\n", *new_phdr_vaddr % new_align);
     return 0;
   }
 
-  static int copy_and_modify_elf_header(t_elf_h *ehdr, int packed, uint64_t new_e_shoff, unsigned char class,
-  				      uint64_t new_entrypoint, uint64_t phnum, uint64_t shnum, uint64_t *writed)
+  static int copy_and_modify_elf_header(t_elf_h *ehdr, int packed, unsigned char class,
+  				      uint64_t new_entrypoint, uint64_t phnum, uint64_t *writed)
   {
     uint64_t elf_struct_size = elf_get_struct_size_elf_header((char *)ehdr->elf32);
     t_elf_h ehdr_cp = {.elf32 = malloc(elf_struct_size)};
+    uint64_t new_phnum = 2;
+
     if (!ehdr_cp.elf32)
       return 14;
     memcpy(ehdr_cp.elf32, ehdr->elf32, elf_struct_size);
-    if (new_e_shoff)
-      elf_ehdr_set_shoff(&ehdr_cp, new_e_shoff, class);
+    elf_ehdr_set_shoff(&ehdr_cp, 0, class);
     elf_ehdr_set_entry(&ehdr_cp, new_entrypoint, class);
-    elf_ehdr_set_phnum(&ehdr_cp, ++phnum, class);
-    elf_ehdr_set_shnum(&ehdr_cp, ++shnum, class);
+    if (elf_is_gnu_stack_phdr(ehdr, class, phnum))// if is a PHDR PT_GNU_STACK
+      new_phnum++;
+    elf_ehdr_set_phnum(&ehdr_cp, new_phnum, class);
+    elf_ehdr_set_shnum(&ehdr_cp, 0, class);
+    elf_ehdr_set_shentsize(&ehdr_cp, 0, class);
+    elf_ehdr_set_shstrndx(&ehdr_cp, 0, class);
     ,*writed = write(packed, ehdr_cp.elf32, elf_struct_size);
     free(ehdr_cp.elf32);
     return 0;
@@ -1339,6 +1241,7 @@
   /*   return (elf_get_program_ndx_from_addr(ehdr, class, phnum, elf_get_section_header_addr(&shdr, class)) != ndx_ph); */
   /* } */
 
+  // TODO update this function.
   //for reuse the same packer on a packed file i should detect if i is already packed and add the new payload.
   static int write_program_headers(t_elf_h *ehdr, int packed, uint64_t phnum,
   				 uint64_t new_phdr_offset, uint64_t new_phdr_vaddr,
@@ -1663,7 +1566,6 @@
     uint64_t new_phdr_offset;
     uint64_t writed;
     uint64_t new_e_entry;
-    uint64_t new_e_shoff;
     /* uint64_t e_shoff = elf_get_elfh_shoff(&ehdr); */
     /* uint64_t sh_size; */
     /* uint64_t sh_offset; */
@@ -1672,12 +1574,12 @@
       return (1);
     /* if (find_section_and_program_indices(&ehdr, e_entrypoint, shnum, phnum, class, &ndx_sh, &ndx_ph)) */
     /*     return 10; */
-    if (prepare_info(&ehdr, class, &new_phdr_vaddr, phnum, &new_phdr_offset, &new_e_shoff, payload_size, shnum))
+    if (prepare_info(&ehdr, class, &new_phdr_vaddr, phnum))
       return (2);
     new_e_entry = new_phdr_vaddr;
     //New to check were i got the disalign offset and writed
     writed = 0;
-    if (copy_and_modify_elf_header(&ehdr, packed, new_e_shoff, class, new_e_entry, phnum, shnum, &writed))
+    if (copy_and_modify_elf_header(&ehdr, packed, class, new_e_entry, phnum, &writed))
       return (3);
     printf("after copy and modify ehdr -> writed: %ld\n", writed);
     if (write_program_headers(&ehdr, packed, phnum, new_phdr_offset, new_e_entry, class, payload_size, &writed))
@@ -1783,556 +1685,13 @@
     return (0);
   }
 #+end_src
+** TODO ELF file
+*** TODO EHDR
+*** TODO PHDR
+** TODO Encrypt file
+** TODO Payload
+*** TODO AUXV
+*** TODO Append clean to mmap already in use by packed elf or new one
+*** TODO Linker
+*** TODO ASLR
 
-* Check argv, argc, envp in gdb
-#+begin_src shell
-      gdb ./file_name
-      starti
-      x/d $rsp -> argc
-       x/s *(char**)($rsp+8) -> argv[0] -> Program name
-       x/s *(char**)($rsp+16) -> argv[1] -> NULL
-       x ((char**)($rsp+24))[0] -> envp[0] -> 24 = pointer_size + ((argc + 1) * pointer_size)
-       x *(char**)($rsp+24) -> envp[0]
-       x *(char**)($rsp+32) -> envp[1]
-       envp[75] != NULL envp[76] = NULL
-       set $auxv_start = ($rsp + 24) + 77 * 8
-       p *(unsigned long *)$auxv_start// type 33
-       p *(char **)($auxv_start + 8)//value Begin of ELFheader.
-    $32 = 0x7ffcc1f9d000 "\177ELF\002\001\001"
-    x/20bx 0x7ffcc1f9d000
-  0x7ffcc1f9d000:	0x7f	0x45	0x4c	0x46	0x02	0x01	0x01	0x00
-  0x7ffcc1f9d008:	0x00	0x00	0x00	0x00	0x00	0x00	0x00	0x00
-  0x7ffcc1f9d010:	0x03	0x00	0x3e	0x00
-#+end_src
-
-For avoid trouble previous to jmp to og_entrypoint:
-rsp value must bemantained
-leave all register eq = 0 previous to jmp, except one to hold the jmp address r13 x example.
-** DONE Modify ehdr
-CLOSED: [2025-08-13 Wed 11:27]
-* DONE Create a phdr & modify ehdr->phnum
-CLOSED: [2025-08-13 Wed 11:27]
-
-** DONE Modify phdr
-CLOSED: [2025-08-13 Wed 11:27]
-:LOGBOOK:
-CLOCK: [2025-08-12 Tue 08:35]--[2025-08-12 Tue 18:48] => 10:13
-:END:
-** Modify shdr
-** Add the payload on the new  offset.
-* DONE Create a shdr & modify ehdr->shnum
-CLOSED: [2025-08-13 Wed 11:27]
-* DONE Check list before work on compress.
-CLOSED: [2025-09-06 Sat 09:28]
-** DONE asm ld.
-CLOSED: [2025-08-13 Wed 11:41]
-** DONE asm ld argv and .text section.
-CLOSED: [2025-08-13 Wed 13:48]
-*** DONE Phdr error
-CLOSED: [2025-08-13 Wed 13:47]
-**** DONE I increment the file size of phdr[0] with reason not delete of legacy.
-CLOSED: [2025-08-13 Wed 13:42]
-i got a while (++ndx_ph)
-{
-....
-ndx_ph++;//Xd.
-}
-#+begin_src shell
-> readelf -l argv_ld
-    Program Headers:
-      Type           Offset             VirtAddr           PhysAddr
-                     FileSiz            MemSiz              Flags  Align
-      LOAD           0x0000000000000000 0x0000000000400000 0x0000000000400000
-                     0x00000000000000e8 0x00000000000000e8  R      0x1000
-      LOAD           0x0000000000001000 0x0000000000401000 0x0000000000401000
-                     0x0000000000000043 0x0000000000000043  R E    0x1000
-      LOAD           0x0000000000002000 0x0000000000402000 0x0000000000402000
-                     0x0000000000000002 0x0000000000000002  RW     0x1000
-    readelf -l woody  
-    Program Headers:
-      Type           Offset             VirtAddr           PhysAddr
-                     FileSiz            MemSiz              Flags  Align
-      LOAD           0x0000000000000000 0x0000000000400000 0x0000000000400000
-                     0x0000000000000120 0x0000000000000120  R      0x1000
-      LOAD           0x0000000000001000 0x0000000000401000 0x0000000000401000
-                     0x0000000000000043 0x0000000000000043  R E    0x1000
-    		 //This should be a copy of the previous.
-      LOAD           0x0000000000002190 0x0000000000403190 0x0000000000403190
-                     0x0000000000000583 0x0000000000000583  R E    0x1000
-      NULL           0x0000000000000000 0x0000000000000000 0x0000000000000000
-                     0x0000000000000000 0x0000000000000000         0x0
-
-> ./argv_ld hoal
-./argv_ld
-> ./woody
-....WOODY....
-Segmentation fault #(Hello my friend nice to meet u;)
-  ------- FIX
-  readelf -l argv_ld 
-
-  Elf file type is EXEC (Executable file)
-  Entry point 0x401000
-  There are 3 program headers, starting at offset 64
-
-  Program Headers:
-    Type           Offset             VirtAddr           PhysAddr
-                   FileSiz            MemSiz              Flags  Align
-    LOAD           0x0000000000000000 0x0000000000400000 0x0000000000400000
-                   0x00000000000000e8 0x00000000000000e8  R      0x1000
-    LOAD           0x0000000000001000 0x0000000000401000 0x0000000000401000
-                   0x0000000000000043 0x0000000000000043  R E    0x1000
-    LOAD           0x0000000000002000 0x0000000000402000 0x0000000000402000
-                   0x0000000000000002 0x0000000000000002  RW     0x1000
-
-   Section to Segment mapping:
-    Segment Sections...
-     00     
-     01     .text 
-     02     .data 
-  readelf -l woody   
-
-  Elf file type is EXEC (Executable file)
-  Entry point 0x403190
-  There are 4 program headers, starting at offset 64
-
-  Program Headers:
-    Type           Offset             VirtAddr           PhysAddr
-                   FileSiz            MemSiz              Flags  Align
-    LOAD           0x0000000000000000 0x0000000000400000 0x0000000000400000
-                   0x00000000000000e8 0x00000000000000e8  R      0x1000
-    LOAD           0x0000000000001000 0x0000000000401000 0x0000000000401000
-                   0x0000000000000043 0x0000000000000043  R E    0x1000
-    LOAD           0x0000000000002000 0x0000000000402000 0x0000000000402000
-                   0x0000000000000002 0x0000000000000002  RW     0x1000
-    LOAD           0x0000000000002190 0x0000000000403190 0x0000000000403190
-                   0x0000000000000583 0x0000000000000583  R E    0x1000
-
-   Section to Segment mapping:
-    Segment Sections...
-     00     
-     01     .text 
-     02     .data 
-     03     shstrtab 
-#+end_src
-
-
-** DONE payload xor all register minus r13 or similar
-CLOSED: [2025-08-14 Thu 13:25]
-#+begin_src shell
-#Current payload
-  ndisasm -b 64 bitecode.bin 
-  00000000  55                push rbp
-  00000001  4889E5            mov rbp,rsp
-  00000004  4883EC20          sub rsp,byte +0x20
-  00000008  31C0              xor eax,eax
-  0000000A  48B82E2E2E2E574F  mov rax,0x444f4f572e2e2e2e
-           -4F44
-  00000014  488945EA          mov [rbp-0x16],rax
-  00000018  48B84F44592E2E2E  mov rax,0xa2e2e2e2e59444f
-           -2E0A
-  00000022  488945F0          mov [rbp-0x10],rax
-  00000026  488D45EA          lea rax,[rbp-0x16]
-  0000002A  BA0E000000        mov edx,0xe
-  0000002F  4889C6            mov rsi,rax
-  00000032  BF01000000        mov edi,0x1
-  00000037  B801000000        mov eax,0x1
-  0000003C  0F05              syscall
-  0000003E  4883C420          add rsp,byte +0x20
-  00000042  5D                pop rbp
-  00000043  4831DB            xor rbx,rbx
-  00000046  4831C9            xor rcx,rcx
-  00000049  4831FF            xor rdi,rdi
-  0000004C  4831F6            xor rsi,rsi
-  0000004F  4831ED            xor rbp,rbp
-  00000052  4D31D2            xor r10,r10
-  00000055  4D31DB            xor r11,r11
-  00000058  4D31E4            xor r12,r12
-  0000005B  4D31E4            xor r12,r12
-  0000005E  4D31E4            xor r12,r12
-  00000061  4D31ED            xor r13,r13
-  00000064  4D31F6            xor r14,r14
-  00000067  48B8001040000000  mov rax,0x401000# func set dynamic value
-           -0000
-  00000071  FFE0              jmp rax         # jmp register value.
-#+end_src
-** TODO gcc
-./woody say not_found.
-#+begin_src shell
-              readelf -l gcc_main 
-              Entry point 0x401040
-              Program Headers:
-                Type           Offset             VirtAddr           PhysAddr
-                               FileSiz            MemSiz              Flags  Align
-                PHDR           0x0000000000000040 0x0000000000400040 0x0000000000400040
-                               0x00000000000002d8 0x00000000000002d8  R      0x8
-                INTERP         0x0000000000000318 0x0000000000400318 0x0000000000400318
-                               0x0000000000000050 0x0000000000000050  R      0x1
-                    [Requesting program interpreter: /gnu/store/hw6g2kjayxnqi8rwpnmpraalxi0djkxc-glibc-2.39/lib/ld-linux-x86-64.so.2]
-                LOAD           0x0000000000000000 0x0000000000400000 0x0000000000400000
-                               0x00000000000005e0 0x00000000000005e0  R      0x1000
-                LOAD           0x0000000000001000 0x0000000000401000 0x0000000000401000
-                               0x0000000000000149 0x0000000000000149  R E    0x1000
-                LOAD           0x0000000000002000 0x0000000000402000 0x0000000000402000
-                               0x00000000000000e4 0x00000000000000e4  R      0x1000
-                LOAD           0x0000000000002dc8 0x0000000000403dc8 0x0000000000403dc8
-                               0x0000000000000250 0x0000000000000258  RW     0x1000
-                DYNAMIC        0x0000000000002dd8 0x0000000000403dd8 0x0000000000403dd8
-                               0x0000000000000200 0x0000000000000200  RW     0x8
-                NOTE           0x0000000000000368 0x0000000000400368 0x0000000000400368
-                               0x0000000000000040 0x0000000000000040  R      0x8
-                NOTE           0x00000000000003a8 0x00000000004003a8 0x00000000004003a8
-                               0x0000000000000020 0x0000000000000020  R      0x4
-                GNU_PROPERTY   0x0000000000000368 0x0000000000400368 0x0000000000400368
-                               0x0000000000000040 0x0000000000000040  R      0x8
-                GNU_EH_FRAME   0x0000000000002014 0x0000000000402014 0x0000000000402014
-                               0x000000000000002c 0x000000000000002c  R      0x4
-                GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000
-                               0x0000000000000000 0x0000000000000000  RW     0x10
-                GNU_RELRO      0x0000000000002dc8 0x0000000000403dc8 0x0000000000403dc8
-                               0x0000000000000238 0x0000000000000238  R      0x1
-
-               Section to Segment mapping:
-                Segment Sections...
-                 00     
-                 01     .interp 
-                 02     .interp .note.gnu.property .note.ABI-tag .hash .gnu.hash .dynsym .dynstr .gnu.version .gnu.version_r .rela.dyn .rela.plt 
-                 03     .init .plt .text .fini 
-                 04     .rodata .eh_frame_hdr .eh_frame 
-                 05     .init_array .fini_array .dynamic .got .got.plt .data .bss 
-                 06     .dynamic 
-                 07     .note.gnu.property 
-                 08     .note.ABI-tag 
-                 09     .note.gnu.property 
-                 10     .eh_frame_hdr 
-                 11     
-                 12     .init_array .fini_array .dynamic .got 
-              readelf -l woody 
-              Entry point 0x405480
-              There are 14 program headers, starting at offset 64
-
-              Program Headers:
-                Type           Offset             VirtAddr           PhysAddr
-                               FileSiz            MemSiz              Flags  Align
-                PHDR           0x0000000000000040 0x0000000000400040 0x0000000000400040
-                               0x00000000000002d8 0x00000000000002d8  R      0x8
-                INTERP         0x0000000000000350 0x0000000000400318 0x0000000000400318
-                               0x0000000000000050 0x0000000000000050  R      0x1
-                    [Requesting program interpreter: ib/ld-linux-x86-64.so.2]
-                LOAD           0x0000000000000000 0x0000000000400000 0x0000000000400000
-                               0x0000000000000618 0x0000000000000618  R      0x1000
-                LOAD           0x0000000000001000 0x0000000000401000 0x0000000000401000
-                               0x0000000000000149 0x0000000000000149  R E    0x1000
-                LOAD           0x0000000000002000 0x0000000000402000 0x0000000000402000
-                               0x00000000000000e4 0x00000000000000e4  R      0x1000
-                LOAD           0x0000000000002dc8 0x0000000000403dc8 0x0000000000403dc8
-                               0x0000000000000250 0x0000000000000258  RW     0x1000
-                DYNAMIC        0x0000000000002dd8 0x0000000000403dd8 0x0000000000403dd8
-                               0x0000000000000200 0x0000000000000200  RW     0x8
-                NOTE           0x00000000000003a0 0x0000000000400368 0x0000000000400368
-                               0x0000000000000040 0x0000000000000040  R      0x8
-                NOTE           0x00000000000003e0 0x00000000004003a8 0x00000000004003a8
-                               0x0000000000000020 0x0000000000000020  R      0x4
-                GNU_PROPERTY   0x00000000000003a0 0x0000000000400368 0x0000000000400368
-                               0x0000000000000040 0x0000000000000040  R      0x8
-                GNU_EH_FRAME   0x0000000000002014 0x0000000000402014 0x0000000000402014
-                               0x000000000000002c 0x000000000000002c  R      0x4
-                GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000
-                               0x0000000000000000 0x0000000000000000  RW     0x10
-                GNU_RELRO      0x0000000000002dc8 0x0000000000403dc8 0x0000000000403dc8
-                               0x0000000000000238 0x0000000000000238  R      0x1
-                LOAD           0x0000000000003480 0x0000000000405480 0x0000000000405480
-                               0x00000000000007e7 0x00000000000007e7  R E    0x1000#Packed phdr
-
-               Section to Segment mapping:
-                Segment Sections...
-                 00     
-                 01     .interp 
-                 02     .interp .note.gnu.property .note.ABI-tag .hash .gnu.hash .dynsym .dynstr .gnu.version .gnu.version_r .rela.dyn .rela.plt 
-                 03     .init .plt .text .fini 
-                 04     .rodata .eh_frame_hdr .eh_frame 
-                 05     .init_array .fini_array .dynamic .got .got.plt .data .bss 
-                 06     .dynamic 
-                 07     .note.gnu.property 
-                 08     .note.ABI-tag 
-                 09     .note.gnu.property 
-                 10     .eh_frame_hdr 
-                 11     
-                 12     .init_array .fini_array .dynamic .got 
-                 13     shstrtab# packed shdr 
-            __________________________________________________________________________
-             readelf -S gcc_main  woody 
-
-          File: gcc_main
-          There are 30 section headers, starting at offset 0x3478:
-
-          Section Headers:
-            [Nr] Name              Type             Address           Offset
-                 Size              EntSize          Flags  Link  Info  Align
-            [ 0]                   NULL             0000000000000000  00000000
-                 0000000000000000  0000000000000000           0     0     0
-            [ 1] .interp           PROGBITS         0000000000400318  00000318
-                 0000000000000050  0000000000000000   A       0     0     1
-            [ 2] .note.gnu.pr[...] NOTE             0000000000400368  00000368
-                 0000000000000040  0000000000000000   A       0     0     8
-            [ 3] .note.ABI-tag     NOTE             00000000004003a8  000003a8
-                 0000000000000020  0000000000000000   A       0     0     4
-            [ 4] .hash             HASH             00000000004003c8  000003c8
-                 0000000000000024  0000000000000004   A       6     0     8
-            [ 5] .gnu.hash         GNU_HASH         00000000004003f0  000003f0
-                 000000000000001c  0000000000000000   A       6     0     8
-            [ 6] .dynsym           DYNSYM           0000000000400410  00000410
-                 0000000000000060  0000000000000018   A       7     1     8
-            [ 7] .dynstr           STRTAB           0000000000400470  00000470
-                 00000000000000ee  0000000000000000   A       0     0     1
-            [ 8] .gnu.version      VERSYM           000000000040055e  0000055e
-                 0000000000000008  0000000000000002   A       6     0     2
-            [ 9] .gnu.version_r    VERNEED          0000000000400568  00000568
-                 0000000000000030  0000000000000000   A       7     1     8
-            [10] .rela.dyn         RELA             0000000000400598  00000598
-                 0000000000000030  0000000000000018   A       6     0     8
-            [11] .rela.plt         RELA             00000000004005c8  000005c8
-                 0000000000000018  0000000000000018  AI       6    23     8
-            [12] .init             PROGBITS         0000000000401000  00001000
-                 0000000000000017  0000000000000000  AX       0     0     4
-            [13] .plt              PROGBITS         0000000000401020  00001020
-                 0000000000000020  0000000000000010  AX       0     0     16
-            [14] .text             PROGBITS         0000000000401040  00001040
-                 0000000000000100  0000000000000000  AX       0     0     16
-            [15] .fini             PROGBITS         0000000000401140  00001140
-                 0000000000000009  0000000000000000  AX       0     0     4
-            [16] .rodata           PROGBITS         0000000000402000  00002000
-                 0000000000000012  0000000000000000   A       0     0     4
-            [17] .eh_frame_hdr     PROGBITS         0000000000402014  00002014
-                 000000000000002c  0000000000000000   A       0     0     4
-            [18] .eh_frame         PROGBITS         0000000000402040  00002040
-                 00000000000000a4  0000000000000000   A       0     0     8
-            [19] .init_array       INIT_ARRAY       0000000000403dc8  00002dc8
-                 0000000000000008  0000000000000008  WA       0     0     8
-            [20] .fini_array       FINI_ARRAY       0000000000403dd0  00002dd0
-                 0000000000000008  0000000000000008  WA       0     0     8
-            [21] .dynamic          DYNAMIC          0000000000403dd8  00002dd8
-                 0000000000000200  0000000000000010  WA       7     0     8
-            [22] .got              PROGBITS         0000000000403fd8  00002fd8
-                 0000000000000010  0000000000000008  WA       0     0     8
-            [23] .got.plt          PROGBITS         0000000000403fe8  00002fe8
-                 0000000000000020  0000000000000008  WA       0     0     8
-            [24] .data             PROGBITS         0000000000404008  00003008
-                 0000000000000010  0000000000000000  WA       0     0     8
-            [25] .bss              NOBITS           0000000000404018  00003018
-                 0000000000000008  0000000000000000  WA       0     0     1
-            [26] .comment          PROGBITS         0000000000000000  00003018
-                 0000000000000012  0000000000000001  MS       0     0     1
-            [27] .symtab           SYMTAB           0000000000000000  00003030
-                 0000000000000240  0000000000000018          28     8     8
-            [28] .strtab           STRTAB           0000000000000000  00003270
-                 00000000000000ff  0000000000000000           0     0     1
-            [29] .shstrtab         STRTAB           0000000000000000  0000336f
-                 0000000000000103  0000000000000000           0     0     1
-          Key to Flags:
-            W (write), A (alloc), X (execute), M (merge), S (strings), I (info),
-            L (link order), O (extra OS processing required), G (group), T (TLS),
-            C (compressed), x (unknown), o (OS specific), E (exclude),
-            D (mbind), l (large), p (processor specific)
-
-          File: woody
-          There are 31 section headers, starting at offset 0x3c70:
-
-          Section Headers:
-            [Nr] Name              Type             Address           Offset
-                 Size              EntSize          Flags  Link  Info  Align
-            [ 0]                   NULL             0000000000000000  00000000
-                 0000000000000000  0000000000000000           0     0     0
-            [ 1] .interp           PROGBITS         0000000000400318  00000350
-                 0000000000000050  0000000000000000   A       0     0     1
-            [ 2] .note.gnu.pr[...] NOTE             0000000000400368  000003a0
-                 0000000000000040  0000000000000000   A       0     0     8
-            [ 3] .note.ABI-tag     NOTE             00000000004003a8  000003e0
-                 0000000000000020  0000000000000000   A       0     0     4
-            [ 4] .hash             HASH             00000000004003c8  00000400
-                 0000000000000024  0000000000000004   A       6     0     8
-            [ 5] .gnu.hash         GNU_HASH         00000000004003f0  00000428
-                 000000000000001c  0000000000000000   A       6     0     8
-            [ 6] .dynsym           DYNSYM           0000000000400410  00000448
-                 0000000000000060  0000000000000018   A       7     1     8
-            [ 7] .dynstr           STRTAB           0000000000400470  000004a8
-                 00000000000000ee  0000000000000000   A       0     0     1
-            [ 8] .gnu.version      VERSYM           000000000040055e  00000596
-                 0000000000000008  0000000000000002   A       6     0     2
-            [ 9] .gnu.version_r    VERNEED          0000000000400568  000005a0
-                 0000000000000030  0000000000000000   A       7     1     8
-            [10] .rela.dyn         RELA             0000000000400598  000005d0
-                 0000000000000030  0000000000000018   A       6     0     8
-            [11] .rela.plt         RELA             00000000004005c8  00000600
-                 0000000000000018  0000000000000018  AI       6    23     8
-            [12] .init             PROGBITS         0000000000401000  00001000
-                 0000000000000017  0000000000000000  AX       0     0     4
-            [13] .plt              PROGBITS         0000000000401020  00001020
-                 0000000000000020  0000000000000010  AX       0     0     16
-            [14] .text             PROGBITS         0000000000401040  00001040
-                 0000000000000100  0000000000000000  AX       0     0     16
-            [15] .fini             PROGBITS         0000000000401140  00001140
-                 0000000000000009  0000000000000000  AX       0     0     4
-            [16] .rodata           PROGBITS         0000000000402000  00002000
-                 0000000000000012  0000000000000000   A       0     0     4
-            [17] .eh_frame_hdr     PROGBITS         0000000000402014  00002014
-                 000000000000002c  0000000000000000   A       0     0     4
-            [18] .eh_frame         PROGBITS         0000000000402040  00002040
-                 00000000000000a4  0000000000000000   A       0     0     8
-            [19] .init_array       INIT_ARRAY       0000000000403dc8  00002dc8
-                 0000000000000008  0000000000000008  WA       0     0     8
-            [20] .fini_array       FINI_ARRAY       0000000000403dd0  00002dd0
-                 0000000000000008  0000000000000008  WA       0     0     8
-            [21] .dynamic          DYNAMIC          0000000000403dd8  00002dd8
-                 0000000000000200  0000000000000010  WA       7     0     8
-            [22] .got              PROGBITS         0000000000403fd8  00002fd8
-                 0000000000000010  0000000000000008  WA       0     0     8
-            [23] .got.plt          PROGBITS         0000000000403fe8  00002fe8
-                 0000000000000020  0000000000000008  WA       0     0     8
-            [24] .data             PROGBITS         0000000000404008  00003008
-                 0000000000000010  0000000000000000  WA       0     0     8
-            [25] .bss              NOBITS           0000000000404018  00003018
-                 0000000000000008  0000000000000000  WA       0     0     1
-            [26] .comment          PROGBITS         0000000000000000  00003018
-                 0000000000000012  0000000000000001  MS       0     0     1
-            [27] .symtab           SYMTAB           0000000000000000  00003030
-                 0000000000000240  0000000000000018          28     8     8
-            [28] .strtab           STRTAB           0000000000000000  00003270
-                 00000000000000ff  0000000000000000           0     0     1
-            [29] .shstrtab         STRTAB           0000000000000000  0000336f
-                 0000000000000103  0000000000000000           0     0     1
-            [30] shstrtab          PROGBITS         0000000000405480  00003480
-                 00000000000007e7  0000000000000000  AX       0     0     16
-            __________________________________________________________________________
-            Syms
-            readelf -s gcc_main  woody 
-
-            File: gcc_main
-
-            Symbol table '.dynsym' contains 4 entries:
-               Num:    Value          Size Type    Bind   Vis      Ndx Name
-                 0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND 
-                 1: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND _[...]@GLIBC_2.34 (2)
-                 2: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND write@GLIBC_2.2.5 (3)
-                 3: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND __gmon_start__
-
-            Symbol table '.symtab' contains 24 entries:
-               Num:    Value          Size Type    Bind   Vis      Ndx Name
-                 0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND 
-                 1: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS crt1.o
-                 2: 00000000004003a8    32 OBJECT  LOCAL  DEFAULT    3 __abi_tag
-                 3: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS main.c
-                 4: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS 
-                 5: 0000000000403dd8     0 OBJECT  LOCAL  DEFAULT   21 _DYNAMIC
-                 6: 0000000000402014     0 NOTYPE  LOCAL  DEFAULT   17 __GNU_EH_FRAME_HDR
-                 7: 0000000000403fe8     0 OBJECT  LOCAL  DEFAULT   23 _GLOBAL_OFFSET_TABLE_
-                 8: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __libc_start_mai[...]
-                 9: 0000000000404008     0 NOTYPE  WEAK   DEFAULT   24 data_start
-                10: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND write@GLIBC_2.2.5
-                11: 0000000000404018     0 NOTYPE  GLOBAL DEFAULT   24 _edata
-                12: 0000000000401140     0 FUNC    GLOBAL HIDDEN    15 _fini
-                13: 0000000000404008     0 NOTYPE  GLOBAL DEFAULT   24 __data_start
-                14: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND __gmon_start__
-                15: 0000000000404010     0 OBJECT  GLOBAL HIDDEN    24 __dso_handle
-                16: 0000000000402000     4 OBJECT  GLOBAL DEFAULT   16 _IO_stdin_used
-                17: 0000000000404020     0 NOTYPE  GLOBAL DEFAULT   25 _end
-                18: 0000000000401070     1 FUNC    GLOBAL HIDDEN    14 _dl_relocate_sta[...]
-                19: 0000000000401040    34 FUNC    GLOBAL DEFAULT   14 _start
-                20: 0000000000404018     0 NOTYPE  GLOBAL DEFAULT   25 __bss_start
-                21: 0000000000401126    26 FUNC    GLOBAL DEFAULT   14 main
-                22: 0000000000404018     0 OBJECT  GLOBAL HIDDEN    24 __TMC_END__
-                23: 0000000000401000     0 FUNC    GLOBAL HIDDEN    12 _init
-
-            File: woody
-
-            Symbol table '.dynsym' contains 4 entries:
-               Num:    Value          Size Type    Bind   Vis      Ndx Name
-                 0: 0000000000000000 0x2000000001 NOTYPE  LOCAL  DEFAULT  UND bc.so.6
-                 1: 0000000000000000 0x5f6e6f6d675f5f00 NOTYPE  LOCAL  DEFAULT  UND bc.so.6                                                                                  @libc-2.39/lib:/gnu/store/vvrjkcybmnygfcl4ddxs4hsbw0bxwwd4-gcc-11.4.0-lib/lib:/home/user/.guix-profile/lib (2)
-            readelf: Warning: local symbol 1 found at index >= .dynsym's sh_info value of 1
-                 2: 735f6362696c5f5f 0x69616d5f74726174 FILE    <unknown>: 7 PROTECTED [<other>: 5c]  bad section index[ 95] <corrupt>                                                                                            @alxi0djkxc-glibc-2.39/lib:/gnu/store/vvrjkcybmnygfcl4ddxs4hsbw0bxwwd4-gcc-11.4.0-lib/lib:/home/user/.guix-profile/lib (3)
-                 3: 735f63636762696c 0x696c00312e6f732e SRELC   <unknown>: 6 DEFAULT [<other>: 74]  bad section index[101] <corrupt>
-
-            Symbol table '.symtab' contains 24 entries:
-               Num:    Value          Size Type    Bind   Vis      Ndx Name
-                 0: 0000000000000000     0 NOTYPE  LOCAL  DEFAULT  UND 
-                 1: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS crt1.o
-                 2: 00000000004003a8    32 OBJECT  LOCAL  DEFAULT    3 __abi_tag
-                 3: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS main.c
-                 4: 0000000000000000     0 FILE    LOCAL  DEFAULT  ABS 
-                 5: 0000000000403dd8     0 OBJECT  LOCAL  DEFAULT   21 _DYNAMIC
-                 6: 0000000000402014     0 NOTYPE  LOCAL  DEFAULT   17 __GNU_EH_FRAME_HDR
-                 7: 0000000000403fe8     0 OBJECT  LOCAL  DEFAULT   23 _GLOBAL_OFFSET_TABLE_
-                 8: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __libc_start_mai[...]
-                 9: 0000000000404008     0 NOTYPE  WEAK   DEFAULT   24 data_start
-                10: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND write@GLIBC_2.2.5
-                11: 0000000000404018     0 NOTYPE  GLOBAL DEFAULT   24 _edata
-                12: 0000000000401140     0 FUNC    GLOBAL HIDDEN    15 _fini
-                13: 0000000000404008     0 NOTYPE  GLOBAL DEFAULT   24 __data_start
-                14: 0000000000000000     0 NOTYPE  WEAK   DEFAULT  UND __gmon_start__
-                15: 0000000000404010     0 OBJECT  GLOBAL HIDDEN    24 __dso_handle
-                16: 0000000000402000     4 OBJECT  GLOBAL DEFAULT   16 _IO_stdin_used
-                17: 0000000000404020     0 NOTYPE  GLOBAL DEFAULT   25 _end
-                18: 0000000000401070     1 FUNC    GLOBAL HIDDEN    14 _dl_relocate_sta[...]
-                19: 0000000000401040    34 FUNC    GLOBAL DEFAULT   14 _start
-                20: 0000000000404018     0 NOTYPE  GLOBAL DEFAULT   25 __bss_start
-                21: 0000000000401126    26 FUNC    GLOBAL DEFAULT   14 main
-                22: 0000000000404018     0 OBJECT  GLOBAL HIDDEN    24 __TMC_END__
-                23: 0000000000401000     0 FUNC    GLOBAL HIDDEN    12 _init
-          ______________________________________________________________________________
-          GDB
-          gdb woody
-        Reading symbols from woody...
-
-        warning: BFD: /home/user/Documents/woody-woodpacker/POC/woody: invalid string offset 1918989427 >= 238 for section `.dynstr'
-
-        warning: BFD: /home/user/Documents/woody-woodpacker/POC/woody: invalid string offset 1920401518 >= 238 for section `.dynstr'
-        (No debugging symbols found in woody)
-        #Look like i screw up in some part Let's continue Tomorrow.
-      __ New error__ Still working in the previous scenarios.
-      ./woody
-      ./woody: error while loading shared libraries: ./woody: unsupported version 11619 of Verneed record
-      The error happend cause i modify offset and vaddr  of section that are refered in .dinamic section and not update vaddr inside the .dinamic section.
-      // Need to add logic to handle dinamic.
-      // Need to tx vaddr to offset.
-      // In case bss if i move the offset and the vaddr i don't care that there isn't offset in the file, i move the vaddr.
-      // For know work with dynamic entries but segfault on somewhere.
-      ./woody
-    ....WOODY....
-    Hello World!
-    Segmentation fault
-    segfault in exit maybe not zero all registers.
-  PDTE  change rax to r13 to hold entrypoint.
-  //49 movabs
-  //bd
-  // number as register 8B
-    49 bd 00 60 cd 00 29 	movabs r13,0x7f2900cd6000
-    42:	7f 00 00
-  // jmp r13
-  41 ff e5
-
-#+end_src
-** DONE Section is broke i need to fix it.
-CLOSED: [2025-08-26 Tue 13:02]
-** DONE Payload x32
-CLOSED: [2025-08-27 Wed 09:33]
-** DONE asm ld x32
-CLOSED: [2025-08-27 Wed 09:33]
-** DONE asm ld x32 argv.
-CLOSED: [2025-08-27 Wed 09:33]
-** DONE gcc -m32.
-CLOSED: [2025-08-30 Sat 17:27]
- I am using docker for that
-*** DONE Error with aslr
-CLOSED: [2025-08-30 Sat 17:27]
-Solution take eip|rip - elf_entrypoint (I got it 'Hardcode' dinamically xD).
-#+begin_src asm
-  mov eax, eip
-  mov ebx, 0xFFF
-  and eax, -4096; -> 0xfffff000
-  sub eax, 0x403000; -> Hard code from new entrypoint. -> eax = run_time_base
-  ....
-  add eax, 0x401060 -> Hard code from prev entrypoint. 
-  pop eax,
-  ret
-
-#+end_src
