@@ -2126,7 +2126,7 @@ Add to a compress file syscall, pop rdx, ret -
       } 
     size_t generated_bytecode_size;
     char *generated_bytecode = NULL;
-    if (generate_payload(elf_mmap, &generated_bytecode, &generated_bytecode_size))
+    if (generate_payload(elf_mmap, lz77_size, &generated_bytecode, &generated_bytecode_size))
       {
         munmap(elf_mmap, file_size);
         return (5);
@@ -2171,14 +2171,28 @@ check ELF file and executable -> compress_file -> create payload (pass packed_en
 CLOSED: [2025-09-08 Mon 07:33]
 *** TODO Append compress size and file.
 *** TODO Payload
-**** TODO Append clean to a packed elf mmap R E or create one if not space left.
+**** REVIEW Helpful things
+Get bytecode
+[X] check the paylod  appear. ~objdump -M intel -D file | tail~
+[X] check the payload.bin is fine ~ndisasm -b {32,64} file~.
+Test bytecode
+[X] Update section. ~objcopy --update-section .text=payload_64_test_str.bin  a.out~
+[X] Get byte code from a file ~ndisasm -b 64 bytecode/open_mmap_until_mmap_size.bin | awk '{for(i=1; i<=length($2); i+=2) {byte = substr($2, i, 2);if (byte != "") ;{printf "\\x%s", byte}}}'~
+[X] Get byte code from a file ~objdump -M intel --disassemble=_start binary_file | awk 'NR > 7 {for(i=1; i<=NF; i++) if ($i ~ /^[0-9a-fA-F]+$/ && length($i) == 2) printf "\\x%s", $i;}'~
+
+**** TODO Append clean stage 3 to a packed elf mmap R E or create one if not space left.
 **** TODO AUXV
 **** TODO Linker
-**** TODO ASLR
+**** DONE ASLR
+CLOSED: [2025-09-08 Mon 14:14]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-09-08 Mon 14:14]
+:END:
 **** REVIEW Optimization File size
 no use mov use push 0x2, pop rax ->  3B, mov rax, 0x2  -> ?B
 no use xor rsi, rsi, use sub esi, esi. -> 2b [0x29	0xf6]
 in the payload append the string in the code using call, pop
 open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the ptr to "/proc/self/exe".
+**** 
 *** DONE Packed_file.
 CLOSED: [2025-09-08 Mon 07:03]

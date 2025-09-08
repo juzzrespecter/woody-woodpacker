@@ -1047,7 +1047,7 @@
     if (read(eip_pre_hc_vaddr_fd, eip_buffer, eip_pre_hc_vaddr_fd_size) != eip_pre_hc_vaddr_fd_size)
       return (5);
 
-    uint32_t new_e_entry = get_new_e_entrypoint(&ehdr, class);
+    uint32_t new_e_entry = get_new_e_entrypoint(&ehdr, class) + 5;
     printf("new_e_entry_payload %x\n", new_e_entry);
     memcpy(eip_buffer + eip_pre_hc_vaddr_fd_size, &new_e_entry, sizeof(new_e_entry));
     if (read(eip_post_hc_vaddr_fd, eip_buffer + eip_pre_hc_vaddr_fd_size + sizeof(new_e_entry), eip_post_hc_vaddr_fd_size) != eip_post_hc_vaddr_fd_size)
