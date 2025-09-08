@@ -15,33 +15,77 @@ AT_PHDR, the program headers offset
 AT_PHNUM, the number of program headers
 AT_ENTRY, the program’s entry point
 AT_BASE = used for .interp if exist 
-#+begin_src c :tangle no /*https://github.com/torvalds/linux/blob/v3.19/include/uapi/linux/auxvec.h*/
-  #define AT_NULL         0               /* End of vector */
-  #define AT_IGNORE       1               /* Entry should be ignored */
-  #define AT_EXECFD       2               /* File descriptor of program */
-  #define AT_PHDR         3               /* Program headers for program */
-  #define AT_PHENT        4               /* Size of program header entry */
-  #define AT_PHNUM        5               /* Number of program headers */
-  #define AT_PAGESZ       6               /* System page size */
-  #define AT_BASE         7               /* Base address of interpreter */
-  #define AT_FLAGS        8               /* Flags */
-  #define AT_ENTRY        9               /* Entry point of program */
-  #define AT_NOTELF       10              /* Program is not ELF */
-  #define AT_UID          11              /* Real uid */
-  #define AT_EUID         12              /* Effective uid */
-  #define AT_GID          13              /* Real gid */
-  #define AT_EGID         14              /* Effective gid */
-  #define AT_CLKTCK       17              /* Frequency of times() */
-  /* Pointer to the global system page used for system calls and other nice things.  */
-  #define AT_SYSINFO      32
-  #define AT_SYSINFO_EHDR 33
+
+#+begin_src c :tangle no
+  /*https://github.com/torvalds/linux/blob/v3.19/include/uapi/linux/auxvec.h*/
+    #define AT_NULL         0               /* End of vector */
+    #define AT_IGNORE       1               /* Entry should be ignored */
+    #define AT_EXECFD       2               /* File descriptor of program */
+    #define AT_PHDR         3               /* Program headers for program */
+    #define AT_PHENT        4               /* Size of program header entry */
+    #define AT_PHNUM        5               /* Number of program headers */
+    #define AT_PAGESZ       6               /* System page size */
+    #define AT_BASE         7               /* Base address of interpreter */
+    #define AT_FLAGS        8               /* Flags */
+    #define AT_ENTRY        9               /* Entry point of program */
+    #define AT_NOTELF       10              /* Program is not ELF */
+    #define AT_UID          11              /* Real uid */
+    #define AT_EUID         12              /* Effective uid */
+    #define AT_GID          13              /* Real gid */
+    #define AT_EGID         14              /* Effective gid */
+    #define AT_CLKTCK       17              /* Frequency of times() */
+    /* Pointer to the global system page used for system calls and other nice things.  */
+    #define AT_SYSINFO      32
+    #define AT_SYSINFO_EHDR 33
+#+end_src
+
+#+begin_src c :tangle no
+    static int
+    unsimal(unsigned x, char *ptr, int n)
+    {
+        unsigned m = 10;
+        while (10 <= (x / m)) m *= 10;
+        while (10 <= x) {
+            unsigned d = x / m;
+        x -= m * d;
+            m /= 10;
+            ptr[n++] = '0' + d;
+        }
+        ptr[n++] = '0' + x;
+        return n;
+    }
+
+  static int
+  decimal(int x, char *ptr, int n)
+  {
+      if (x < 0) {
+          x = -x;
+          ptr[n++] = '-';
+      }
+      return unsimal(x, ptr, n);
+  }
+
+  static int
+  heximal(unsigned long x, char *ptr, int n)
+  {
+      unsigned j = -1+ 2*sizeof(unsigned long);
+      unsigned long m = 0xful << (4 * j);
+      for (; j; --j, m >>= 4) { // omit leading 0 digits
+          if (m & x) break;
+      }
+      for (; m; --j, m >>= 4) {
+          unsigned d = 0xf & (x >> (4 * j));
+          ptr[n++] = ((10<=d) ? ('a' - 10) : '0') + d;
+      }
+      return n;
+  }
 #+end_src
 * SElinux
 Don't allow to got a mmap with Write and exec. First write then mprotect Read|EXEC
 * CLeaning mmap
 Add to a compress file syscall, pop rdx, ret -
 *  Coding
-#+begin_src c :tangle srcs/elf/POC/packed.c
+#+begin_src c :tangle srcs/elf/POC/check_packer.c
   #include <string.h>
   #include "format_elf.h"
   #include <stdbool.h>
@@ -57,6 +101,10 @@ Add to a compress file syscall, pop rdx, ret -
     return (((size + alignment - 1) / alignment) * alignment);
   }
 
+  bool is_between(uint64_t lower_limit, uint64_t upper_limit, uint64_t value)
+  {
+    return (lower_limit <= value && value <= upper_limit);
+  }
 
   // Maybe paranoia
   bool is_little_endian_the_cpu(void)
@@ -65,6 +113,393 @@ Add to a compress file syscall, pop rdx, ret -
 
     return (*(uint8_t *)&num == 1);
   }
+
+    #define COMPRESS_LZ77_MAX_MATCH_LEN 17
+    #define COMPRESS_LZ77_MIN_MATCH_LEN 3
+    #define COMPRESS_LZ77_SLIDING_WINDOW_SIZE 0x1000
+
+
+    typedef struct s_lz77
+    {
+      unsigned int distance: 12;
+      unsigned int len: 4;
+      char byte;
+    }	__attribute__((packed)) t_lz77;
+
+    typedef struct s_list
+    {
+    	void			*content;
+    	struct s_list	*next;
+    }	t_list;
+
+    t_list	*ft_lstnew(void *content)
+    {
+    	t_list	*node;
+
+    	node = malloc(sizeof(t_list));
+    	if (!node)
+    		return (NULL);
+    	node->content = content;
+    	node->next = NULL;
+    	return (node);
+    }
+
+    t_lz77 *create_lz77_tkn(size_t len, size_t distance, char byte)
+    {
+      t_lz77 *tkn = malloc(sizeof(*tkn));
+
+      if (tkn)
+        {
+          if (len >= COMPRESS_LZ77_MIN_MATCH_LEN)
+    	tkn->len = len - (COMPRESS_LZ77_MIN_MATCH_LEN - 1);
+          else
+    	tkn->len = 0;
+          /* tkn->len = len; */
+          tkn->distance = distance;
+          tkn->byte = byte;
+        }
+      return (tkn);
+    }
+
+    t_list	*ft_lstlast(t_list *lst)
+    {
+    	if (!lst)
+    		return (NULL);
+    	while (lst->next)
+    		lst = lst->next;
+    	return (lst);
+    }
+
+    int	ft_lstsize(t_list *lst)
+    {
+    	int	lst_num;
+
+    	if (!(size_t)lst)
+    		return (0);
+    	lst_num = 1;
+    	while (lst->next)
+    	{
+    		lst_num++;
+    		lst = lst->next;
+    	}
+    	return (lst_num);
+    }
+
+    void	ft_lstadd_back(t_list **lst, t_list *new)
+    {
+    	t_list	*lst_last;
+
+    	if (!new || !lst)
+    		return ;
+    	if (*lst == NULL)
+    		,*lst = new;
+    	else
+    	{
+    		lst_last = ft_lstlast(*lst);
+    		lst_last->next = new;
+    	}
+    }
+
+    void	ft_lstdelone(t_list *lst, void (*del)(void *))
+    {
+    	if (!lst || !del)
+    		return ;
+    	del(lst->content);
+    	free(lst);
+    }
+
+    void	ft_lstclear(t_list **lst, void (*del)(void *))
+    {
+    	t_list	*node;
+    	t_list	*tmp;
+
+    	if (!lst || !*lst)
+    		return ;
+    	node = *lst;
+    	while (node)
+    	{
+    		tmp = node->next;
+    		ft_lstdelone(node, del);
+    		node = tmp;
+    	}
+    	,*lst = NULL;
+    }
+
+    void	ft_lstiter(t_list *lst, void (*f)(void *))
+    {
+    	t_list	*node;
+
+    	if (!lst)
+    		return ;
+    	node = lst;
+    	while (node)
+    	{
+    		f(node->content);
+    		node = node->next;
+    	}
+    }
+
+    void add_sliding_window(char *buffer, size_t *buffer_start, size_t *buffer_end, size_t *buffer_size, const char *data, size_t len)
+    {
+        size_t i;
+        
+        // Add data to ring buffer - new data goes at the end
+        i = 0;
+        while (i < len)
+        {
+            // Add new byte to end of buffer
+            buffer[*buffer_end] = data[i];
+            ,*buffer_end = (*buffer_end + 1) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+            
+            // Update size
+            if (*buffer_size < COMPRESS_LZ77_SLIDING_WINDOW_SIZE)
+                (*buffer_size)++;
+            else
+                ,*buffer_start = (*buffer_start + 1) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+    	i++;
+        }
+        if (*buffer_size == COMPRESS_LZ77_SLIDING_WINDOW_SIZE && *buffer_start == *buffer_end)
+          ,*buffer_start = (*buffer_start + 1) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+
+    }
+
+    // Access buffer from end backwards (most recent first)
+    char get_sliding_window_char_from_end(const char *buffer, size_t buffer_end, size_t buffer_size, size_t backward_index)
+    {
+        if (!buffer_size || backward_index >= buffer_size)
+            return 0; // Out of bounds
+       size_t target_pos = (buffer_end - 1 - backward_index + COMPRESS_LZ77_SLIDING_WINDOW_SIZE) 
+                           % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+        return buffer[target_pos]; 
+    }
+
+    char get_sliding_window_char(const char *buffer, size_t buffer_start, size_t buffer_size, size_t index)
+    {
+      if (!buffer || !buffer_size || index >= buffer_size)
+        return (0);
+      size_t actual_index = (buffer_start + index) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+      return (buffer[actual_index]);
+    }
+    int lz77_compress_find_best_match(const char *sliding_window, size_t sliding_window_start, size_t sliding_window_end, size_t sliding_window_buffer_size, const char *src, size_t src_len, size_t *best_distance, size_t *best_len)
+    {
+      size_t search_pos;
+      size_t match_len;
+      size_t window_ndx;
+      size_t sliding_window_start_reached;
+
+      if (!sliding_window||! src)
+        return (-1);
+      ,*best_distance = 0;
+      ,*best_len = 0;
+      sliding_window_start_reached = 0;
+      search_pos = sliding_window_end;//
+      match_len = 0;
+      while (sliding_window_buffer_size && !sliding_window_start_reached && src_len && *best_len != COMPRESS_LZ77_MAX_MATCH_LEN)
+        {
+          search_pos = (search_pos - 1 + COMPRESS_LZ77_SLIDING_WINDOW_SIZE) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+          if (search_pos == sliding_window_start)
+    	sliding_window_start_reached = 1;
+          match_len = 0;
+          window_ndx = (search_pos + match_len) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+          while (match_len < COMPRESS_LZ77_MAX_MATCH_LEN && match_len < src_len && window_ndx < sliding_window_buffer_size
+    	     && get_sliding_window_char(sliding_window, sliding_window_start, sliding_window_buffer_size, window_ndx) == src[match_len])
+    	{
+    	  match_len++;
+    	  window_ndx = (search_pos + match_len) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+    	}
+          if (COMPRESS_LZ77_MAX_MATCH_LEN < match_len)
+    	match_len = COMPRESS_LZ77_MAX_MATCH_LEN;
+          if (match_len >= COMPRESS_LZ77_MIN_MATCH_LEN &&match_len > *best_len)
+    	{
+    	  ,*best_len = match_len;
+    	  ,*best_distance = (sliding_window_end - search_pos + COMPRESS_LZ77_SLIDING_WINDOW_SIZE) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+    	  if (!*best_distance || *best_distance > sliding_window_buffer_size)
+    	    {
+    	      ,*best_distance = 0;
+    	      ,*best_len = 0;
+    	    }
+    	}
+        }
+      return (0);
+    }
+
+    t_list *lz77_compress_list(const char *src, size_t src_len)
+    {
+      char sliding_window[COMPRESS_LZ77_SLIDING_WINDOW_SIZE];
+      size_t sliding_window_end = 0;
+      size_t sliding_window_start = 0;
+      size_t sliding_window_buffer_size = 0;
+      size_t distance;
+      size_t len;
+      t_list *tokens_lst;
+      t_list *token_lst;
+      t_lz77 *token;
+      char		byte;
+      size_t token_count;
+      size_t total_input_processed;
+      size_t og_src_len = src_len;
+      size_t literal_count = 0;
+      size_t match_count = 0;
+      size_t total_match_length = 0;
+
+      token_count = 0;
+      total_input_processed = 0;
+      tokens_lst = NULL;
+      while (src_len)
+        {
+          if (lz77_compress_find_best_match(&sliding_window[0], sliding_window_start, sliding_window_end, sliding_window_buffer_size, src, src_len, &distance, &len))
+    	{
+    	  ft_lstclear(&tokens_lst, free);
+    	  return (tokens_lst);
+    	}
+          byte = 0;
+          if (len >= src_len)
+    	printf("Ignored next byte inside the token\n");
+          else
+    	byte = src[len];
+
+          token = create_lz77_tkn(len, distance, byte);
+          if (byte != '\n')
+    	printf("(%lu, %lu, %c)\t", distance, len, byte);
+          else
+    	printf("(%lu, %lu, \\n)\t", distance, len);
+          if (!len)
+    	literal_count++;
+          else
+    	{
+    	  match_count++;
+    	  total_match_length += len;
+    	}
+    	
+          if (!token)
+    	{
+    	  ft_lstclear(&tokens_lst, free);
+    	  return (tokens_lst);
+    	}
+          token_lst = ft_lstnew(token);
+          if (!token_lst)
+    	{
+    	  free(token);
+    	  ft_lstclear(&tokens_lst, free);
+    	  return (tokens_lst);
+    	}
+          ft_lstadd_back(&tokens_lst, token_lst);
+          len++;// INFO If delete this line all len should be + 1
+          add_sliding_window(sliding_window, &sliding_window_start, &sliding_window_end, &sliding_window_buffer_size, src, len);
+          src += len;
+          if (len > src_len)
+    	{
+    	  len = src_len;
+    	  src_len = 0;
+    	}
+          else
+    	src_len -= len;
+          token_count++;
+          total_input_processed += len;
+          printf("Total tokens: %zu\t", token_count);
+          printf("Total input processed: %zu\t", total_input_processed);
+          printf("Original input size: %zu\t", og_src_len);
+          printf("window_start %lu\t", sliding_window_start);
+          printf("window_end %lu\t", sliding_window_end);
+          printf("Tokens per byte: %.2f\n", (double)token_count / total_input_processed);
+        }
+      printf("Literals: %ld, Matches: %ld\n", literal_count, match_count);
+      printf("Average match length: %.2f\n", (double)total_match_length / match_count);
+      printf("Compression efficiency: %.2f%%\n", (double)(literal_count + match_count) / total_input_processed * 100);
+      return (tokens_lst);
+    }
+
+    int lz77_compress(char *src, size_t src_len, int fd)
+    {
+      t_list *tokens = lz77_compress_list(src, src_len);
+      t_list *tmp;
+      t_lz77 *token;
+      size_t compress_size;
+
+      if (!tokens)
+        return (-1);
+      tmp = tokens;
+      // Write original size.
+      compress_size = ft_lstsize(tmp) * sizeof(*token) + sizeof(compress_size);
+      printf("compress_size %lu, src_size %lu, compress_ratio %f\n", compress_size, src_len, (double)compress_size / src_len);
+      if (compress_size > src_len)
+        printf("don't compress\n");
+      compress_size = src_len;
+      write(fd, &compress_size, sizeof(compress_size));
+      while (tmp)
+        {
+          token = tmp->content;
+          if (!token)//Shouldn't happend.
+    	return (-1);
+          /* if (tmp == tokens) */
+          write(fd, token, sizeof(*token));
+          tmp = tmp->next;
+        }
+      ft_lstclear(&tokens, free);
+      return (0);
+    }
+
+
+    int lz77_decompress(const char *compressed_data, size_t compressed_size, int fd)
+    {
+      size_t original_size;
+      char *output;
+      char window[COMPRESS_LZ77_SLIDING_WINDOW_SIZE] = {0};
+      size_t window_start = 0, window_end = 0, window_size = 0, output_pos = 0;
+      const char *current = compressed_data + sizeof(size_t);
+      size_t length;
+      t_lz77 *token;
+      if (!compressed_data || compressed_size < sizeof(size_t))
+        return (-1);
+
+      memcpy(&original_size, compressed_data, sizeof(size_t));
+      output = malloc(original_size); 
+      if (!output)
+        return (-1);
+        
+      // Use your existing sliding window functions
+      while ((current + sizeof(*token)) <= (compressed_data + compressed_size) && output_pos < original_size) {
+        token = (t_lz77*)current;
+            
+        // Unified processing
+        length = 0;
+        if (token->len > 0)
+          length = (token->len + 2);
+            
+        // Copy referenced data using your get function
+        for (size_t i = 0; token->distance && i < length && output_pos < original_size; i++) {
+          // For decompression, we want to read from (distance) positions back
+    	size_t backward_idx = window_end - length; // 1 = most recent
+    	printf("backward_idx %lu\n, window_size %lu\n", backward_idx, window_size);
+    	if (backward_idx == window_size)
+    	    break;
+    	char byte = get_sliding_window_char(window, window_start, window_size, backward_idx + i);
+    	output[output_pos++] = byte;
+          }
+            
+        // Add next character
+        if (output_pos < original_size)
+          output[output_pos++] = token->byte;
+            
+        // Update window using your add function
+        add_sliding_window(window, &window_start, &window_end, &window_size,
+    		       output + (output_pos - length - 1), length + 1);
+            
+        current += sizeof(t_lz77);
+      }
+        
+      if (output_pos == original_size) {
+        write(fd, output, output_pos);
+        free(output);
+        return (0);
+      }
+        
+      free(output);
+      return (-1);
+    }
+
+
+
 
   // Begin setter eh/ph/sh
   void elf_phdr_set_memsz(t_elf_ph *phdr, uint64_t value, unsigned char class)
@@ -127,6 +562,19 @@ Add to a compress file syscall, pop rdx, ret -
     phdr->elf64->p_filesz = value;
   }
 
+  void elf_phdr_set_align(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("phdr set addr elf32\n");
+        phdr->elf32->p_align = (uint32_t) value;
+        return ;
+      }
+    printf("phdr set addr elf64\n");
+    phdr->elf64->p_align = value;
+  }
+
+
   void elf_phdr_set_flags(t_elf_ph *phdr, uint64_t value, unsigned char class)
   {
     if (class == ELFCLASS32) 
@@ -137,6 +585,18 @@ Add to a compress file syscall, pop rdx, ret -
       }
     printf("phdr set addr elf64\n");
     phdr->elf64->p_flags = value;
+  }
+
+  void elf_phdr_set_type(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+    if (class == ELFCLASS32) 
+      {
+        printf("phdr set addr elf32\n");
+        phdr->elf32->p_type = (uint32_t) value;
+        return ;
+      }
+    printf("phdr set addr elf64\n");
+    phdr->elf64->p_type = value;
   }
 
   void elf_ehdr_set_shoff(t_elf_h *ehdr, uint64_t value, unsigned char class)
@@ -261,14 +721,50 @@ Add to a compress file syscall, pop rdx, ret -
     return  (0);
   }
 
-  size_t elf_get_highest_loadable_vaddr_avalaible(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
+  size_t elf_get_gnu_stack_phdr_ndx(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
+  {
+    t_elf_ph phdr;
+    uint64_t i;
+
+    i = 0;
+    while (++i < phnum) // Skip the first 
+      {
+        phdr = elf_get_program_header(ehdr, i);
+        if (elf_get_program_header_type(&phdr, class) == PT_GNU_STACK) // If not loadable ignore
+  	return (i);
+      }
+    return  (0);
+  }
+
+  size_t elf_get_free_exec_vaddr_avalaible(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
+  {
+    t_elf_ph phdr;
+    uint64_t i;
+    size_t p_align;
+    size_t p_memsz;
+
+    i = 0;
+    while (++i < phnum) // Skip the first 
+      {
+        phdr = elf_get_program_header(ehdr, i);
+        if (elf_get_program_header_type(&phdr, class) != PT_LOAD || !(elf_get_program_header_flags(&phdr, class) & PF_X)) // If not loadable and executable ignore
+  	continue ;
+        p_memsz = elf_get_program_header_memsz(&phdr, class);
+        p_align = elf_get_program_header_align(&phdr, class);
+        if (p_memsz < p_align)
+  	return (elf_get_program_header_vaddr(&phdr, class) + p_memsz);
+      }
+    return  (0);
+  }
+
+  size_t elf_get_highest_used_vaddr_avalaible(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
   {
     t_elf_ph phdr;
     uint64_t i;
     size_t p_vaddr;
     size_t p_end_vaddr;
     size_t p_memsz;
-    size_t highest_avalaible_addr = 0;
+    size_t highest_used_addr = 0;
 
     i = 0;
     while (++i < phnum) // Skip the first 
@@ -279,10 +775,15 @@ Add to a compress file syscall, pop rdx, ret -
         p_vaddr = elf_get_program_header_vaddr(&phdr, class);
         p_memsz = elf_get_program_header_memsz(&phdr, class);
         p_end_vaddr = p_vaddr + p_memsz;
-        if (highest_avalaible_addr <= p_end_vaddr)
-  	highest_avalaible_addr = get_alignment_effective_addr(elf_get_program_header_align(&phdr, class), p_end_vaddr);
+        if (highest_used_addr <= p_end_vaddr)
+  	highest_used_addr = p_end_vaddr;
       }
-    return  (highest_avalaible_addr);
+    return  (highest_used_addr);
+  }
+
+  size_t elf_get_highest_loadable_vaddr_avalaible(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
+  {
+    return (get_alignment_effective_addr(0x1000, elf_get_highest_used_vaddr_avalaible(ehdr, class, phnum)));
   }
 
   off_t get_je_size(void)
@@ -561,12 +1062,11 @@ Add to a compress file syscall, pop rdx, ret -
     const t_type	off = (t_type){.b8 = offset};
 
     written = 0;
-    if (class == ELFCLASS64)
-      printf("Elf64\n");
-      /* { */
-        if (dst)
-  	memcpy(dst, "\x80", 1);
-        written++;
+    if (class == ELFCLASS32 && off.b8 != off.b4)
+      return (0);
+    if (dst)
+      memcpy(dst, "\x80", 1);
+    written++;
       /* } */
 
     if (!off.b8)
@@ -937,15 +1437,17 @@ Add to a compress file syscall, pop rdx, ret -
     return ((uint32_t)new_phdr_vaddr);
   }
 
-  int generate_payload(void *elf_mmap, char **payload_ptr, size_t *payload_size)
+
+  int generate_payload(void *elf_mmap, size_t compressed_size, char **payload_ptr, size_t *payload_size)
   {
     // 1. Begin payload stuff
     // get the section to include the payload
     t_elf_h 		ehdr = (t_elf_h){.elf32 = elf_mmap};
     const uint64_t     e_entrypoint = elf_get_elfh_entry(&ehdr);
     /* const uint64_t 	shnum = elf_get_elfh_shnum(&ehdr); */
-    /* const uint64_t 	phnum = elf_get_elfh_phnum(&ehdr); */
+    const uint64_t 	phnum = elf_get_elfh_phnum(&ehdr);
     const unsigned char 	class = elf_get_elfh_e_ident_class(elf_mmap);
+    const size_t free_vaddr = elf_get_free_exec_vaddr_avalaible(&ehdr, class, phnum);
     // in case find the section show relevant info function.
 
     int eip_pre_hc_vaddr_fd;
@@ -1112,25 +1614,25 @@ Add to a compress file syscall, pop rdx, ret -
     return (0);
   }
 
-  static t_elf_ph get_n_loadable_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t n)
-  {
-    t_elf_ph phdr;
-    uint64_t ph_ndx;
-    uint64_t times_loadable_and_exec;
+  /* static t_elf_ph get_n_loadable_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t n) */
+  /* { */
+  /*   t_elf_ph phdr; */
+  /*   uint64_t ph_ndx; */
+  /*   uint64_t times_loadable_and_exec; */
 
-    ph_ndx = 0;
-    times_loadable_and_exec = 0;
-    while (++ph_ndx < phnum)
-      {
-        phdr = elf_get_program_header(ehdr, ph_ndx);
-        if (PT_LOAD == elf_get_program_header_type(&phdr, class))
-  	times_loadable_and_exec++;
-        if (times_loadable_and_exec == n)
-  	return (phdr);
-      }
-    phdr.elf32 = NULL;
-    return (phdr);
-  }
+  /*   ph_ndx = 0; */
+  /*   times_loadable_and_exec = 0; */
+  /*   while (++ph_ndx < phnum) */
+  /*     { */
+  /*       phdr = elf_get_program_header(ehdr, ph_ndx); */
+  /*       if (PT_LOAD == elf_get_program_header_type(&phdr, class)) */
+  /* 	times_loadable_and_exec++; */
+  /*       if (times_loadable_and_exec == n) */
+  /* 	return (phdr); */
+  /*     } */
+  /*   phdr.elf32 = NULL; */
+  /*   return (phdr); */
+  /* } */
 
 
 
@@ -1202,30 +1704,26 @@ Add to a compress file syscall, pop rdx, ret -
   static int prepare_info(t_elf_h *ehdr, unsigned char class, uint64_t *new_phdr_vaddr,
   			uint64_t phnum)
   {
-    /* t_elf_ph phdr = get_farest_phdr_offset_add_filesz(ehdr, class, phnum); */
     const uint64_t new_align = 0x1000;
-    const uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
     ,*new_phdr_vaddr = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum);
-    printf("new_phdr_vaddr %% 0x1000 = %lu\n",*new_phdr_vaddr % new_align);
+    printf("new_phdr_vaddr %% 0x1000 = %lu\n", *new_phdr_vaddr % new_align);
     printf("new_phdr_vaddr %% 0x1000 = 0x%lx\n", *new_phdr_vaddr % new_align);
     return 0;
   }
 
   static int copy_and_modify_elf_header(t_elf_h *ehdr, int packed, unsigned char class,
-  				      uint64_t new_entrypoint, uint64_t phnum, uint64_t *writed)
+  				      uint64_t new_phdr_vaddr, uint64_t *new_phnum ,uint64_t phnum, uint64_t *writed)
   {
     uint64_t elf_struct_size = elf_get_struct_size_elf_header((char *)ehdr->elf32);
     t_elf_h ehdr_cp = {.elf32 = malloc(elf_struct_size)};
-    uint64_t new_phnum = 2;
 
     if (!ehdr_cp.elf32)
       return 14;
     memcpy(ehdr_cp.elf32, ehdr->elf32, elf_struct_size);
+    ,*new_phnum = 2 + elf_is_gnu_stack_phdr(ehdr, class, phnum);// if is a PHDR PT_GNU_STACK
+    elf_ehdr_set_entry(&ehdr_cp, new_phdr_vaddr + elf_get_elfh_phentsize(ehdr) * *new_phnum, class);
+    elf_ehdr_set_phnum(&ehdr_cp, *new_phnum, class);
     elf_ehdr_set_shoff(&ehdr_cp, 0, class);
-    elf_ehdr_set_entry(&ehdr_cp, new_entrypoint, class);
-    if (elf_is_gnu_stack_phdr(ehdr, class, phnum))// if is a PHDR PT_GNU_STACK
-      new_phnum++;
-    elf_ehdr_set_phnum(&ehdr_cp, new_phnum, class);
     elf_ehdr_set_shnum(&ehdr_cp, 0, class);
     elf_ehdr_set_shentsize(&ehdr_cp, 0, class);
     elf_ehdr_set_shstrndx(&ehdr_cp, 0, class);
@@ -1241,70 +1739,75 @@ Add to a compress file syscall, pop rdx, ret -
   /*   return (elf_get_program_ndx_from_addr(ehdr, class, phnum, elf_get_section_header_addr(&shdr, class)) != ndx_ph); */
   /* } */
 
-  // TODO update this function.
-  //for reuse the same packer on a packed file i should detect if i is already packed and add the new payload.
-  static int write_program_headers(t_elf_h *ehdr, int packed, uint64_t phnum,
-  				 uint64_t new_phdr_offset, uint64_t new_phdr_vaddr,
+  static int write_program_headers(t_elf_h *ehdr, int packed, uint64_t phnum, uint64_t new_phdr_vaddr,
                                    unsigned char class, uint64_t payload_size, uint64_t *writed)
   {
-    t_elf_ph phdr_loadable_and_exec_first = get_n_loadable_and_exec_phdr(ehdr, class, phnum, 1);
     const uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
+    t_elf_ph phdr;
     uint64_t ndx_ph;
-
-    t_elf_ph phdr_cp = {.elf32 = malloc(phdr_struct_size)};
-    if (!phdr_cp.elf32 | !phdr_loadable_and_exec_first.elf32)
-      return 15;
-    ndx_ph = 0;
-    t_elf_ph phdr = elf_get_program_header(ehdr, ndx_ph);
     uint64_t p_offset;
-    memcpy(phdr_cp.elf32, phdr.elf32, phdr_struct_size);
-    elf_phdr_set_filesz(&phdr_cp, elf_get_program_header_filesz(&phdr, class) + phdr_struct_size, class);
-    elf_phdr_set_memsz(&phdr_cp, elf_get_program_header_memsz(&phdr, class) + phdr_struct_size, class);
-    if (write(packed, phdr_cp.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
-      return (17);
-    ,*writed += phdr_struct_size;
-    //Write modify the phdr already exist
-    while (++ndx_ph < phnum)
-      {
-        phdr = elf_get_program_header(ehdr, ndx_ph);
-        memcpy(phdr_cp.elf32, phdr.elf32, phdr_struct_size);
+    uint64_t p_filesz;
+    uint64_t p_memsz;
+    uint64_t p_align;
+    uint64_t p_vaddr;
+    uint64_t p_paddr;
+    uint64_t p_type;
+    uint64_t p_flags;
+    t_elf_ph phdr_cp = {.elf32 = malloc(phdr_struct_size)};
 
-        p_offset = elf_get_program_header_offset(&phdr, class);
-        if (increment_offset_phdr(ehdr, p_offset, phnum, class))//phdr after > ehdr and before 2 load offset
-  	{
-  	  elf_phdr_set_offset(&phdr_cp, p_offset + phdr_struct_size, class);
-  	  if (elf_get_program_header_vaddr(&phdr, class))
-  	    elf_phdr_set_vaddr(&phdr_cp, elf_get_program_header_vaddr(&phdr, class) + phdr_struct_size, class);
-  	  if (elf_get_program_header_paddr(&phdr, class)) // BSD
-  	    elf_phdr_set_paddr(&phdr_cp, elf_get_program_header_paddr(&phdr, class) + phdr_struct_size, class);
-  	}
-        else if (!p_offset && PT_LOAD == elf_get_program_header_type(&phdr, class))//first load include last phdr.
-  	{
-  	  elf_phdr_set_filesz(&phdr_cp, elf_get_program_header_filesz(&phdr, class) + phdr_struct_size, class);
-  	  elf_phdr_set_memsz(&phdr_cp, elf_get_program_header_memsz(&phdr, class) + phdr_struct_size, class);
-  	  if (elf_get_program_header_memsz(&phdr_cp, class) + elf_get_program_header_vaddr(&phdr_cp, class) > elf_get_program_header_vaddr(&phdr_loadable_and_exec_first, class))
-  	    return (16);// Overlap the address of the next phdr.
-  	}
-        if (write(packed, phdr_cp.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
-  	return (17);
+    if (!phdr_cp.elf32)
+      return (1);
+    ndx_ph = 0;
+    phdr = elf_get_program_header(ehdr, ndx_ph);
+
+    p_align = 0x1000;
+    p_filesz = p_align;
+    p_memsz = elf_get_highest_used_vaddr_avalaible(ehdr, class, phnum);
+    p_offset = 0;
+    p_vaddr = elf_get_program_header_vaddr(&phdr, class);
+    p_paddr = elf_get_program_header_paddr(&phdr, class);
+    p_type = PT_LOAD;
+    p_flags = PF_R | PF_W;
+    elf_phdr_set_filesz(&phdr_cp, p_filesz, class);
+    elf_phdr_set_memsz(&phdr_cp, p_memsz, class);
+    elf_phdr_set_offset(&phdr_cp, p_offset, class);
+    elf_phdr_set_vaddr(&phdr_cp, p_vaddr, class);
+    elf_phdr_set_paddr(&phdr_cp, p_paddr, class);
+    elf_phdr_set_type(&phdr_cp, p_type, class);
+    elf_phdr_set_flags(&phdr_cp, p_flags, class);
+    elf_phdr_set_align(&phdr_cp, p_align, class);
+    if (write(packed, phdr_cp.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
+      {
+        free(phdr_cp.elf32);
+        return (2);
+      }
+    ,*writed += phdr_struct_size;//first header
+    p_flags = PF_R | PF_X;
+    p_vaddr = new_phdr_vaddr;
+    p_paddr = p_vaddr;
+    p_memsz = payload_size;
+    p_filesz = payload_size;
+    elf_phdr_set_filesz(&phdr_cp, p_filesz, class);
+    elf_phdr_set_memsz(&phdr_cp, p_memsz, class);
+    elf_phdr_set_vaddr(&phdr_cp, p_vaddr, class);
+    elf_phdr_set_paddr(&phdr_cp, p_paddr, class);
+    elf_phdr_set_flags(&phdr_cp, p_flags, class);
+    if (write(packed, phdr_cp.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
+      {
+        free(phdr_cp.elf32);
+        return (3);
+      }
+    ,*writed += phdr_struct_size;//second header
+    free(phdr_cp.elf32);
+    if (elf_is_gnu_stack_phdr(ehdr, class, phnum))
+      {
+        ndx_ph = elf_get_gnu_stack_phdr_ndx(ehdr, class, phnum);
+        phdr = elf_get_program_header(ehdr, ndx_ph);
+        if (write(packed, phdr.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
+  	  return (4);
         ,*writed += phdr_struct_size;
       }
-    //Set the new_phdr.
-    memcpy(phdr_cp.elf32, phdr_loadable_and_exec_first.elf32, phdr_struct_size);// phdr .text
-    //Modify memsz, filesz
-
-    elf_phdr_set_memsz(&phdr_cp, payload_size, class);
-    elf_phdr_set_filesz(&phdr_cp, payload_size, class);
-    elf_phdr_set_vaddr(&phdr_cp, new_phdr_vaddr, class);
-    elf_phdr_set_flags(&phdr_cp, PF_X | PF_R, class);// May now don't need but don't care.
-    if (elf_get_program_header_paddr(&phdr_cp, class))// Under BSD Is unused and must be Zero
-      elf_phdr_set_paddr(&phdr_cp, new_phdr_vaddr, class);
-    elf_phdr_set_offset(&phdr_cp, new_phdr_offset, class);
-    if (write(packed, phdr_cp.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
-      return (18);
-    ,*writed += phdr_struct_size;
-    free(phdr_cp.elf32);
-    return 0;
+    return (0);
   }
 
   static int write_padding_and_payload(int packed, void **generated_bytecode, uint64_t payload_size,
@@ -1329,66 +1832,66 @@ Add to a compress file syscall, pop rdx, ret -
     return (0);
   }
 
-  static int write_remaining_section_headers(t_elf_h *ehdr, int packed, uint64_t phnum, uint64_t shnum,
-                                             unsigned char class, uint64_t new_phdr_offset,
-                                             uint64_t new_phdr_vaddr, uint64_t *writed, uint64_t payload_size)
-  {
-    const uint64_t alignment = 16;
-    uint64_t shdr_struct_size = elf_get_section_header_struct_size(ehdr);
-    uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
-    t_elf_sh shdr_cp = (t_elf_sh){.elf32 = malloc(shdr_struct_size)};
-    uint64_t ndx_sh;
-    if (!shdr_cp.elf32)
-      return (12);
-    printf("writed %lu\n", *writed);
-    uint64_t padding_size = alignment - *writed % alignment;
-    printf("padding to begin Shdr: %lu\n", padding_size);
+  /* static int write_remaining_section_headers(t_elf_h *ehdr, int packed, uint64_t phnum, uint64_t shnum, */
+  /*                                            unsigned char class, uint64_t new_phdr_offset, */
+  /*                                            uint64_t new_phdr_vaddr, uint64_t *writed, uint64_t payload_size) */
+  /* { */
+  /*   const uint64_t alignment = 16; */
+  /*   uint64_t shdr_struct_size = elf_get_section_header_struct_size(ehdr); */
+  /*   uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class); */
+  /*   t_elf_sh shdr_cp = (t_elf_sh){.elf32 = malloc(shdr_struct_size)}; */
+  /*   uint64_t ndx_sh; */
+  /*   if (!shdr_cp.elf32) */
+  /*     return (12); */
+  /*   printf("writed %lu\n", *writed); */
+  /*   uint64_t padding_size = alignment - *writed % alignment; */
+  /*   printf("padding to begin Shdr: %lu\n", padding_size); */
 
-    if (padding_size != alignment)
-      {
-        if (padding(packed, padding_size))
-  	return (1);
-        writed[0] += padding_size;
-      }
-    ndx_sh = 0;
-    t_elf_sh shdr = elf_get_section_header(ehdr, ndx_sh);
-    memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size);
-    printf("writed payload begining shdr writed: %ld\n", *writed);
-    uint64_t shcp_offset;   
+  /*   if (padding_size != alignment) */
+  /*     { */
+  /*       if (padding(packed, padding_size)) */
+  /* 	return (1); */
+  /*       writed[0] += padding_size; */
+  /*     } */
+  /*   ndx_sh = 0; */
+  /*   t_elf_sh shdr = elf_get_section_header(ehdr, ndx_sh); */
+  /*   memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); */
+  /*   printf("writed payload begining shdr writed: %ld\n", *writed); */
+  /*   uint64_t shcp_offset;    */
    
-    if (write(packed, shdr_cp.elf32, shdr_struct_size) != (ssize_t)shdr_struct_size)
-      return (2);
-    ,*writed += shdr_struct_size;
-    while (++ndx_sh < shnum)
-      {
-        shdr = elf_get_section_header(ehdr, ndx_sh);
-        shcp_offset = elf_get_section_header_offset(&shdr, class);
-        memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size);
-        if (increment_offset_phdr(ehdr, shcp_offset, phnum, class))
-  	{
-  	  elf_shdr_set_offset(&shdr_cp, elf_get_section_header_offset(&shdr, class) + phdr_struct_size, class);
-  	  if (elf_get_section_header_addr(&shdr, class))
-  	    elf_shdr_set_addr(&shdr_cp, elf_get_section_header_addr(&shdr, class) + phdr_struct_size, class);
-  	}
-        if (write(packed, shdr_cp.elf32, shdr_struct_size) != (ssize_t)shdr_struct_size)
-  	return (1);
-        ,*writed += shdr_struct_size;
-      }
-    //Modify  flags, name, type, address, offset, align, link, Info, Entsize
-    elf_shdr_set_addr(&shdr_cp, new_phdr_vaddr, class);
-    elf_shdr_set_offset(&shdr_cp, new_phdr_offset, class);
-    elf_shdr_set_size(&shdr_cp, payload_size, class);
-    elf_shdr_set_addralign(&shdr_cp, 16, class);
-    elf_shdr_set_name(&shdr_cp, elf_get_section_header_name(&shdr_cp, class) + 1, class);
-    elf_shdr_set_type(&shdr_cp, SHT_PROGBITS, class);
-    elf_shdr_set_flags(&shdr_cp, SHF_ALLOC | SHF_EXECINSTR, class);
-    elf_shdr_set_link(&shdr_cp, 0, class);
-    elf_shdr_set_info(&shdr_cp, 0, class);
-    elf_shdr_set_entsize(&shdr_cp, 0, class);
-    ,*writed += write(packed, shdr_cp.elf32, shdr_struct_size);
-    free(shdr_cp.elf32);
-    return 0;
-  }
+  /*   if (write(packed, shdr_cp.elf32, shdr_struct_size) != (ssize_t)shdr_struct_size) */
+  /*     return (2); */
+  /*   *writed += shdr_struct_size; */
+  /*   while (++ndx_sh < shnum) */
+  /*     { */
+  /*       shdr = elf_get_section_header(ehdr, ndx_sh); */
+  /*       shcp_offset = elf_get_section_header_offset(&shdr, class); */
+  /*       memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); */
+  /*       if (increment_offset_phdr(ehdr, shcp_offset, phnum, class)) */
+  /* 	{ */
+  /* 	  elf_shdr_set_offset(&shdr_cp, elf_get_section_header_offset(&shdr, class) + phdr_struct_size, class); */
+  /* 	  if (elf_get_section_header_addr(&shdr, class)) */
+  /* 	    elf_shdr_set_addr(&shdr_cp, elf_get_section_header_addr(&shdr, class) + phdr_struct_size, class); */
+  /* 	} */
+  /*       if (write(packed, shdr_cp.elf32, shdr_struct_size) != (ssize_t)shdr_struct_size) */
+  /* 	return (1); */
+  /*       *writed += shdr_struct_size; */
+  /*     } */
+  /*   //Modify  flags, name, type, address, offset, align, link, Info, Entsize */
+  /*   elf_shdr_set_addr(&shdr_cp, new_phdr_vaddr, class); */
+  /*   elf_shdr_set_offset(&shdr_cp, new_phdr_offset, class); */
+  /*   elf_shdr_set_size(&shdr_cp, payload_size, class); */
+  /*   elf_shdr_set_addralign(&shdr_cp, 16, class); */
+  /*   elf_shdr_set_name(&shdr_cp, elf_get_section_header_name(&shdr_cp, class) + 1, class); */
+  /*   elf_shdr_set_type(&shdr_cp, SHT_PROGBITS, class); */
+  /*   elf_shdr_set_flags(&shdr_cp, SHF_ALLOC | SHF_EXECINSTR, class); */
+  /*   elf_shdr_set_link(&shdr_cp, 0, class); */
+  /*   elf_shdr_set_info(&shdr_cp, 0, class); */
+  /*   elf_shdr_set_entsize(&shdr_cp, 0, class); */
+  /*   *writed += write(packed, shdr_cp.elf32, shdr_struct_size); */
+  /*   free(shdr_cp.elf32); */
+  /*   return 0; */
+  /* } */
   uint64_t elf_get_struct_size_elf_dyn(unsigned char class)
   {
     if (ELFCLASS64 == class)
@@ -1438,22 +1941,22 @@ Add to a compress file syscall, pop rdx, ret -
   }
 
 
-  static t_elf_sh get_dynamic_section(t_elf_h *ehdr, uint64_t shnum, unsigned char class)
-  {
-      t_elf_sh shdr;
-      uint64_t ndx_sh = 1;
-      while (ndx_sh < shnum)
-        {
-          shdr = elf_get_section_header(ehdr, ndx_sh);
-          uint32_t sh_type = elf_get_section_header_type(&shdr, class);
+  /* static t_elf_sh get_dynamic_section(t_elf_h *ehdr, uint64_t shnum, unsigned char class) */
+  /* { */
+  /*     t_elf_sh shdr; */
+  /*     uint64_t ndx_sh = 1; */
+  /*     while (ndx_sh < shnum) */
+  /*       { */
+  /*         shdr = elf_get_section_header(ehdr, ndx_sh); */
+  /*         uint32_t sh_type = elf_get_section_header_type(&shdr, class); */
           
-          if (sh_type == SHT_DYNAMIC)
-  	  return (shdr);
-  	ndx_sh++;
-      }
-      shdr.elf32 = NULL;
-      return (shdr);
-  }
+  /*         if (sh_type == SHT_DYNAMIC) */
+  /* 	  return (shdr); */
+  /* 	ndx_sh++; */
+  /*     } */
+  /*     shdr.elf32 = NULL; */
+  /*     return (shdr); */
+  /* } */
 
   bool in_array(void **arr, uint64_t arr_size, void *value)
   {
@@ -1469,33 +1972,33 @@ Add to a compress file syscall, pop rdx, ret -
     return (in_array((void *)&address_type_arr[0], sizeof(address_type_arr) / sizeof(*address_type_arr), (void *)d_tag));
   }
 
-  static int vaddr_to_offset_safe(t_elf_h *ehdr, uint64_t vaddr, uint64_t *offset, unsigned char class)
-  {
-      uint64_t phnum = elf_get_elfh_phnum(ehdr);
+  /* static int vaddr_to_offset_safe(t_elf_h *ehdr, uint64_t vaddr, uint64_t *offset, unsigned char class) */
+  /* { */
+  /*     uint64_t phnum = elf_get_elfh_phnum(ehdr); */
       
-      for (uint64_t i = 0; i < phnum; i++) {
-          t_elf_ph phdr = elf_get_program_header(ehdr, i);
+  /*     for (uint64_t i = 0; i < phnum; i++) { */
+  /*         t_elf_ph phdr = elf_get_program_header(ehdr, i); */
           
-          if (elf_get_program_header_type(&phdr, class) == PT_LOAD) {
-              uint64_t vaddr_start = elf_get_program_header_vaddr(&phdr, class);
-              uint64_t memsz = elf_get_program_header_memsz(&phdr, class);
-              /* uint64_t filesz = elf_get_program_header_filesz(&phdr, class); */
-              uint64_t offset_start = elf_get_program_header_offset(&phdr, class);
-              uint64_t vaddr_end = vaddr_start + memsz;
+  /*         if (elf_get_program_header_type(&phdr, class) == PT_LOAD) { */
+  /*             uint64_t vaddr_start = elf_get_program_header_vaddr(&phdr, class); */
+  /*             uint64_t memsz = elf_get_program_header_memsz(&phdr, class); */
+  /*             /\* uint64_t filesz = elf_get_program_header_filesz(&phdr, class); *\/ */
+  /*             uint64_t offset_start = elf_get_program_header_offset(&phdr, class); */
+  /*             uint64_t vaddr_end = vaddr_start + memsz; */
               
-              // Check if vaddr is within this segment
-              if (is_between(vaddr_start, vaddr_end - 1, vaddr)) {
-                  // Check if it's in the file-mapped portion
-  	      ,*offset = offset_start + (vaddr - vaddr_start);
-  	      return 0;  // Success
-  	                  }
-          }
-      }
+  /*             // Check if vaddr is within this segment */
+  /*             if (is_between(vaddr_start, vaddr_end - 1, vaddr)) { */
+  /*                 // Check if it's in the file-mapped portion */
+  /* 	      *offset = offset_start + (vaddr - vaddr_start); */
+  /* 	      return 0;  // Success */
+  /* 	                  } */
+  /*         } */
+  /*     } */
       
-      // Not found in any LOAD segment
-      ,*offset = (uint64_t)-1;
-      return -1;  // Not found
-  }
+  /*     // Not found in any LOAD segment */
+  /*     *offset = (uint64_t)-1; */
+  /*     return -1;  // Not found */
+  /* } */
 
   /* if (is_between(vaddr_start, vaddr_end -1, vaddr) && vaddr < vaddr_start + filesz) {// In file? */
                   /* } else { */
@@ -1504,57 +2007,57 @@ Add to a compress file syscall, pop rdx, ret -
                       /* return 0;  // In BSS, no file offset */
                   /* } */
 
-  int write_dyn(t_elf_h *ehdr, t_elf_sh *shdr, unsigned char class, uint32_t phnum, size_t *writed, int packed)
-  {
-    if (!shdr->elf32)
-      return (1);
-    uint64_t dyn_offset = elf_get_section_header_offset(shdr, class);
-    uint64_t dyn_size = elf_get_section_header_size(shdr, class);
-    uint64_t dyn_entsize = elf_get_struct_size_elf_dyn(class);
+  /* int write_dyn(t_elf_h *ehdr, t_elf_sh *shdr, unsigned char class, uint32_t phnum, size_t *writed, int packed) */
+  /* { */
+  /*   if (!shdr->elf32) */
+  /*     return (1); */
+  /*   uint64_t dyn_offset = elf_get_section_header_offset(shdr, class); */
+  /*   uint64_t dyn_size = elf_get_section_header_size(shdr, class); */
+  /*   uint64_t dyn_entsize = elf_get_struct_size_elf_dyn(class); */
               
-    t_elf_dyn dyn_cp = {.elf32=malloc(dyn_entsize)};
-    if  (!dyn_cp.elf32)
-      return (2);
-    // Read the dynamic section data
-    void *dynamic_data = (void *)((char *)ehdr->elf32 + dyn_offset);
-    uint64_t entry_count = dyn_size / dyn_entsize;
-    printf("entry_count %lu\n", entry_count); 
-    printf("dyn_entsize %lu\n", dyn_entsize); 
-    // Update entries that point to shifted addresses
-    uint64_t ndx_dyn = 0;
-    uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
-    uint64_t offset;
+  /*   t_elf_dyn dyn_cp = {.elf32=malloc(dyn_entsize)}; */
+  /*   if  (!dyn_cp.elf32) */
+  /*     return (2); */
+  /*   // Read the dynamic section data */
+  /*   void *dynamic_data = (void *)((char *)ehdr->elf32 + dyn_offset); */
+  /*   uint64_t entry_count = dyn_size / dyn_entsize; */
+  /*   printf("entry_count %lu\n", entry_count);  */
+  /*   printf("dyn_entsize %lu\n", dyn_entsize);  */
+  /*   // Update entries that point to shifted addresses */
+  /*   uint64_t ndx_dyn = 0; */
+  /*   uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class); */
+  /*   uint64_t offset; */
 
 
-    while (ndx_dyn < entry_count)
-      {
-        t_elf_dyn dyn = elf_get_dyn(dynamic_data, class, ndx_dyn);
-        memcpy(dyn_cp.elf32, dyn.elf32, dyn_entsize);
-        uint64_t d_tag = elf_get_dyn_tag(&dyn, class);
+  /*   while (ndx_dyn < entry_count) */
+  /*     { */
+  /*       t_elf_dyn dyn = elf_get_dyn(dynamic_data, class, ndx_dyn); */
+  /*       memcpy(dyn_cp.elf32, dyn.elf32, dyn_entsize); */
+  /*       uint64_t d_tag = elf_get_dyn_tag(&dyn, class); */
                   
-        // Check if this entry contains a virtual address that needs updating
-        if (elf_is_addres_type_entry(d_tag))
-  	{ 
-  	uint64_t d_val = elf_get_dyn_val(&dyn, class);
+  /*       // Check if this entry contains a virtual address that needs updating */
+  /*       if (elf_is_addres_type_entry(d_tag)) */
+  /* 	{  */
+  /* 	uint64_t d_val = elf_get_dyn_val(&dyn, class); */
                       
-  	// If this address is in the affected range, update it
-  	//Change vaddr for offset.
-  	if (vaddr_to_offset_safe(ehdr, d_val, &offset, class))
-  	  return (4);
-  	if (increment_offset_phdr(ehdr, offset, phnum, class))
-  	  {
-  	    printf("Updating DT_%ld from 0x%lx to 0x%lx\n", 
-  		   d_tag, d_val, d_val + phdr_struct_size);
-  	    elf_set_dyn_val(&dyn_cp, d_val + phdr_struct_size, class);
-  	  }
-        }
-        if ((ssize_t) dyn_entsize != write(packed, dyn_cp.elf32, dyn_entsize))
-  	return (3);
-        ,*writed += dyn_entsize;
-        ndx_dyn++;
-      }
-      return 0;
-  }
+  /* 	// If this address is in the affected range, update it */
+  /* 	//Change vaddr for offset. */
+  /* 	if (vaddr_to_offset_safe(ehdr, d_val, &offset, class)) */
+  /* 	  return (4); */
+  /* 	if (increment_offset_phdr(ehdr, offset, phnum, class)) */
+  /* 	  { */
+  /* 	    printf("Updating DT_%ld from 0x%lx to 0x%lx\n",  */
+  /* 		   d_tag, d_val, d_val + phdr_struct_size); */
+  /* 	    elf_set_dyn_val(&dyn_cp, d_val + phdr_struct_size, class); */
+  /* 	  } */
+  /*       } */
+  /*       if ((ssize_t) dyn_entsize != write(packed, dyn_cp.elf32, dyn_entsize)) */
+  /* 	return (3); */
+  /*       *writed += dyn_entsize; */
+  /*       ndx_dyn++; */
+  /*     } */
+  /*     return 0; */
+  /* } */
 
   int generated_packed_file(void *elf_mmap, size_t file_size, void *generated_bytecode, size_t payload_size, int packed)
   {
@@ -1563,82 +2066,26 @@ Add to a compress file syscall, pop rdx, ret -
     uint64_t phnum;
     unsigned char class;
     uint64_t new_phdr_vaddr;
-    uint64_t new_phdr_offset;
     uint64_t writed;
-    uint64_t new_e_entry;
-    /* uint64_t e_shoff = elf_get_elfh_shoff(&ehdr); */
-    /* uint64_t sh_size; */
-    /* uint64_t sh_offset; */
+    uint64_t new_phnum;
       
     if (validate_elf_headers(&ehdr, &shnum, &phnum, &class))
       return (1);
-    /* if (find_section_and_program_indices(&ehdr, e_entrypoint, shnum, phnum, class, &ndx_sh, &ndx_ph)) */
-    /*     return 10; */
     if (prepare_info(&ehdr, class, &new_phdr_vaddr, phnum))
       return (2);
-    new_e_entry = new_phdr_vaddr;
-    //New to check were i got the disalign offset and writed
     writed = 0;
-    if (copy_and_modify_elf_header(&ehdr, packed, class, new_e_entry, phnum, &writed))
+    if (copy_and_modify_elf_header(&ehdr, packed, class, new_phdr_vaddr, &new_phnum, phnum, &writed))
       return (3);
     printf("after copy and modify ehdr -> writed: %ld\n", writed);
-    if (write_program_headers(&ehdr, packed, phnum, new_phdr_offset, new_e_entry, class, payload_size, &writed))
+    if (write_program_headers(&ehdr, packed, phnum, new_phdr_vaddr, class, payload_size, &writed))
       return (4);
     printf("after write phdrs -> writed: %ld\n", writed);
 
-    const uint64_t ehdr_struct_size = elf_get_struct_size_elf_header((char *)ehdr.elf32);
-    const uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
-    const uint64_t elf_mmap_offset = ehdr_struct_size + phdr_struct_size * phnum;//(phnum + 1); but don't got sense
-    // now should write if need the alignment.
-    uint64_t num_bytes = elf_get_highest_offset_avalaible(&ehdr, class, shnum);
-    t_elf_ph first_loadable_ph = get_n_loadable_phdr(&ehdr, class, phnum, 1);
-    uint64_t first_loadable_ph_filesz = elf_get_program_header_filesz(&first_loadable_ph, class);
-    printf("first_loadable_ph_filesz %lu\n", first_loadable_ph_filesz);// - phdr_struct_size + elf_mmap_offset);
-    if (first_loadable_ph_filesz > elf_mmap_offset)
-        writed += write(packed, elf_mmap + elf_mmap_offset, first_loadable_ph_filesz);
-    t_elf_ph first_loadable_and_executable_ph = get_n_loadable_and_exec_phdr(&ehdr, class, phnum, 1);
-    uint64_t first_loadable_and_executable_ph_offset = elf_get_program_header_offset(&first_loadable_and_executable_ph, class);
-    if (padding(packed, first_loadable_and_executable_ph_offset - writed))// all is aligned.
-      return (5);
-    writed += first_loadable_and_executable_ph_offset - writed;// = first_loadable_and_executable_ph_offset;
-    printf("writed: %lu\n", writed);
-    printf("is a .dynamic shdr?\n");
-    t_elf_sh dyn_sh = get_dynamic_section(&ehdr, shnum, class);
-    if (dyn_sh.elf32)
-      {
-        printf("Got a Dynamic shdr\n");
-        uint64_t dyn_offset = elf_get_section_header_offset(&dyn_sh, class);
-        if (dyn_offset < writed)
-  	{
-  	  printf("Should happend dyn offset be less than first load an executable offset\n");
-  	  return (6);
-  	}
-        printf("writed = %lu dyn_offset = %lu writed - dyn_offset = %lu\n", writed, dyn_offset, dyn_offset - writed);
-        if ((ssize_t)(dyn_offset - writed) != write(packed, elf_mmap + writed, dyn_offset - writed))
-  	return (7);
-        writed += dyn_offset - writed;
-        printf("writed previous to write dyn = %lu\n", writed);
-        printf("section size %lu\n", elf_get_section_header_size(&dyn_sh, class));
-        if (write_dyn(&ehdr, &dyn_sh, class, phnum, &writed, packed))
-  	return (8);
-        printf("writed post to write dyn = %lu\n", writed);
-      }
-   
-    printf("num_bytes highest_offset_avalaible %lu\n", num_bytes);
-    writed += write(packed, elf_mmap + writed, num_bytes - writed);//Write content previous to e_shoff better skip the alignment bits for use less space.
-    // Add here the .dinamic in case needed.
-    printf("after write the content previous to e_shoff-> writed: %ld\n", writed);
-    printf("new_phdr_offset: %lu\nwrited: %ld\n", new_phdr_offset, writed);
     if (write_padding_and_payload(packed, &generated_bytecode, payload_size,
-  				new_phdr_offset - writed, &writed))
+  				0, &writed))
       return (5);
-    printf("new_e_shoff %lu -> writed %lu\n", new_e_shoff, writed);
-    if (write_remaining_section_headers(&ehdr, packed, phnum, shnum, class,
-  				      new_phdr_offset, new_phdr_vaddr, &writed, payload_size))
-      return (6);
-    /* writed += write(packed, elf_mmap + writed, file_size - writed);//Write the rest of the file */
     printf("Successfully packed %lu\n", file_size);
-    return 0;
+    return (0);
   }
 
   int main(int argc, char **argv)
@@ -1665,33 +2112,73 @@ Add to a compress file syscall, pop rdx, ret -
     close(fd);
     if (!elf_mmap)
       return (4);
+    t_list *lz77 = lz77_compress_list(elf_mmap, file_size);
+    if (!lz77)
+      {
+        munmap(elf_mmap, file_size);
+        return (5);
+      }
+    size_t lz77_size = ft_lstsize(lz77) * sizeof(t_lz77);
+    if (!lz77_size)
+      {
+        munmap(elf_mmap, file_size);
+        return (5);
+      } 
+    size_t generated_bytecode_size;
+    char *generated_bytecode = NULL;
+    if (generate_payload(elf_mmap, &generated_bytecode, &generated_bytecode_size))
+      {
+        munmap(elf_mmap, file_size);
+        return (5);
+      }
+    if (!generated_bytecode || !generated_bytecode_size)
+      {
+        munmap(elf_mmap, file_size);
+        return (6);
+      }
     // open the file where we gonna add the payload
     int packed = open("woody", O_CREAT | O_TRUNC | O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
     if (packed < 0)
       {
         munmap(elf_mmap, file_size);
-        return (5);
-      } // starting poc part
-    size_t generated_bytecode_size;
-    char *generated_bytecode = NULL;
-    if (generate_payload(elf_mmap, &generated_bytecode, &generated_bytecode_size))
-      return (6);
-    if (!generated_bytecode || !generated_bytecode_size)
-      return (7);
+        return (7);
+      }
     if (generated_packed_file(elf_mmap, file_size, generated_bytecode, generated_bytecode_size, packed))
-      return (8);
+      {
+        close(packed);
+        munmap(elf_mmap, file_size);
+        return (8);
+      }
     close(packed);
     munmap(elf_mmap, file_size);
     return (0);
   }
 #+end_src
-** TODO ELF file
-*** TODO EHDR
-*** TODO PHDR
-** TODO Encrypt file
-** TODO Payload
-*** TODO AUXV
-*** TODO Append clean to mmap already in use by packed elf or new one
-*** TODO Linker
-*** TODO ASLR
-
+** DONE ELF file
+CLOSED: [2025-09-08 Mon 06:58]
+*** DONE EHDR
+CLOSED: [2025-09-08 Mon 05:14]
+*** DONE PHDR
+CLOSED: [2025-09-08 Mon 06:58]
+**** DONE FORMAT DESIGN
+CLOSED: [2025-09-08 Mon 05:14]
+[EHDR + PHDR][Stage1_Payload][ORIGINAL_SIZE][COMPRESS_FILE]
+** TODO Program
+*** DONE Logic flow
+CLOSED: [2025-09-08 Mon 07:33]
+check ELF file and executable -> compress_file -> create payload (pass packed_entrypoint, compress size,  vaddr executable with free space to stage3 (clean stage2 + jmp og_entrypoint)) -> packed_file -> append compress file and size.
+*** DONE Encrypt file
+CLOSED: [2025-09-08 Mon 07:33]
+*** TODO Append compress size and file.
+*** TODO Payload
+**** TODO Append clean to a packed elf mmap R E or create one if not space left.
+**** TODO AUXV
+**** TODO Linker
+**** TODO ASLR
+**** REVIEW Optimization File size
+no use mov use push 0x2, pop rax ->  3B, mov rax, 0x2  -> ?B
+no use xor rsi, rsi, use sub esi, esi. -> 2b [0x29	0xf6]
+in the payload append the string in the code using call, pop
+open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the ptr to "/proc/self/exe".
+*** DONE Packed_file.
+CLOSED: [2025-09-08 Mon 07:03]

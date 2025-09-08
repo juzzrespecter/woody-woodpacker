@@ -56,7 +56,7 @@
   CHECK_SECTION			:= test_check_section
   POC_CHECK_SECTION			:= $(ELF_PARSER-SRCS) $(CMN-SRCS) elf/POC/elf_phdr_shdr
   CHECK_PACKER			:= test_check_packer
-  POC_CHECK_PACKER			:= $(ELF_PARSER-SRCS) $(CMN-SRCS) elf/POC/elf_phdr_shdr
+  POC_CHECK_PACKER			:= $(ELF_PARSER-SRCS) $(CMN-SRCS) elf/POC/check_packer
 
 
   BUILD					:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(SRC)))
