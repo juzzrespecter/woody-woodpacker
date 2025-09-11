@@ -14,7 +14,7 @@ There’s field need to change in auxiliary vectors:
 AT_PHDR, the program headers offset
 AT_PHNUM, the number of program headers
 AT_ENTRY, the program’s entry point
-AT_BASE = used for .interp if exist 
+AT_BASE = used for .interp if exist  //ET_EXEC don't need it.
 
 #+begin_src c :tangle no
   /*https://github.com/torvalds/linux/blob/v3.19/include/uapi/linux/auxvec.h*/
@@ -2179,9 +2179,24 @@ Test bytecode
 [X] Update section. ~objcopy --update-section .text=payload_64_test_str.bin  a.out~
 [X] Get byte code from a file ~ndisasm -b 64 bytecode/open_mmap_until_mmap_size.bin | awk '{for(i=1; i<=length($2); i+=2) {byte = substr($2, i, 2);if (byte != "") ;{printf "\\x%s", byte}}}'~
 [X] Get byte code from a file ~objdump -M intel --disassemble=_start binary_file | awk 'NR > 7 {for(i=1; i<=NF; i++) if ($i ~ /^[0-9a-fA-F]+$/ && length($i) == 2) printf "\\x%s", $i;}'~
+[X] use gcc -0s for  create little payloads.
+
 
 **** TODO Append clean stage 3 to a packed elf mmap R E or create one if not space left.
 **** TODO AUXV
+***** Readlink
+The dynamic linker needs the executable path for the AT_EXECFN entry in the auxiliary vector: 
+    This entry must contain the full path to the executable
+    Without it, certain runtime behaviors would fail
+   Without preserving the path first, UPX would have no way to set up AT_EXECFN correctly.
+The /proc/self/exe Limitation 
+Special virtual file that: 
+    Is only available while the executable is mapped in memory
+    Disappears if all mappings of the executable are removed
+    Cannot be used after complete unmapping
+By calling readlink early, UPX captures the actual filesystem path before it unmaps anything.
+we gonna save it in the phdr[0] of the 
+
 **** TODO Linker
 **** DONE ASLR
 CLOSED: [2025-09-08 Mon 14:14]
