@@ -2198,6 +2198,134 @@ By calling readlink early, UPX captures the actual filesystem path before it unm
 we gonna save it in the phdr[0] of the 
 
 **** TODO Linker
+
+**** TODO Decompress elf file.
+#+begin_src asm
+  000000000040149b <lz77_decompress_asm>:
+
+  ; Function entry - validate input parameters
+  ; rdi = in, rsi = in_size, rdx = out
+
+    40149b:	48 83 fe 07          	cmp    rsi,0x7           ; Compare in_size with 7
+    40149f:	49 89 d1             	mov    r9,rdx            ; Save 'out' pointer to r9
+    4014a2:	0f 96 c0             	setbe  al                ; Set AL if in_size <= 7
+    4014a5:	48 85 d2             	test   rdx,rdx           ; Test if 'out' is NULL
+    4014a8:	0f 94 c2             	sete   dl                ; Set DL if 'out' is NULL
+    4014ab:	08 d0                	or     al,dl             ; Combine error flags
+    4014ad:	75 22                	jne    4014d1 <error>    ; Jump to error if any flag set
+    4014af:	48 85 ff             	test   rdi,rdi           ; Test if 'in' is NULL
+    4014b2:	74 1d                	je     4014d1 <error>    ; Jump to error if NULL
+
+  ; Read original size from compressed data
+    4014b4:	48 89 f1             	mov    rcx,rsi           ; Save in_size to rcx
+    4014b7:	48 8b 37             	mov    rsi,QWORD PTR [rdi] ; Load orig_size from *in
+    4014ba:	48 c7 c0 ff ff ff ff 	mov    rax,0xffffffffffffffff ; Prepare error return (-1)
+    4014c1:	48 85 f6             	test   rsi,rsi           ; Check if orig_size is 0
+    4014c4:	74 58                	je     40151e <error>    ; Jump to error if 0
+
+  ; Initialize loop variables
+    4014c6:	4c 8d 47 08          	lea    r8,[rdi+0x8]      ; p = in + 8 (skip size header)
+    4014ca:	31 c0                	xor    eax,eax           ; pos = 0
+    4014cc:	48 01 cf             	add    rdi,rcx           ; rdi = in + in_size (end pointer)
+    4014cf:	eb 25                	jmp    4014f6 <loop_check> ; Jump to loop condition
+
+  ; Error handler - return -1
+    4014d1:	48 c7 c0 ff ff ff ff 	mov    rax,0xffffffffffffffff ; Return -1
+    4014d8:	c3                   	ret                      ; Return
+
+  ; Loop bounds check and main processing
+    4014d9:	48 39 f0             	cmp    rax,rsi           ; Compare pos with orig_size
+    4014dc:	73 34                	jae    401512 <finish>   ; Jump if pos >= orig_size
+
+  ; Read token data (distance/length)
+    4014de:	66 41 8b 48 fd       	mov    cx,WORD PTR [r8-0x3] ; Read dl = p[0] | (p[1] << 8)
+    4014e3:	89 ca                	mov    edx,ecx           ; Copy to edx
+    4014e5:	66 83 e2 0f          	and    dx,0xf            ; Extract length: dl & 0xF
+    4014e9:	75 16                	jne    401501 <has_length> ; Jump if length != 0
+
+  ; No length - just copy literal byte
+    4014eb:	41 8a 50 ff          	mov    dl,BYTE PTR [r8-0x1] ; byte = p[2]
+    4014ef:	41 88 14 01          	mov    BYTE PTR [r9+rax*1],dl ; out[pos] = byte
+    4014f3:	48 ff c0             	inc    rax               ; pos++
+    4014f6:	49 83 c0 03          	add    r8,0x3            ; p += 3
+    4014fa:	49 39 f8             	cmp    r8,rdi            ; Compare p with end pointer
+    4014fd:	76 da                	jbe    4014d9 <loop_start> ; Jump if p <= end (continue loop)
+    4014ff:	eb 11                	jmp    401512 <finish>   ; Jump to finish
+
+  ; Process token with length
+    401501:	66 c1 e9 04          	shr    cx,0x4            ; Shift right to get distance
+    401505:	44 0f b7 d9          	movzx  r11d,cx           ; Zero-extend distance to r11
+    401509:	74 e0                	je     4014eb <copy_literal> ; Jump if distance == 0
+    40150b:	4c 39 d8             	cmp    rax,r11           ; Compare pos with distance
+    40150e:	72 db                	jb     4014eb <copy_literal> ; Jump if distance > pos
+    401510:	eb 0d                	jmp    40151f <copy_match> ; Jump to copy match logic
+
+  ; Finish - check if decompression was complete
+    401512:	48 39 f0             	cmp    rax,rsi           ; Compare pos with orig_size
+    401515:	0f 95 c0             	setne  al                ; Set AL if not equal
+    401518:	0f b6 c0             	movzx  eax,al            ; Zero-extend to eax
+    40151b:	48 f7 d8             	neg    rax               ; Negate: 0->0, 1->-1
+    40151e:	c3                   	ret                      ; Return
+
+  ; Copy match data section
+    40151f:	53                   	push   rbx               ; Save rbx
+    401520:	83 c2 02             	add    edx,0x2           ; len += 2 (token length 1-15 → 3-17)
+    401523:	48 89 f1             	mov    rcx,rsi           ; rcx = orig_size
+    401526:	49 8d 1c 01          	lea    rbx,[r9+rax*1]    ; rbx = out + pos (destination)
+    40152a:	49 89 c2             	mov    r10,rax           ; r10 = pos (save current pos)
+    40152d:	48 29 c1             	sub    rcx,rax           ; rcx = orig_size - pos (max copy length)
+    401530:	48 0f bf d2          	movsx  rdx,dx            ; Sign-extend len to rdx
+    401534:	48 39 d1             	cmp    rcx,rdx           ; Compare max_copy with len
+    401537:	48 0f 46 d1          	cmovbe rdx,rcx           ; If len > max_copy, set len = max_copy
+
+  ; Setup source pointer and copy loop
+    40153b:	4d 29 da             	sub    r10,r11           ; r10 = pos - distance (source offset)
+    40153e:	31 c9                	xor    ecx,ecx           ; i = 0
+    401540:	4d 01 ca             	add    r10,r9            ; r10 = out + (pos - distance) (source)
+    401543:	45 8a 1c 0a          	mov    r11b,BYTE PTR [r10+rcx*1] ; Load byte from source
+    401547:	44 88 1c 0b          	mov    BYTE PTR [rbx+rcx*1],r11b ; Store byte to destination
+    40154b:	48 ff c1             	inc    rcx               ; i++
+    40154e:	48 39 ca             	cmp    rdx,rcx           ; Compare len with i
+    401551:	75 f0                	jne    401543 <copy_loop> ; Jump if i < len
+
+  ; Update position and copy literal byte
+    401553:	48 01 d0             	add    rax,rdx           ; pos += len
+    401556:	48 39 f0             	cmp    rax,rsi           ; Compare pos with orig_size
+    401559:	73 0b                	jae    401566 <after_literal> ; Jump if pos >= orig_size
+
+  ; Copy literal byte
+    40155b:	41 8a 50 ff          	mov    dl,BYTE PTR [r8-0x1] ; byte = p[2]
+    40155f:	41 88 14 01          	mov    BYTE PTR [r9+rax*1],dl ; out[pos] = byte
+    401563:	48 ff c0             	inc    rax               ; pos++
+
+  ; Continue main loop
+    401566:	49 83 c0 03          	add    r8,0x3            ; p += 3
+    40156a:	49 39 f8             	cmp    r8,rdi            ; Compare p with end pointer
+    40156d:	77 23                	ja     401592 <finish_final> ; Jump if p > end
+    40156f:	48 39 f0             	cmp    rax,rsi           ; Compare pos with orig_size
+    401572:	73 1e                	jae    401592 <finish_final> ; Jump if pos >= orig_size
+
+  ; Read next token
+    401574:	66 41 8b 48 fd       	mov    cx,WORD PTR [r8-0x3] ; Read next token
+    401579:	89 ca                	mov    edx,ecx           ; Copy to edx
+    40157b:	66 83 e2 0f          	and    dx,0xf            ; Extract length
+    40157f:	74 da                	je     40155b <copy_literal_final> ; Jump if no length
+    401581:	66 c1 e9 04          	shr    cx,0x4            ; Extract distance
+    401585:	44 0f b7 d9          	movzx  r11d,cx           ; Zero-extend distance
+    401589:	74 d0                	je     40155b <copy_literal_final> ; Jump if distance == 0
+    40158b:	4c 39 d8             	cmp    rax,r11           ; Compare pos with distance
+    40158e:	72 cb                	jb     40155b <copy_literal_final> ; Jump if distance > pos
+    401590:	eb 8e                	jmp    401520 <copy_match> ; Jump to copy match
+
+  ; Final finish check
+    401592:	48 39 f0             	cmp    rax,rsi           ; Compare pos with orig_size
+    401595:	5b                   	pop    rbx               ; Restore rbx
+    401596:	0f 95 c0             	setne  al                ; Set AL if not equal
+    401599:	0f b6 c0             	movzx  eax,al            ; Zero-extend to eax
+    40159c:	48 f7 d8             	neg    rax               ; Negate result
+    40159f:	c3                   	ret                      ; Return
+#+end_src
+
 **** DONE ASLR
 CLOSED: [2025-09-08 Mon 14:14]
 :LOGBOOK:

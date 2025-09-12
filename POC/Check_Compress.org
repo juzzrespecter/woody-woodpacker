@@ -11,532 +11,246 @@
   #include <stdlib.h> //Malloc
   #include <ctype.h> // toupper
 
-
-  //REL
-  size_t compress(const char* source, char* dest, int inputSize)
+  typedef struct s_lz77
   {
-      const char* end = source + inputSize;
-      char* destStart = dest;
-
-      while (source < end) {
-          unsigned char times = 1;
-  	
-          // Find the longest match
-          while (times < 255 && *source == source[times] && source + times < end)
-  	  times++;
-
-          // Write the match times
-          ,*dest++ = times;
-          ,*dest++ = *source;
-          source += times;
-      }
-      size_t size_compress = dest - destStart;
-      return (size_compress);
-  }
-
+    uint16_t distance_len;
+    unsigned char byte;
+  }	__attribute__((packed)) t_lz77;
   // For general text better use 32.
   #define COMPRESS_LZ77_MAX_MATCH_LEN 17
   #define COMPRESS_LZ77_MIN_MATCH_LEN 3
   #define COMPRESS_LZ77_SLIDING_WINDOW_SIZE 0x1000
 
 
-  typedef struct s_lz77
-  {
-    uint16_t distance_len;
-    unsigned char byte;
-  }	__attribute__((packed)) t_lz77;
+  int lz77_compress(const unsigned char *data, size_t data_len, int fd) {
+      if (!data || data_len == 0) return -1;
 
-  typedef struct s_list
-  {
-  	void			*content;
-  	struct s_list	*next;
-  }	t_list;
-
-  t_list	*ft_lstnew(void *content)
-  {
-  	t_list	*node;
-
-  	node = malloc(sizeof(t_list));
-  	if (!node)
-  		return (NULL);
-  	node->content = content;
-  	node->next = NULL;
-  	return (node);
-  }
-
-  t_lz77 *create_lz77_tkn(size_t len, size_t distance, char byte)
-  {
-    t_lz77 *tkn = malloc(sizeof(*tkn));
-
-    if (!tkn)
-      return (tkn);
-    if (len >= COMPRESS_LZ77_MIN_MATCH_LEN && len <= COMPRESS_LZ77_MAX_MATCH_LEN)
-      tkn->distance_len = distance << 4 | ((len - (COMPRESS_LZ77_MIN_MATCH_LEN - 1)) & 0xF);
-    else
-        tkn->distance_len = 0;
-    tkn->byte = byte;
-    return (tkn);
-  }
-
-  t_list	*ft_lstlast(t_list *lst)
-  {
-  	if (!lst)
-  		return (NULL);
-  	while (lst->next)
-  		lst = lst->next;
-  	return (lst);
-  }
-
-  int	ft_lstsize(t_list *lst)
-  {
-  	int	lst_num;
-
-  	if (!(size_t)lst)
-  		return (0);
-  	lst_num = 1;
-  	while (lst->next)
-  	{
-  		lst_num++;
-  		lst = lst->next;
-  	}
-  	return (lst_num);
-  }
-
-  void	ft_lstadd_back(t_list **lst, t_list *new)
-  {
-  	t_list	*lst_last;
-
-  	if (!new || !lst)
-  		return ;
-  	if (*lst == NULL)
-  		,*lst = new;
-  	else
-  	{
-  		lst_last = ft_lstlast(*lst);
-  		lst_last->next = new;
-  	}
-  }
-
-  void	ft_lstdelone(t_list *lst, void (*del)(void *))
-  {
-  	if (!lst || !del)
-  		return ;
-  	del(lst->content);
-  	free(lst);
-  }
-
-  void	ft_lstclear(t_list **lst, void (*del)(void *))
-  {
-  	t_list	*node;
-  	t_list	*tmp;
-
-  	if (!lst || !*lst)
-  		return ;
-  	node = *lst;
-  	while (node)
-  	{
-  		tmp = node->next;
-  		ft_lstdelone(node, del);
-  		node = tmp;
-  	}
-  	,*lst = NULL;
-  }
-
-  void	ft_lstiter(t_list *lst, void (*f)(void *))
-  {
-  	t_list	*node;
-
-  	if (!lst)
-  		return ;
-  	node = lst;
-  	while (node)
-  	{
-  		f(node->content);
-  		node = node->next;
-  	}
-  }
-
-
-
-
-  /* int try_self_extend_pattern(const char *sliding_window, size_t sliding_window_start, size_t sliding_window_end, size_t sliding_window_buffer_size, size_t pattern_len */
-  /*                            const char *src, size_t src_len, size_t *extended_len) */
-  /* { */
-  /*     *extended_len = pattern_len; */
-  /*     // Change pattern cause is readed backwards.  */
-  /*     // Try to extend the pattern as far as it goes */
-  /*     while (*extended_len < COMPRESS_LZ77_MAX_MATCH_LEN && */
-  /*            *extended_len < src_len && get_sliding_window_char_from_end(sliding_window, sliding_window_end, sliding_window_buffer_size, *extended_len % pattern_len) == src[extended_len]) */
-  /*             (*extended_len)++; */
-      
-  /*     return (*extended_len > pattern_len); */
-  /* } */
-
-  void add_sliding_window(char *buffer, size_t *buffer_start, size_t *buffer_end, size_t *buffer_size, const char *data, size_t len)
-  {
-      size_t i;
-      
-      // Add data to ring buffer - new data goes at the end
-      i = 0;
-
-      if (len < 17)
-        printf("%.*s", (int)(2 * (17 - len)), "");
-      while (i < len)
-      {
-          // Add new byte to end of buffer
-          buffer[*buffer_end] = data[i];
-  	if (len > 1)
-  	  {
-  	    if (data[i] == '\n')
-  	      printf("\\n");
-  	    else
-  	      printf("%2c", data[i]);
-  	  }
-          ,*buffer_end = (*buffer_end + 1) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
-          
-          // Update size
-          if (*buffer_size < COMPRESS_LZ77_SLIDING_WINDOW_SIZE)
-              (*buffer_size)++;
-          else
-              ,*buffer_start = (*buffer_start + 1) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
-  	i++;
+      // Write original size (8 bytes, little-endian)
+      uint64_t original_size = data_len;
+      if (write(fd, &original_size, sizeof(original_size)) != sizeof(original_size)) {
+          return -1;
       }
-      if (*buffer_size == COMPRESS_LZ77_SLIDING_WINDOW_SIZE && *buffer_start == *buffer_end)
-        ,*buffer_start = (*buffer_start + 1) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
-      printf("\t");
-  }
 
-  // Access buffer from end backwards (most recent first)
-  char get_sliding_window_char_from_end(const char *buffer, size_t buffer_end, size_t buffer_size, size_t backward_index)
-  {
-      if (!buffer_size || backward_index >= buffer_size)
-          return 0; // Out of bounds
-     size_t target_pos = (buffer_end - 1 - backward_index + COMPRESS_LZ77_SLIDING_WINDOW_SIZE) 
-                         % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
-      return buffer[target_pos]; 
-  }
+      size_t i = 0;
+      while (i < data_len) {
+          size_t best_offset = 0;
+          size_t best_length = 0;
 
-  char get_sliding_window_char(const char *buffer, size_t buffer_start, size_t buffer_size, size_t index)
-  {
-    if (!buffer || !buffer_size || index >= buffer_size)
-      return (0);
-    size_t actual_index = (buffer_start + index) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
-    return (buffer[actual_index]);
-  }
+          // Search in sliding window: [max(0, i - WINDOW_SIZE), i)
+  	size_t window_start = 0;//(i > COMPRESS_LZ77_SLIDING_WINDOW_SIZE) * (i - COMPRESS_LZ77_SLIDING_WINDOW_SIZE);
+  	if (i > COMPRESS_LZ77_SLIDING_WINDOW_SIZE) {
+  	  window_start = i - COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+  	}
 
-  int lz77_compress_find_best_match(const char *sliding_window, size_t sliding_window_start, size_t sliding_window_end, size_t sliding_window_buffer_size, const char *src, size_t src_len, size_t *best_distance, size_t *best_len)
-  {
-    size_t search_pos;
-    size_t match_len;
-    size_t window_ndx;
+          // Try all possible offsets (1 to window_size)
+          for (size_t offset = 1; offset <= (i - window_start); offset++) {
+              size_t match_length = 0;
+  	    size_t max_possible = (data_len - i > COMPRESS_LZ77_MAX_MATCH_LEN) ? COMPRESS_LZ77_MAX_MATCH_LEN : (data_len - i);
 
-    if (!sliding_window||! src)
-      return (-1);
-    ,*best_distance = 0;
-    ,*best_len = 0;
-    search_pos = sliding_window_end - COMPRESS_LZ77_MIN_MATCH_LEN + 1;//
-    size_t start_reached = 0;
-    match_len = 0;
-    while (sliding_window_buffer_size >= COMPRESS_LZ77_MIN_MATCH_LEN && !start_reached && src_len && *best_len != COMPRESS_LZ77_MAX_MATCH_LEN)
-      {
-        search_pos = (search_pos - 1 + COMPRESS_LZ77_SLIDING_WINDOW_SIZE) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;//This is distance and not need check.
-        if (search_pos == sliding_window_start)
-  	start_reached = 1;
-        match_len = 0;
-        window_ndx = search_pos;
-        while (match_len < COMPRESS_LZ77_MAX_MATCH_LEN && window_ndx <= sliding_window_buffer_size && match_len < src_len && sliding_window[window_ndx] == src[match_len])
-  	  window_ndx = (search_pos + ++match_len) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
-        if (COMPRESS_LZ77_MAX_MATCH_LEN < match_len)
-  	match_len = COMPRESS_LZ77_MAX_MATCH_LEN;
-        if (match_len >= COMPRESS_LZ77_MIN_MATCH_LEN && match_len > *best_len)
-  	{
-  	  ,*best_len = match_len;
-  	  ,*best_distance = (sliding_window_start + search_pos) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
-  	  if (!*best_distance || *best_distance > sliding_window_buffer_size)
-  	    {
-  	      ,*best_distance = 0;
-  	      ,*best_len = 0;
+  	    while (match_length < max_possible &&
+  		   data[i - offset + match_length] == data[i + match_length]) {
+  	      match_length++;
   	    }
-  	}
+
+              // Only consider matches of length >=3
+              if (match_length >= COMPRESS_LZ77_MIN_MATCH_LEN && match_length > best_length) {
+                  best_length = match_length;
+                  best_offset = offset;
+              }
+          }
+
+          uint8_t next_char = 0;
+          if (i + best_length < data_len) {
+              next_char = data[i + best_length];
+          }
+
+          t_lz77 token = {0};
+
+          if (best_length >= COMPRESS_LZ77_MIN_MATCH_LEN) {
+              // Valid match: store offset and len-2
+              if (best_offset > 4095) {
+                  fprintf(stderr, "Offset %zu too large\n", best_offset);
+                  return -1;
+              }
+              size_t token_len = best_length - 2; // 1 to 15
+              token.distance_len = (best_offset << 4) | (token_len & 0x0F);
+              token.byte = next_char;
+              i += best_length + 1; // Skip matched bytes + literal
+          } else {
+              // Literal only
+              token.distance_len = 0; // offset=0, len=0
+              token.byte = data[i];
+              i += 1;
+          }
+
+          // Write token (3 bytes)
+          if (write(fd, &token, sizeof(token)) != sizeof(token)) {
+              return -1;
+          }
+  	printf("Token: distlen=0x%04x (offset=%zu, len=%zu), byte=0x%02x at i=%zu\n",
+  	       token.distance_len,
+  	       (size_t)(token.distance_len >> 4),
+  	       (size_t)((token.distance_len & 0xF) == 0 ? 0 : ((token.distance_len & 0xF) + 2)),
+  	       token.byte,
+  	       i - (best_length >= 3 ? best_length + 1 : 1));
       }
-    return (0);
+
+      return 0;
   }
 
-  t_list *lz77_compress_list(const char *src, size_t src_len)
-  {
-    char sliding_window[COMPRESS_LZ77_SLIDING_WINDOW_SIZE];
-    size_t sliding_window_end = 0;
-    size_t sliding_window_start = 0;
-    size_t sliding_window_buffer_size = 0;
-    size_t distance;
-    size_t len;
-    t_list *tokens_lst;
-    t_list *token_lst;
-    t_lz77 *token;
-    char		byte;
-    size_t token_count;
-    size_t total_input_processed;
-    size_t og_src_len = src_len;
-    size_t literal_count = 0;
-    size_t match_count = 0;
-    size_t total_match_length = 0;
+  size_t lz77_decompress_asm(const unsigned char *in, size_t in_size, unsigned char *out) {
+      size_t orig_size;
+      size_t pos = 0;
+      uint16_t dl;
+      size_t len, dist;
+      const unsigned char *p = in + sizeof(orig_size);
 
-    token_count = 0;
-    total_input_processed = 0;
-    tokens_lst = NULL;
-    while (src_len)
-      {
-        if (lz77_compress_find_best_match(&sliding_window[0], sliding_window_start, sliding_window_end, sliding_window_buffer_size, src, src_len, &distance, &len))
-  	{
-  	  ft_lstclear(&tokens_lst, free);
-  	  return (tokens_lst);
-  	}
-        byte = 0;
-        if (len >= src_len)
-  	printf("Ignored next byte inside the token\n");
-        else
-  	byte = src[len];
+      // Validate input
+      if (!in || in_size < sizeof(orig_size) || !out)
+          goto error;
 
-        token = create_lz77_tkn(len, distance, byte);
-        if (byte == '\n')
-  	printf("(%4lu, %2lu, \\n)\t", distance, len);
-        else if (!byte)
-  	printf("(%4lu, %2lu, \\0)\t", distance, len);
-        else
-  	printf("(%4lu, %2lu, %2c)\t", distance, len, byte);
-        if (!len)
-  	literal_count++;
-        else
-  	{
-  	  match_count++;
-  	  total_match_length += len;
-  	}
-  	
-        if (!token)
-  	{
-  	  ft_lstclear(&tokens_lst, free);
-  	  return (tokens_lst);
-  	}
-        token_lst = ft_lstnew(token);
-        if (!token_lst)
-  	{
-  	  free(token);
-  	  ft_lstclear(&tokens_lst, free);
-  	  return (tokens_lst);
-  	}
-        ft_lstadd_back(&tokens_lst, token_lst);
-        len++;// INFO If delete this line all len should be + 1
+      // Read original size
+      orig_size = *((size_t *) in);
+      if (!orig_size)
+          goto error;
 
-        add_sliding_window(sliding_window, &sliding_window_start, &sliding_window_end, &sliding_window_buffer_size, src, len);
-        if (len > src_len)
-  	{
-  	  len = src_len;
-  	  src_len = 0;
-  	}
-        else
-  	src_len -= len;
-        src += len;
-        token_count++;
-        total_input_processed += len;
-        printf("Total tokens: %2zu\t", token_count);
-        printf("Total input processed: %2zu\t", total_input_processed);
-        printf("Original input size: %2zu\t", og_src_len);
-        printf("window_start %2lu\t", sliding_window_start);
-        printf("window_end %2lu\t", sliding_window_end);
-        printf("Tokens per byte: %.2f\n", (double)token_count / total_input_processed);
+      // Decompress loop
+      while ((p + 3 <= in + in_size) && pos < orig_size) {
+        // Read distance/length as little-endian
+        dl = p[0] | (p[1] << 8);
+        dist = (dl >> 4) & 0xFFF;
+        len = (dl & 0xF);
+        if (len) len += 2;
+
+        // Copy match data
+        if (len && dist && dist <= pos) {
+  	if (len > orig_size - pos) 
+  	  len = orig_size - pos;
+  	  
+  	unsigned char *dst = out + pos;
+  	unsigned char *src = out + (pos - dist);
+  	  
+  	while (len--) 
+  	  ,*dst++ = *src++;
+  	pos += (dst - (out + pos));  // Update pos
+        }
+        // Copy literal byte
+        if (pos < orig_size)
+  	out[pos++] = p[2];
+        p += 3;
       }
-    printf("Literals: %ld, Matches: %ld\n", literal_count, match_count);
-    printf("Average match length: %.2f\n", (double)total_match_length / match_count);
-    printf("Compression efficiency: %.2f%%\n", (double)(literal_count + match_count) / total_input_processed * 100);
-    return (tokens_lst);
+      // Check if we decompressed all data
+      if (pos != orig_size)
+          goto error;
+      return 0;
+
+  error:
+      return -1;
   }
 
-  int lz77_compress(char *src, size_t src_len, int fd)
-  {
-    t_list *tokens = lz77_compress_list(src, src_len);
-    t_list *tmp;
-    t_lz77 *token;
-    size_t compress_size;
+  int lz77_decompress(const unsigned char *in, size_t in_size, int fd) {
+      size_t orig_size;
+      unsigned char *out;
 
-    if (!tokens)
-      return (-1);
-    tmp = tokens;
-    // Write original size.
-    compress_size = ft_lstsize(tmp) * sizeof(*token) + sizeof(compress_size);
-    printf("compress_size %lu, src_size %lu, compress_ratio %f\n", compress_size, src_len, (double)compress_size / src_len);
-    if (compress_size > src_len)
-      printf("don't compress\n");
-    compress_size = src_len;
-    write(fd, &compress_size, sizeof(compress_size));
-    while (tmp)
-      {
-        token = tmp->content;
-        if (!token)//Shouldn't happend.
-  	return (-1);
-        /* if (tmp == tokens) */
-        write(fd, token, sizeof(*token));
-        tmp = tmp->next;
-      }
-    ft_lstclear(&tokens, free);
-    return (0);
+      if (!in || in_size < sizeof(orig_size)) return -1;
+
+      // Read original size
+      orig_size = *(size_t*)in;
+      if (!orig_size) return -2;
+
+      out = __builtin_malloc(orig_size);
+      if (!out) return -3;
+      lz77_decompress_asm(in, in_size, out);
+      write(fd, out, orig_size);
+      __builtin_free(out);
+      return orig_size ? 0 : -4;
   }
+  /* int lz77_decompress(const unsigned char *compressed_data, size_t compressed_size, int fd) */
+  /* { */
+  /*     size_t original_size; */
+  /*     unsigned char *output; */
+  /*     size_t output_pos; */
+  /*     uint16_t distance_len; */
+  /*     size_t length; */
+  /*     size_t distance; */
+  /*     unsigned char byte; */
+  /*     const unsigned char *current; */
+  /*     size_t i; */
+  /*     size_t start_pos; */
+  /*     size_t src_idx; */
 
+  /*     if (!compressed_data || compressed_size < sizeof(size_t)) */
+  /*         return (-1); */
 
-  int lz77_decompress(const unsigned char *compressed_data, size_t compressed_size, int fd)
-  {
-    size_t original_size;
-    char *output;
-    size_t output_pos = 0;
-    size_t length;
-    size_t distance;
-    unsigned char byte;
-    const unsigned char *current = compressed_data + sizeof(size_t);
-    if (!compressed_data || compressed_size < sizeof(size_t))
-      return (-1);
+  /*     memcpy(&original_size, compressed_data, sizeof(size_t)); */
+  /*     if (!original_size) */
+  /*         return (-2); */
 
-    memcpy(&original_size, compressed_data, sizeof(size_t));
-    if (!original_size)
-      return (-2);
-    output = malloc(original_size);
-    if (!output)
-      return (-3);
-      
-    while ((current + 3) <= (compressed_data + compressed_size) && output_pos < original_size) {
-      distance = 0;
-      length = current[1] & 0xF;
-      if (length > 0)
-        {
-  	length += 2;
-  	distance = ((uint16_t)current[0] << 4) | ((current[1] >> 4) & 0xF);
-        }
-      byte = current[2];
-      if (length && output_pos + length > original_size)
-        {
-  	printf("length + output_pos > original_size\n");
-  	length = original_size - output_pos;
-        }
-      if (length > 0 && distance > 0 && distance <= output_pos) {
-        // 🚨 Handle overlapping copy safely
-        size_t start_pos = output_pos;
-        for (size_t i = 0; i < length && output_pos < original_size; i++) {
-  	size_t src_idx = start_pos - distance + i;
-  	if (src_idx < start_pos && src_idx < original_size) {
-  	  output[output_pos] = output[src_idx];
-  	} else {
-  	  output[output_pos] = 0;
-  	}
-  	output_pos++;
-        }
-      }
-      // Add next character
-      if (output_pos < original_size)
-  	output[output_pos++] = byte;
-      current += 3;
-    }
-      
-    if (output_pos != original_size) {
-      write(fd, output, output_pos);
-      free(output);
-      printf("output pos %lu\t original_size %lu\n", output_pos, original_size);
-      return (-4);
-    }
-    printf("Succesfully decompress\n");
-    write(fd, output, output_pos);
-    free(output);
-    return (0);
-  }
+  /*     output = malloc(original_size); */
+  /*     if (!output) */
+  /*         return (-3); */
 
-  int decompress(const char* source, char* dest, int inputSize)
-  {
-      const char *end = source + inputSize;
-      unsigned char times;
+  /*     output_pos = 0; */
+  /*     current = compressed_data + sizeof(size_t); */
 
-      while (source < end)
-        {
-  	times = *source;
-  	source++;
-  	if (source == end)
-  	  continue;
-  	while (times--)
-  	   ,*dest++ = *source;
-  	source++;
-        }
-      return (0);
-  }
+  /*     while ((current + 3) <= (compressed_data + compressed_size) && output_pos < original_size) { */
+  /*         // Read distance_len as little-endian uint16_t */
+  /*         memcpy(&distance_len, current, sizeof(distance_len)); */
 
+  /*         distance = (distance_len >> 4) & 0xFFF;  // top 12 bits */
+  /*         length = distance_len & 0xF;             // bottom 4 bits */
 
-  void add_sliding_window_v2(char *buffer, size_t *buffer_start, size_t *buffer_end, size_t *buffer_size, const char *data, size_t len)
-  {
-      while (len--)
-      {
-          // Add new byte to end of buffer
-          buffer[*buffer_end] = *data++;
-          ,*buffer_end = (*buffer_end + 1) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
-          
-          // Update size
-          if (*buffer_size < COMPRESS_LZ77_SLIDING_WINDOW_SIZE)
-              (*buffer_size)++;
-          else
-              ,*buffer_start = (*buffer_start + 1) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
-      }
-  }
+  /*         if (length > 0) { */
+  /*             length += 2;  // token length 1-15 → actual length 3-17 */
+  /*         } */
 
-  int lz77_decompress_v2(const char *compressed_data, size_t compressed_size, int fd)
-  {
-    size_t original_size;
-    char *output;
-    char window[COMPRESS_LZ77_SLIDING_WINDOW_SIZE] = {0};
-    size_t window_start = 0, window_end = 0, window_size = 0, output_pos = 0;
-    const char *current = compressed_data + sizeof(size_t);
-    size_t length;
-    size_t distance;
-    t_lz77 *token;
-    size_t i;
-    if (!compressed_data || compressed_size < sizeof(size_t))
-      return (-1);
+  /*         byte = current[2]; */
 
-    memcpy(&original_size, compressed_data, sizeof(size_t));
-    output = malloc(original_size); 
-    if (!output)
-      return (-1);
-      
-    // Use your existing sliding window functions
-    while ((current + sizeof(*token)) <= (compressed_data + compressed_size) && output_pos < original_size) {
-      token = (t_lz77*)current;
-          
-      // Unified processing
-      distance = 0;
-      length = token->distance_len & 0xF;
-      if (length > 0)
-        {
-  	length += 2;
-  	distance = token->distance_len >> 4;
-        }
-      // Copy referenced data using your get function
-      i = 0;
-      while (distance && distance <= window_size && i < length && output_pos < original_size)
-  	output[output_pos++] = window[(window_start + (window_end - distance) + i++) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE];
-          
-      // Add next character
-      if (output_pos < original_size)
-        {
-  	output[output_pos++] = token->byte;
-  	// Update window using your add function
-  	add_sliding_window_v2(window, &window_start, &window_end, &window_size,
-  			   output + (output_pos - distance - 1) , ( length + 1));
-        }
-      current += sizeof(t_lz77);
-    }
-      
-    if (output_pos == original_size) {
-      write(fd, output, output_pos);
-      free(output);
-      return (0);
-    }
-      
-    free(output);
-    return (-1);
-  }
+  /*         printf("Decompress token: distlen=0x%04x (offset=0x%04lX, len=%02zu), byte=0x%02x → output_pos=%04zu\n", */
+  /*                distance_len, */
+  /*                distance, */
+  /*                length, */
+  /*                byte, */
+  /*                output_pos); */
+
+  /*         // 🚨 SAFETY: Cap length if it would exceed output buffer */
+  /*         /\* if (length > 0 && output_pos + length > original_size) { *\/ */
+  /*             /\* length = original_size - output_pos; *\/ */
+  /*         /\* } *\/ */
+
+  /*         // Handle match copy */
+  /*         if (length > 0 && distance > 0 && distance <= output_pos) { */
+  /*             start_pos = output_pos; */
+  /*             i = 0; */
+  /*             while (i < length && output_pos < original_size) { */
+  /*                 src_idx = start_pos - distance + i; */
+  /*                 output[output_pos] = output[src_idx]; */
+  /*                 output_pos++; */
+  /*                 i++; */
+  /*             } */
+  /*         } */
+
+  /*         // Always emit literal byte if within bounds */
+  /*         if (output_pos < original_size) { */
+  /*             output[output_pos] = byte; */
+  /*             output_pos++; */
+  /*         } */
+
+  /*         current += 3; */
+  /*     } */
+
+  /*     if (output_pos != original_size) { */
+  /*         write(fd, output, output_pos); */
+  /*         free(output); */
+  /*         printf("Decompression incomplete: output_pos=%lu, original_size=%lu\n", output_pos, original_size); */
+  /*         return (-4); */
+  /*     } */
+
+  /*     printf("Successfully decompressed %zu bytes\n", original_size); */
+  /*     write(fd, output, output_pos); */
+  /*     free(output); */
+  /*     return (0); */
+  /* } */
 
   int main(int argc, char **argv)
   {
