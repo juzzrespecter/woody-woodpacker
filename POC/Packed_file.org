@@ -10,35 +10,6 @@ random_address_offset = elf_addr - current_addr;
 if random_adress_offset  == 0 no issue generic code less checks ...
 mmap_address = elf_address + random_address 
 
-There’s field need to change in auxiliary vectors:
-AT_PHDR, the program headers offset
-AT_PHNUM, the number of program headers
-AT_ENTRY, the program’s entry point
-AT_BASE = used for .interp if exist  //ET_EXEC don't need it.
-
-#+begin_src c :tangle no
-  /*https://github.com/torvalds/linux/blob/v3.19/include/uapi/linux/auxvec.h*/
-    #define AT_NULL         0               /* End of vector */
-    #define AT_IGNORE       1               /* Entry should be ignored */
-    #define AT_EXECFD       2               /* File descriptor of program */
-    #define AT_PHDR         3               /* Program headers for program */
-    #define AT_PHENT        4               /* Size of program header entry */
-    #define AT_PHNUM        5               /* Number of program headers */
-    #define AT_PAGESZ       6               /* System page size */
-    #define AT_BASE         7               /* Base address of interpreter */
-    #define AT_FLAGS        8               /* Flags */
-    #define AT_ENTRY        9               /* Entry point of program */
-    #define AT_NOTELF       10              /* Program is not ELF */
-    #define AT_UID          11              /* Real uid */
-    #define AT_EUID         12              /* Effective uid */
-    #define AT_GID          13              /* Real gid */
-    #define AT_EGID         14              /* Effective gid */
-    #define AT_CLKTCK       17              /* Frequency of times() */
-    /* Pointer to the global system page used for system calls and other nice things.  */
-    #define AT_SYSINFO      32
-    #define AT_SYSINFO_EHDR 33
-#+end_src
-
 #+begin_src c :tangle no
     static int
     unsimal(unsigned x, char *ptr, int n)
@@ -2184,7 +2155,7 @@ Test bytecode
 
 **** TODO Append clean stage 3 to a packed elf mmap R E or create one if not space left.
 **** TODO AUXV
-***** Readlink
+***** Readlink not gonna do
 The dynamic linker needs the executable path for the AT_EXECFN entry in the auxiliary vector: 
     This entry must contain the full path to the executable
     Without it, certain runtime behaviors would fail
@@ -2196,9 +2167,304 @@ Special virtual file that:
     Cannot be used after complete unmapping
 By calling readlink early, UPX captures the actual filesystem path before it unmaps anything.
 we gonna save it in the phdr[0] of the 
+Already do by OS.
+There’s field need to change in auxiliary vectors:
+***** Set auxv
+****** TODO Linker
+#+begin_src c :tangle payload/get_elf_data.c
+  # include <elf.h>    // Typedef ELFNN_*, ST_BIND, ...
 
-**** TODO Linker
+  uint64_t get_at_phdr_x64(void *ptr)
+    {
+      Elf64_Ehdr	*elf = ptr;
 
+      return (elf->e_phoff + ptr);
+    }
+
+  uint32_t get_at_phdr_x32(void *ptr)
+    {
+      Elf32_Ehdr	*elf = ptr;
+
+      return (elf->e_phoff + ptr);
+    }
+
+  uint64_t get_at_phnum_x64(void *ptr)
+    {
+      Elf64_Ehdr	*elf = ptr;
+
+      return (elf->e_phnum + ptr);
+    }
+
+  uint32_t get_at_phnum_x32(void *ptr)
+    {
+      Elf32_Ehdr	*elf = ptr;
+
+      return (elf->e_phnum + ptr);
+    }
+
+  uint64_t get_at_entry_x64(void *ptr)
+    {
+      Elf64_Ehdr	*elf = ptr;
+
+      return (elf->e_entry + ptr);
+    }
+
+  uint32_t get_at_entry_x32(void *ptr)
+    {
+      Elf32_Ehdr	*elf = ptr;
+
+      return (elf->e_entry + ptr);
+    }
+
+  uint64_t get_at_interp_x64(void *ptr)
+  {
+      Elf64_Ehdr	*elf = ptr;
+      Elf64_Phdr	*elf_ph = (Elf64_Phdr *)((char *)ptr + elf->e_phoff); 
+      uint64_t ndx_ph = 0;  // Start from 0, not 1
+      char *interp_str;
+      int interp_fd;
+      char interp_elfh[1024];
+
+      // Find PT_INTERP segment (start from index 0)
+      while (ndx_ph < elf->e_phnum && elf_ph[ndx_ph].p_type != PT_INTERP)
+          ndx_ph++;
+      
+      if (ndx_ph == elf->e_phnum)
+          return (0);  // No interpreter found
+      
+      interp_str = (char *)ptr + elf_ph[ndx_ph].p_offset;
+      interp_fd = open(interp_str, O_RDONLY);  // Add O_RDONLY flag
+      if (interp_fd < 0)
+          return (-1); //error
+      
+      if (read(interp_fd, &interp_elfh[0], 1024) != 1024)
+          return (-1);
+      
+      Elf64_Ehdr *elf_interp = (Elf64_Ehdr *)&interp_elfh[0]; 
+      Elf64_Phdr *elf_ph_interp = (Elf64_Phdr *)((char *)elf_interp + elf_interp->e_phoff); 
+      
+      // First, reserve the entire address space (like the strace shows)
+      // Find the total memory range needed
+      uint64_t min_vaddr = 0xFFFFFFFF;
+      uint64_t max_vaddr = 0;
+      
+      ndx_ph = 0;  // Reset index
+      while (ndx_ph < elf_interp->e_phnum) {
+          if (elf_ph_interp[ndx_ph].p_type == PT_LOAD) {
+              if (elf_ph_interp[ndx_ph].p_vaddr < min_vaddr)
+                  min_vaddr = elf_ph_interp[ndx_ph].p_vaddr;
+              uint64_t seg_end = elf_ph_interp[ndx_ph].p_vaddr + elf_ph_interp[ndx_ph].p_memsz;
+              if (seg_end > max_vaddr)
+                  max_vaddr = seg_end;
+          }
+          ndx_ph++;
+      }
+      
+      // Align to page boundaries
+      min_vaddr = min_vaddr & ~(0x1000 - 1);  // Align down to 4KB
+      max_vaddr = (max_vaddr + 0x1000 - 1) & ~(0x1000 - 1);  // Align up to 4KB
+      size_t total_size = max_vaddr - min_vaddr;
+      
+      // Reserve entire address space with PROT_NONE (like strace)
+      void *interp_base = mmap(NULL, total_size, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+      if (interp_base == MAP_FAILED)
+          return (-1);
+      
+      // Now map each segment individually (like strace shows)
+      ndx_ph = 0;  // Reset index
+      while (ndx_ph < elf_interp->e_phnum) {
+          if (elf_ph_interp[ndx_ph].p_type == PT_LOAD) {
+              // Align offset and size to page boundaries
+              uint64_t page_offset = elf_ph_interp[ndx_ph].p_offset & ~(0x1000 - 1);
+              uint64_t page_vaddr = elf_ph_interp[ndx_ph].p_vaddr & ~(0x1000 - 1);
+              
+              // Calculate the size to map
+              uint64_t map_end = (elf_ph_interp[ndx_ph].p_offset + elf_ph_interp[ndx_ph].p_filesz + 0x1000 - 1) & ~(0x1000 - 1);
+              size_t map_size = map_end - page_offset;
+              
+              // Map at the correct address with MAP_FIXED
+              void *map_addr = (char *)interp_base + (page_vaddr - min_vaddr);
+              void *result = mmap(map_addr, map_size, PROT_READ, 
+                                 MAP_PRIVATE|MAP_FIXED, interp_fd, page_offset);
+              
+              if (result == MAP_FAILED) {
+                  munmap(interp_base, total_size);
+                  close(interp_fd);
+                  return (-1);
+              }
+          }
+          ndx_ph++;
+      }
+      
+      // Set proper permissions for each segment
+      ndx_ph = 0;  // Reset index
+      while (ndx_ph < elf_interp->e_phnum) {
+          if (elf_ph_interp[ndx_ph].p_type == PT_LOAD) {
+              uint64_t page_vaddr = elf_ph_interp[ndx_ph].p_vaddr & ~(0x1000 - 1);
+              uint64_t map_end = (elf_ph_interp[ndx_ph].p_offset + elf_ph_interp[ndx_ph].p_filesz + 0x1000 - 1) & ~(0x1000 - 1);
+              size_t map_size = map_end - (elf_ph_interp[ndx_ph].p_offset & ~(0x1000 - 1));
+              
+              void *seg_addr = (char *)interp_base + (page_vaddr - min_vaddr);
+              
+              // Set proper permissions
+              int prot = PROT_READ;  // Start with read
+              if (elf_ph_interp[ndx_ph].p_flags & PF_W) prot |= PROT_WRITE;
+              if (elf_ph_interp[ndx_ph].p_flags & PF_X) prot |= PROT_EXEC;
+              
+              if (mprotect(seg_addr, map_size, prot) < 0) {
+                  munmap(interp_base, total_size);
+                  close(interp_fd);
+                  return (-1);
+              }
+          }
+          ndx_ph++;
+      }
+      
+      uint64_t vaddr_interp_entrypoint = (uint64_t)interp_base + (elf_interp->e_entry - min_vaddr);
+      close(interp_fd);
+      return (vaddr_interp_entrypoint);
+  }
+
+  uint32_t get_at_interp_x32(void *ptr)
+  {
+      Elf32_Ehdr	*elf = ptr;
+      Elf32_Phdr	*elf_ph = (Elf32_Phdr *)((char *)ptr + elf->e_phoff); 
+      uint32_t ndx_ph = 0;  // Start from 0, not 1
+      char *interp_str;
+      int interp_fd;
+      char interp_elfh[1024];
+
+      // Find PT_INTERP segment (start from index 0)
+      while (ndx_ph < elf->e_phnum && elf_ph[ndx_ph].p_type != PT_INTERP)
+          ndx_ph++;
+      
+      if (ndx_ph == elf->e_phnum)
+          return (0);  // No interpreter found
+      
+      interp_str = (char *)ptr + elf_ph[ndx_ph].p_offset;
+      interp_fd = open(interp_str, O_RDONLY);  // Add O_RDONLY flag
+      if (interp_fd < 0)
+          return (-1); //error
+      
+      if (read(interp_fd, &interp_elfh[0], 1024) != 1024)
+          return (-1);
+      
+      Elf32_Ehdr *elf_interp = (Elf32_Ehdr *)&interp_elfh[0]; 
+      Elf32_Phdr *elf_ph_interp = (Elf32_Phdr *)((char *)elf_interp + elf_interp->e_phoff); 
+      
+      // First, reserve the entire address space (like the strace shows)
+      // Find the total memory range needed
+      uint32_t min_vaddr = 0xFFFFFFFF;
+      uint32_t max_vaddr = 0;
+      
+      ndx_ph = 0;  // Reset index
+      while (ndx_ph < elf_interp->e_phnum) {
+          if (elf_ph_interp[ndx_ph].p_type == PT_LOAD) {
+              if (elf_ph_interp[ndx_ph].p_vaddr < min_vaddr)
+                  min_vaddr = elf_ph_interp[ndx_ph].p_vaddr;
+              uint32_t seg_end = elf_ph_interp[ndx_ph].p_vaddr + elf_ph_interp[ndx_ph].p_memsz;
+              if (seg_end > max_vaddr)
+                  max_vaddr = seg_end;
+          }
+          ndx_ph++;
+      }
+      
+      // Align to page boundaries
+      min_vaddr = min_vaddr & ~(0x1000 - 1);  // Align down to 4KB
+      max_vaddr = (max_vaddr + 0x1000 - 1) & ~(0x1000 - 1);  // Align up to 4KB
+      size_t total_size = max_vaddr - min_vaddr;
+      
+      // Reserve entire address space with PROT_NONE (like strace)
+      void *interp_base = mmap(NULL, total_size, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+      if (interp_base == MAP_FAILED)
+          return (-1);
+      
+      // Now map each segment individually (like strace shows)
+      ndx_ph = 0;  // Reset index
+      while (ndx_ph < elf_interp->e_phnum) {
+          if (elf_ph_interp[ndx_ph].p_type == PT_LOAD) {
+              // Align offset and size to page boundaries
+              uint32_t page_offset = elf_ph_interp[ndx_ph].p_offset & ~(0x1000 - 1);
+              uint32_t page_vaddr = elf_ph_interp[ndx_ph].p_vaddr & ~(0x1000 - 1);
+              
+              // Calculate the size to map
+              uint32_t map_end = (elf_ph_interp[ndx_ph].p_offset + elf_ph_interp[ndx_ph].p_filesz + 0x1000 - 1) & ~(0x1000 - 1);
+              size_t map_size = map_end - page_offset;
+              
+              // Map at the correct address with MAP_FIXED
+              void *map_addr = (char *)interp_base + (page_vaddr - min_vaddr);
+              void *result = mmap(map_addr, map_size, PROT_READ, 
+                                 MAP_PRIVATE|MAP_FIXED, interp_fd, page_offset);
+              
+              if (result == MAP_FAILED) {
+                  munmap(interp_base, total_size);
+                  close(interp_fd);
+                  return (-1);
+              }
+          }
+          ndx_ph++;
+      }
+      
+      // Set proper permissions for each segment
+      ndx_ph = 0;  // Reset index
+      while (ndx_ph < elf_interp->e_phnum) {
+          if (elf_ph_interp[ndx_ph].p_type == PT_LOAD) {
+              uint32_t page_vaddr = elf_ph_interp[ndx_ph].p_vaddr & ~(0x1000 - 1);
+              uint32_t map_end = (elf_ph_interp[ndx_ph].p_offset + elf_ph_interp[ndx_ph].p_filesz + 0x1000 - 1) & ~(0x1000 - 1);
+              size_t map_size = map_end - (elf_ph_interp[ndx_ph].p_offset & ~(0x1000 - 1));
+              
+              void *seg_addr = (char *)interp_base + (page_vaddr - min_vaddr);
+              
+              // Set proper permissions
+              int prot = PROT_READ;  // Start with read
+              if (elf_ph_interp[ndx_ph].p_flags & PF_W) prot |= PROT_WRITE;
+              if (elf_ph_interp[ndx_ph].p_flags & PF_X) prot |= PROT_EXEC;
+              
+              if (mprotect(seg_addr, map_size, prot) < 0) {
+                  munmap(interp_base, total_size);
+                  close(interp_fd);
+                  return (-1);
+              }
+          }
+          ndx_ph++;
+      }
+      
+      uint32_t vaddr_interp_entrypoint = (uint32_t)interp_base + (elf_interp->e_entry - min_vaddr);
+      close(interp_fd);
+      return (vaddr_interp_entrypoint);
+  }
+#+end_src
+AT_PHNUM, the number of program headers. little Bytecode
+AT_ENTRY, the program’s entry point. little Bytecode
+AT_BASE = used for .interp if exist . little Bytecode
+
+#+begin_src c :tangle no
+  /*https://github.com/torvalds/linux/blob/v3.19/include/uapi/linux/auxvec.h*/
+  #define AT_NULL         0               /* End of vector */
+  #define AT_IGNORE       1               /* Entry should be ignored */
+  #define AT_EXECFD       2               /* File descriptor of program */
+  #define AT_PHDR         3               /* Program headers for program */
+  #define AT_PHENT        4               /* Size of program header entry */
+  #define AT_PHNUM        5               /* Number of program headers */
+  #define AT_PAGESZ       6               /* System page size */
+  #define AT_BASE         7               /* Base address of interpreter */
+  #define AT_FLAGS        8               /* Flags */
+  #define AT_ENTRY        9               /* Entry point of program */
+  #define AT_NOTELF       10              /* Program is not ELF */
+  #define AT_UID          11              /* Real uid */
+  #define AT_EUID         12              /* Effective uid */
+  #define AT_GID          13              /* Real gid */
+  #define AT_EGID         14              /* Effective gid */
+  #define AT_CLKTCK       17              /* Frequency of times() */
+  /* Pointer to the global system page used for system calls and other nice things.  */
+  #define AT_SYSINFO      32
+  #define AT_SYSINFO_EHDR 33
+#+end_src
+***** TODO Replicate similar to ld with unpacked elf
+***** TODO munmap the 1st.
+***** TODO mmap the first 0x1000 packed fd
+
+***** TODO  2nd stage
 **** TODO Decompress elf file.
 #+begin_src asm
   000000000040149b <lz77_decompress_asm>:
@@ -2336,6 +2602,5 @@ no use mov use push 0x2, pop rax ->  3B, mov rax, 0x2  -> ?B
 no use xor rsi, rsi, use sub esi, esi. -> 2b [0x29	0xf6]
 in the payload append the string in the code using call, pop
 open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the ptr to "/proc/self/exe".
-**** 
 *** DONE Packed_file.
 CLOSED: [2025-09-08 Mon 07:03]
