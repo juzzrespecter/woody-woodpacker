@@ -2353,9 +2353,10 @@ CLOSED: [2025-09-14 Sun 14:08]
     	jnz _exit
 
   .readelf:		;[rsp] vaddr stage 2 [rsp + 8] aslr_offset.
-  	push 0x401000
+  	push 0x40115b	; change further
   	pop rdi
-
+  	push 0x17C8		; size of all elf file.
+  	pop rsi
   	
   	;; pop rbx			; rbx = vaddr stage_2
     	;; pop rcx			; rcx = aslr
