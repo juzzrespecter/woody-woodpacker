@@ -10,47 +10,6 @@ random_address_offset = elf_addr - current_addr;
 if random_adress_offset  == 0 no issue generic code less checks ...
 mmap_address = elf_address + random_address 
 
-#+begin_src c :tangle no
-    static int
-    unsimal(unsigned x, char *ptr, int n)
-    {
-        unsigned m = 10;
-        while (10 <= (x / m)) m *= 10;
-        while (10 <= x) {
-            unsigned d = x / m;
-        x -= m * d;
-            m /= 10;
-            ptr[n++] = '0' + d;
-        }
-        ptr[n++] = '0' + x;
-        return n;
-    }
-
-  static int
-  decimal(int x, char *ptr, int n)
-  {
-      if (x < 0) {
-          x = -x;
-          ptr[n++] = '-';
-      }
-      return unsimal(x, ptr, n);
-  }
-
-  static int
-  heximal(unsigned long x, char *ptr, int n)
-  {
-      unsigned j = -1+ 2*sizeof(unsigned long);
-      unsigned long m = 0xful << (4 * j);
-      for (; j; --j, m >>= 4) { // omit leading 0 digits
-          if (m & x) break;
-      }
-      for (; m; --j, m >>= 4) {
-          unsigned d = 0xf & (x >> (4 * j));
-          ptr[n++] = ((10<=d) ? ('a' - 10) : '0') + d;
-      }
-      return n;
-  }
-#+end_src
 * SElinux
 Don't allow to got a mmap with Write and exec. First write then mprotect Read|EXEC
 * CLeaning mmap
@@ -412,7 +371,7 @@ Add to a compress file syscall, pop rdx, ret -
 
 
     int lz77_decompress(const char *compressed_data, size_t compressed_size, int fd)
-    {
+    {w
       size_t original_size;
       char *output;
       char window[COMPRESS_LZ77_SLIDING_WINDOW_SIZE] = {0};
@@ -2147,7 +2106,7 @@ Get bytecode
 [X] check the paylod  appear. ~objdump -M intel -D file | tail~
 [X] check the payload.bin is fine ~ndisasm -b {32,64} file~.
 Test bytecode
-[X] Update section. ~objcopy --update-section .text=payload_64_test_str.bin  a.out~
+[X] Text bytecode Update section. ~objcopy --update-section .text=payload_64_test_str.bin  a.out~
 [X] Get byte code from a file ~ndisasm -b 64 bytecode/open_mmap_until_mmap_size.bin | awk '{for(i=1; i<=length($2); i+=2) {byte = substr($2, i, 2);if (byte != "") ;{printf "\\x%s", byte}}}'~
 [X] Get byte code from a file ~objdump -M intel --disassemble=_start binary_file | awk 'NR > 7 {for(i=1; i<=NF; i++) if ($i ~ /^[0-9a-fA-F]+$/ && length($i) == 2) printf "\\x%s", $i;}'~
 [X] use gcc -0s for  create little payloads.
@@ -2175,19 +2134,19 @@ CLOSED: [2025-09-14 Sun 12:20]
 
   uint64_t unpack_elf_x64(void *ptr, uint64_t aslr_offset)
   {
-    Elf64_Ehdr	*elf_interp = ptr;
-    Elf64_Phdr	*elf_ph_interp = (Elf64_Phdr *)((char *)ptr + elf->e_phoff); 
+    Elf64_Ehdr	*elf = ptr;
+    Elf64_Phdr	*elf_ph = (Elf64_Phdr *)((char *)ptr + elf->e_phoff); 
     uint64_t ndx_ph = 0;  // Start from 0, not 1
     int fd = -1;
         
     uint64_t min_vaddr = 0xFFFFFFFF;
     uint64_t max_vaddr = 0;
     ndx_ph = 0;  // Reset index
-    while (ndx_ph < elf_interp->e_phnum) {
-      if (elf_ph_interp[ndx_ph].p_type == PT_LOAD) {
-        if (elf_ph_interp[ndx_ph].p_vaddr < min_vaddr)
-  	min_vaddr = elf_ph_interp[ndx_ph].p_vaddr;
-        uint64_t seg_end = elf_ph_interp[ndx_ph].p_vaddr + elf_ph_interp[ndx_ph].p_memsz;
+    while (ndx_ph < elf->e_phnum) {
+      if (elf_ph[ndx_ph].p_type == PT_LOAD) {
+        if (elf_ph[ndx_ph].p_vaddr < min_vaddr)
+  	min_vaddr = elf_ph[ndx_ph].p_vaddr;
+        uint64_t seg_end = elf_ph[ndx_ph].p_vaddr + elf_ph[ndx_ph].p_memsz;
         if (seg_end > max_vaddr)
   	max_vaddr = seg_end;
       }
@@ -2201,36 +2160,36 @@ CLOSED: [2025-09-14 Sun 12:20]
         
     // Reserve entire address space with PROT_NONE (like strace)
 
-    void *interp_base = mmap(min_vaddr + aslr_offset, total_size, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-    if (interp_base == MAP_FAILED)
+    void *base = mmap(min_vaddr + aslr_offset, total_size, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+    if (base == MAP_FAILED)
       return (-1);
         
     // Now map each segment individually (like strace shows)
     ndx_ph = 0;  // Reset index
-    while (ndx_ph < elf_interp->e_phnum) {
-      if (elf_ph_interp[ndx_ph].p_type == PT_LOAD) {
+    while (ndx_ph < elf->e_phnum) {
+      if (elf_ph[ndx_ph].p_type == PT_LOAD) {
         // Align offset and size to page boundaries
-        uint64_t page_vaddr = elf_ph_interp[ndx_ph].p_vaddr & ~(0x1000 - 1);
+        uint64_t page_vaddr = elf_ph[ndx_ph].p_vaddr & ~(0x1000 - 1);
                 
         // Calculate the size to map
         // if fd == -1 p_vaddr + memsz else p_offset + filesz
-        uint64_t map_end = elf_ph_interp[ndx_ph].p_vaddr + elf_ph_interp[ndx_ph].p_memsz;
+        uint64_t map_end = elf_ph[ndx_ph].p_vaddr + elf_ph[ndx_ph].p_memsz;
         size_t map_size = map_end - page_vaddr;// map_end - page_offset (low alignment);
         //end if
                 
         // Map at the correct address with MAP_FIXED
-        void *map_addr = (char *)interp_base + (page_vaddr - min_vaddr);
+        void *map_addr = (char *)base + (page_vaddr - min_vaddr);
         void *result = mmap(map_addr, map_size, PROT_READ | PROT_WRITE, 
   			  MAP_PRIVATE|MAP_FIXED, fd, page_offset);
                 
         if (result == MAP_FAILED) {
-  	munmap(interp_base, total_size);
-  	close(interp_fd);
+  	munmap(base, total_size);
+  	close(fd);
   	return (-1);
         }
         // if fd < -1 for make generic use for ld too.
-        uint64_t p_offset = elf_ph_interp[ndx_ph].p_offset;
-        uint64_t p_filesz = elf_ph_interp[ndx_ph].p_filesz;
+        uint64_t p_offset = elf_ph[ndx_ph].p_offset;
+        uint64_t p_filesz = elf_ph[ndx_ph].p_filesz;
         uint64_t ndx = 0;
         while (ndx > p_filesz)
   	{
@@ -2238,12 +2197,12 @@ CLOSED: [2025-09-14 Sun 12:20]
   	  ndx++;
   	}
         int prot = PROT_READ;  // Start with read
-        if (elf_ph_interp[ndx_ph].p_flags & PF_W) prot |= PROT_WRITE;
-        if (elf_ph_interp[ndx_ph].p_flags & PF_X) prot |= PROT_EXEC;
+        if (elf_ph[ndx_ph].p_flags & PF_W) prot |= PROT_WRITE;
+        if (elf_ph[ndx_ph].p_flags & PF_X) prot |= PROT_EXEC;
                 
         if (mprotect(seg_addr, map_size, prot) < 0) {
-  	munmap(interp_base, total_size);
-  	close(interp_fd);
+  	munmap(base, total_size);
+  	close(fd);
   	return (-1);
         }
 
@@ -2253,8 +2212,8 @@ CLOSED: [2025-09-14 Sun 12:20]
     }
         
         
-    uint64_t vaddr_interp_entrypoint = (uint64_t)interp_base + (elf_interp->e_entry - min_vaddr);
-    return (vaddr_interp_entrypoint);
+    uint64_t vaddr_entrypoint = (uint64_t)interp_base + (elf->e_entry - min_vaddr);
+    return (vaddr_entrypoint);
   }
 
   uint32_t unpack_elf_x32(void *ptr, uint32_t aslr_offset)
@@ -2346,58 +2305,197 @@ CLOSED: [2025-09-14 Sun 12:20]
 CLOSED: [2025-09-14 Sun 14:08]
 ******* DONE run auxv
 CLOSED: [2025-09-14 Sun 14:08]
+******* BabySteps
+******** Read Plain elf at the end of the file.
+******** Decrypt to the elf file.
+******** Set auxv with the read of the elf file.
+******** Open the /proc/self/exe and mmap on whatever first 0x1000. 
+******** Mmap the elf file.
+******** clean stages.
+******** jmp to the elf file.
 
-#+begin_src asm :tangle payload/run_auxv_x64.s
-  	section .tex
-  	global _start
+#+begin_src asm :tangle payload/allin.s
+    section .text
+        	global _start
 
-  _start:	
-  	push rsp
+    _start:
+    	.aslr_offset:
+    	call   $+5
+    	pop    rax
+    	sub    rax,0x401005	;aslr in rax
+    	push rax		;aslr in [rsp]
+    	.mmap_stage_2:
+    	xor    r9d,r9d		;offset
+    	push -1			;
+    	pop    r8		;fd
+    	push 0x22		;anonymous | private
+    	pop r10			; MAP
+    	push 0x3		; RW
+    	pop rdx			; prot
+    	xor    edi,edi 		;Vaddr
+    	push 0x1000		;size
+    	pop rsi
+    	push 0x9
+    	pop rax
+    	syscall
+    	test rax, rax
+    	js _exit
+    	push rax		;[rsp] vaddr stage 2 [rsp + 8] aslr_offset.
+
+  .mprotect_stage_2:
+  	xchg rdi, rax		;vaddr
+  	push 0x5 
+  	pop rdx			;prot R-X
+  	push 0xA
+  	pop rax			;syscall mprotect 10
+    	syscall
+  	test rax, rax
+    	jnz _exit
+
+  .readelf:		;[rsp] vaddr stage 2 [rsp + 8] aslr_offset.
+  	push 0x401000
   	pop rdi
-  	xor ecx, ecx
-  	.loop:
-  	add rdi, 8
-  	mov QWORD rsi, [rdi]
-  	test rsi, rsi
-  	jnz .loop
-  	inc ecx
-  	cmp ecx, 2
-  	jne .loop
-  	.auxv_loop:
-  	add rdi, 8
-  	mov QWORD rsi, [rdi]
-  	test rsi, rsi
-  	jz .end
-  	add rdi, 8; Value
-  	cmp rsi, 3
-  	je .get_phdr_vaddr ; get_value and modify
-  	cmp rsi, 5
-  	je .phnum ; get_value and modify
-  	cmp rsi, 7
-  	je .base  ; get_value if possible and modify in case error exit(!0);
-  	jmp .auxv_loop
-  				; Harcoded for testing purpose
-  	.get_phdr_vaddr:
-  	mov rax, 0x401040
-  	mov [rdi], rax 
-  	jmp .auxv_loop
 
-  	.get_phnum:	;
-  	mov rax, 2
-  	mov [rdi], rax 
-  	jmp .auxv_loop
+  	
+  	;; pop rbx			; rbx = vaddr stage_2
+    	;; pop rcx			; rcx = aslr
+    	jmp _exit
+  				;// Don't tested
+    _read_compress_elf:	
+    	push 0x402000		; phdr[1].p_vaddr
+    	pop rdx			; rdx
+    	add rdi, rcx		; rdx + aslr
+    	push rcx		; [rsp] = aslr_offset
+    	
 
-  	.get_base:
-  	mov [rdi], 0
-  	jmp .auxv_loop
-  	.end:
-     	mov rax, 60         ; sys_exit// Exit
-  	push 0
-  	jmp _syscall
 
-  _syscall:	
-  	pop rdi
-     	syscall
+    _prep_syscall_open:	
+    	xchg	rbp, rax     ;rbp hold the aslr offset
+    	push 0x2		;open_syscall
+    	pop rax                 ; syscall_nbr
+    	xor esi, esi            ; Perm
+    	call _syscall_open 	;insert bytecode/proc_self_exe_64.bin
+    	ret
+    	ret
+    	ret
+    	ret
+    	ret
+    	ret
+    	ret
+    	ret
+    	ret
+    	ret
+    	ret
+    	ret
+    	ret
+    	ret
+    	ret
+    _syscall_open:	
+    	pop rdi
+    	syscall
+    	push rax		; save on stack fd
+
+    			
+      patch_auxv_and_jump:
+          ; Patch auxv entries
+          push rsp
+          pop rdi
+          xor ecx, ecx
+
+      .reaching_auxv:
+          add rdi, 8
+          mov rsi, qword [rdi]
+          test rsi, rsi
+          jnz .reaching_auxv
+          inc ecx
+          cmp ecx, 2
+          jne .reaching_auxv
+
+      .auxv_loop:
+          add rdi, 8
+          mov rsi, qword [rdi]
+          test rsi, rsi
+          jz .jump_to_entry
+          add rdi, 8
+          
+          cmp rsi, 3          ; AT_PHDR
+          je .set_phdr
+          cmp rsi, 5          ; AT_PHNUM
+          je .set_phnum
+          cmp rsi, 7          ; AT_BASE
+          je .set_base
+          cmp rsi, 9          ; AT_ENTRY
+          je .set_entry
+          jmp .auxv_loop
+
+      .set_phdr:
+        	mov    rax,QWORD  [rbx+0x20] ; rbx ehdr ptr
+    	add    rax,rbp			; rbp aslr + 0x40
+    	mov qword [rdi], rax
+    	jmp .auxv_loop
+
+      .set_phnum:
+    	movzx  eax,WORD  [rbx+0x38] ; rbx ehdr ptr
+          mov qword [rdi], rax
+          jmp .auxv_loop
+
+      .set_base:
+          mov qword [rdi], r8	; r8 base interp
+          jmp .auxv_loop
+
+      .set_entry:
+    	mov    rax,QWORD  [rbx+0x18]
+    	add rax, rdx ; aslr 
+    	mov qword [rdi], rax
+    	jmp .auxv_loop
+
+    .jump_to_entry:
+    	test r8, r8
+    	jne .prepare_register_entry
+    	mov    r8,QWORD  [rbx+0x18]
+    	add r8, rdx ; aslr	 
+    .prepare_register_entry:
+    	sub rsp, 0
+    	xor edx, edx
+    	push r8
+    	ret
+
+        calculate_elf_memory_range:
+        	xor eax, eax
+        	mov rdx, -1
+        	mov rcx, rax
+        	movsxd rax,esi		; phnum signed extension
+        	imul rax, rax,0x38      ; phnum * sizeof(elf64_phdr)
+        	add rdi, rax            ; ptr + offset end array
+        	.loop_check:
+        	test esi, esi           ; phnum == 0
+        	je .alignment           ; jmp alignment
+        	dec esi                 ; decrement esi
+        	cmp DWORD [rdi-0x38], 1 ; PT_LOAD of previos phdr
+        	jne .continue_loop
+        	mov rax, QWORD [rdi-0x28] ; p_vaddr prev phdr
+        	cmp rax, QWORD [rdx] 	; p_vaddr > *min_addr
+        	jae .max_vaddr			; skip
+        	mov rdx,rax     ; min_addr = p_vaddr
+        	.max_vaddr:
+        	mov rax, QWORD [rdi-0x10] ; rax = p_mmesz
+        	add rax, QWORD [rdi-0x28] ; rax = p_mmesz + p_vaddr
+        	cmp rcx, rax
+        	.continue_loop:
+        	sub rdi, 0x38  		;reduce one phdr size.
+        	jmp .loop_check
+        	.alignment:
+        	and rdx, 0xfffffffffffff000
+        	add rcx, 0xfff
+        	and rcx, 0xfffffffffffff000
+        	ret
+    ;// end_Untested
+        _exit:	
+    	push 60
+           	pop rax
+        	push 128
+        	pop rdi
+           	syscall
 
 #+end_src
 ******* DONE Get updated values for auxv.
@@ -2682,10 +2780,7 @@ CLOSED: [2025-09-14 Sun 12:23]
     4014a2:	0f 96 c0             	setbe  al                ; Set AL if in_size <= 7
     4014a5:	48 85 d2             	test   rdx,rdx           ; Test if 'out' is NULL
     4014a8:	0f 94 c2             	sete   dl                ; Set DL if 'out' is NULL
-    4014ab:	08 d0                	or     al,dl             ; Combine error flags
-    4014ad:	75 22                	jne    4014d1 <error>    ; Jump to error if any flag set
-    4014af:	48 85 ff             	test   rdi,rdi           ; Test if 'in' is NULL
-    4014b2:	74 1d                	je     4014d1 <error>    ; Jump to error if NULL
+    4014ab:	08 d0                	or     al,dl             ; Combine error flags 4014ad:	75 22                	jne    4014d1 <error>    ; Jump to error if any flag set 4014af:	48 85 ff             	test   rdi,rdi           ; Test if 'in' is NULL 4014b2:	74 1d                	je     4014d1 <error>    ; Jump to error if NULL
 
   ; Read original size from compressed data
     4014b4:	48 89 f1             	mov    rcx,rsi           ; Save in_size to rcx
@@ -2807,5 +2902,206 @@ no use mov use push 0x2, pop rax ->  3B, mov rax, 0x2  -> ?B
 no use xor rsi, rsi, use sub esi, esi. -> 2b [0x29	0xf6]
 in the payload append the string in the code using call, pop
 open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the ptr to "/proc/self/exe".
+#+begin_src c :tangle payload/x64/all_in.c :mkdirp yes
+  #include <elf.h>
+  #include <sys/mman.h>
+  #include <fcntl.h>
+  #include <unistd.h>
+  #include <stdio.h>
+  #include <string.h>
+
+  #define PAGE_SIZE 0x1000
+
+  // Generic function to calculate memory range for ELF segments
+  void calculate_elf_memory_range(Elf64_Phdr *phdr, int phnum, uint64_t *min_vaddr, uint64_t *max_vaddr)
+  {
+      ,*min_vaddr = -1;
+      ,*max_vaddr = 0;
+      
+      while (phnum--) {
+          if (phdr[phnum].p_type == PT_LOAD) {
+              if (phdr[phnum].p_vaddr < *min_vaddr)
+                  ,*min_vaddr = phdr[phnum].p_vaddr;
+              uint64_t seg_end = phdr[phnum].p_vaddr + phdr[phnum].p_memsz;
+              if (seg_end > *max_vaddr)
+                  ,*max_vaddr = seg_end;
+          }
+      }
+      
+      // Align to page boundaries
+      ,*min_vaddr &= ~(PAGE_SIZE - 1);
+      ,*max_vaddr = (*max_vaddr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+  }
+
+  // Generic function to load a single ELF segment
+  int load_elf_segment(void *base, void *elf_ptr, Elf64_Phdr *phdr, uint64_t min_vaddr, int fd)
+  {
+      if (phdr->p_type != PT_LOAD)
+          return 0;
+      
+      // Align offset and size to page boundaries
+      uint64_t page_offset = phdr->p_offset & ~(PAGE_SIZE - 1);
+      uint64_t page_vaddr = phdr->p_vaddr & ~(PAGE_SIZE - 1);
+      uint64_t map_end = (phdr->p_offset + phdr->p_filesz + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+      size_t map_size = map_end - page_offset;
+      
+      // Map at the correct address with MAP_FIXED
+      void *map_addr = (char *)base + (page_vaddr - min_vaddr);
+      int prot = PROT_READ;
+      if (phdr->p_flags & PF_W || fd == -1) prot |= PROT_WRITE;
+      if (phdr->p_flags & PF_X && fd != -1) prot |= PROT_EXEC;
+      void *result = mmap(map_addr, map_size, prot, 
+  			MAP_PRIVATE | MAP_FIXED, fd, page_offset);
+      if (result == MAP_FAILED)
+        return -1;
+      if (fd == -1) {
+          // Copy data from ELF buffer to mapped memory
+          memcpy((char *)result + (phdr->p_vaddr - page_vaddr),
+                 (char *)elf_ptr + phdr->p_offset,
+                 phdr->p_filesz);
+  	prot = PROT_READ;
+  	if (phdr->p_flags & PF_W) prot |= PROT_WRITE;
+  	if (phdr->p_flags & PF_X) prot |= PROT_EXEC;
+  	if (mprotect(map_addr, map_size, prot) < 0)
+  	  return -1;
+      }
+      return 0;
+  }
+
+  // Generic ELF unpacking function that works for both main ELF and interpreter
+  uint64_t load_elf_generic(void *ptr, uint64_t aslr_offset, uint64_t target_vaddr, int fd)
+  {
+      Elf64_Ehdr *elf = (Elf64_Ehdr *)ptr;
+      Elf64_Phdr *elf_ph = (Elf64_Phdr *)((char *)ptr + elf->e_phoff);
+      
+      uint64_t min_vaddr, max_vaddr;
+      
+      // Calculate memory range needed
+      calculate_elf_memory_range(elf_ph, elf->e_phnum, &min_vaddr, &max_vaddr);
+      size_t total_size = max_vaddr - min_vaddr;
+      
+      // Reserve entire address space with PROT_NONE
+      void *base_addr;
+      base_addr = mmap((void *)(target_vaddr + aslr_offset), total_size, 
+                          PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+      
+      if (base_addr == MAP_FAILED)
+          return (uint64_t)-1;
+      
+      // Load each segment
+      for (int i = 0; i < elf->e_phnum; i++) {
+          if (load_elf_segment(base_addr, ptr, &elf_ph[i], min_vaddr, fd) < 0) {
+              munmap(base_addr, total_size);
+              return (uint64_t)-1;
+          }
+      }
+      
+      uint64_t entrypoint = (uint64_t)base_addr + (elf->e_entry - min_vaddr);
+      return entrypoint;
+  }
+
+
+  uint64_t get_at_phdr_x64(void *ptr)
+  {
+      Elf64_Ehdr *elf = (Elf64_Ehdr *)ptr;
+      return (uint64_t)((char *)ptr + elf->e_phoff);
+  }
+
+  uint64_t get_at_phnum_x64(void *ptr)
+  {
+      Elf64_Ehdr *elf = (Elf64_Ehdr *)ptr;
+      return elf->e_phnum;
+  }
+
+  uint64_t get_at_entry_x64(void *ptr)
+  {
+      Elf64_Ehdr *elf = (Elf64_Ehdr *)ptr;
+      return elf->e_entry;
+  }
+
+  uint64_t get_at_interp_x64(void *ptr, uint64_t aslr_offset)
+  {
+      Elf64_Ehdr *elf = (Elf64_Ehdr *)ptr;
+      Elf64_Phdr *elf_ph = (Elf64_Phdr *)((char *)ptr + elf->e_phoff);
+      uint64_t ndx_ph = 0;
+      char *interp_str;
+      int interp_fd;
+      char interp_elfh[1024];
+      
+      // Find PT_INTERP segment
+      while (ndx_ph < elf->e_phnum && elf_ph[ndx_ph].p_type != PT_INTERP)
+          ndx_ph++;
+      
+      if (ndx_ph == elf->e_phnum)
+          return 0;  // No interpreter found
+      
+      interp_str = (char *)ptr + elf_ph[ndx_ph].p_offset;
+      interp_fd = open(interp_str, O_RDONLY);
+      if (interp_fd < 0)
+          return (uint64_t)-1;
+      
+      if (read(interp_fd, &interp_elfh[0], 1024) < 1024) {
+          close(interp_fd);
+          return (uint64_t)-1;
+      }
+      
+      // Use the generic unpacker for the interpreter
+      uint64_t result = load_elf_generic(&interp_elfh[0], aslr_offset, 0, interp_fd);
+      
+      close(interp_fd);
+      return result;
+  }
+
+  size_t lz77_decompress_asm(const unsigned char *in, size_t in_size, unsigned char *out) {
+    size_t orig_size;
+    size_t pos = 0;
+    uint16_t dl;
+    size_t len, dist;
+    const unsigned char *p = in + sizeof(orig_size);
+
+    // Validate input
+    if (!in || in_size < sizeof(orig_size) || !out)
+      goto error;
+
+    // Read original size
+    orig_size = *((size_t *) in);
+    if (!orig_size)
+      goto error;
+
+    // Decompress loop
+    while ((p + 3 <= in + in_size) && pos < orig_size) {
+      // Read distance/length as little-endian
+      dl = p[0] | (p[1] << 8);
+      dist = (dl >> 4) & 0xFFF;
+      len = (dl & 0xF);
+      if (len) len += 2;
+
+      // Copy match data
+      if (len && dist && dist <= pos) {
+        if (len > orig_size - pos) 
+  	len = orig_size - pos;
+    	  
+        unsigned char *dst = out + pos;
+        unsigned char *src = out + (pos - dist);
+    	  
+        while (len--) 
+  	,*dst++ = *src++;
+        pos += (dst - (out + pos));  // Update pos
+      }
+      // Copy literal byte
+      if (pos < orig_size)
+        out[pos++] = p[2];
+      p += 3;
+    }
+    // Check if we decompressed all data
+    if (pos != orig_size)
+      goto error;
+    return 0;
+
+   error:
+    return -1;
+  }
+#+end_src
+
 *** DONE Packed_file.
 CLOSED: [2025-09-08 Mon 07:03]
