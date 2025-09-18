@@ -26,6 +26,214 @@ Add to a compress file syscall, pop rdx, ret -
   #include <sys/mman.h>
   #include <stdlib.h> //Malloc
 
+    typedef struct s_lz77
+    {
+      uint16_t distance_len;
+      unsigned char byte;
+    }	__attribute__((packed)) t_lz77;
+
+  typedef struct s_list
+  {
+  	void			*content;
+  	struct s_list	*next;
+  }	t_list;
+
+  t_list	*ft_lstnew(void *content)
+  {
+  	t_list	*node;
+
+  	node = malloc(sizeof(t_list));
+  	if (!node)
+  		return (NULL);
+  	node->content = content;
+  	node->next = NULL;
+  	return (node);
+  }
+
+  void	ft_lstdelone(t_list *lst, void (*del)(void *))
+  {
+  	if (!lst || !del)
+  		return ;
+  	del(lst->content);
+  	free(lst);
+  }
+
+  void	ft_lstclear(t_list **lst, void (*del)(void *))
+  {
+  	t_list	*node;
+  	t_list	*tmp;
+
+  	if (!lst || !*lst)
+  		return ;
+  	node = *lst;
+  	while (node)
+  	{
+  		tmp = node->next;
+  		ft_lstdelone(node, del);
+  		node = tmp;
+  	}
+  	,*lst = NULL;
+  }
+
+  t_list	*ft_lstlast(t_list *lst)
+  {
+  	if (!lst)
+  		return (NULL);
+  	while (lst->next)
+  		lst = lst->next;
+  	return (lst);
+  }
+
+  void	ft_lstadd_back(t_list **lst, t_list *new)
+  {
+  	t_list	*lst_last;
+
+  	if (!new || !lst)
+  		return ;
+  	if (*lst == NULL)
+  		,*lst = new;
+  	else
+  	{
+  		lst_last = ft_lstlast(*lst);
+  		lst_last->next = new;
+  	}
+  }
+
+  void	ft_lstiter(t_list *lst, void (*f)(void *))
+  {
+  	t_list	*node;
+
+  	if (!lst)
+  		return ;
+  	node = lst;
+  	while (node)
+  	{
+  		f(node->content);
+  		node = node->next;
+  	}
+  }
+
+  int	ft_lstsize(t_list *lst)
+  {
+  	int	lst_num;
+
+  	if (!(size_t)lst)
+  		return (0);
+  	lst_num = 1;
+  	while (lst->next)
+  	{
+  		lst_num++;
+  		lst = lst->next;
+  	}
+  	return (lst_num);
+  }
+
+    #define COMPRESS_LZ77_MAX_MATCH_LEN 17
+    #define COMPRESS_LZ77_MIN_MATCH_LEN 3
+    #define COMPRESS_LZ77_SLIDING_WINDOW_SIZE 0x1000
+
+  unsigned char *lz77_get_compress_arr(t_list **lst, size_t *arr_size)
+  {
+    t_list *tmp = *lst;
+    ,*arr_size = ft_lstsize(tmp) * sizeof(t_lz77);
+    t_lz77 *str = malloc(*arr_size);
+    t_lz77 *str_pos = str;
+    if (!str)
+      {
+        ft_lstclear(lst, free);
+  	return ((void *)str);
+      }
+
+    while (tmp) {
+      memcpy(str_pos, tmp->content, sizeof(*str_pos));
+  	str_pos += sizeof(*str_pos);
+  tmp = tmp->next;
+    }
+    return ((void *)str);
+  }
+
+  t_list *lz77_compress(const unsigned char *data, size_t data_len)
+  {
+      t_list *lst;
+      t_list *tmp;
+      t_lz77 *token;
+
+      lst = NULL;
+      if (!data || data_len == 0) return (NULL);
+
+        size_t i = 0;
+        while (i < data_len)
+  	{
+            size_t best_offset = 0;
+            size_t best_length = 0;
+
+            // Search in sliding window: [max(0, i - WINDOW_SIZE), i)
+    	size_t window_start = 0;//(i > COMPRESS_LZ77_SLIDING_WINDOW_SIZE) * (i - COMPRESS_LZ77_SLIDING_WINDOW_SIZE);
+    	if (i > COMPRESS_LZ77_SLIDING_WINDOW_SIZE)
+    	  window_start = i - COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+
+            // Try all possible offsets (1 to window_size)
+          for (size_t offset = 1; offset <= (i - window_start); offset++) {
+              size_t match_length = 0;
+  	    size_t max_possible = (data_len - i > COMPRESS_LZ77_MAX_MATCH_LEN) ? COMPRESS_LZ77_MAX_MATCH_LEN : (data_len - i);
+    	    while (match_length < max_possible &&
+    		   data[i - offset + match_length] == data[i + match_length]) {
+    	      match_length++;
+    	    }
+                if (match_length >= COMPRESS_LZ77_MIN_MATCH_LEN && match_length > best_length) {
+                    best_length = match_length;
+                    best_offset = offset;
+                }
+            }
+            uint8_t next_char = 0;
+            if (i + best_length < data_len) {
+                next_char = data[i + best_length];
+            }
+
+            token = malloc(sizeof(*token));
+  	  if (!token)
+  	    {
+  	      ft_lstclear(&lst, free);
+  	    return (NULL);
+  	    }
+
+            if (best_length >= COMPRESS_LZ77_MIN_MATCH_LEN) {
+                // Valid match: store offset and len-2
+                if (best_offset > 4095) {
+                    fprintf(stderr, "Offset %zu too large\n", best_offset);
+  	      ft_lstclear(&lst, free);
+                    return (NULL);
+                }
+                size_t token_len = best_length - 2; // 1 to 15
+                token->distance_len = (best_offset << 4) | (token_len & 0x0F);
+                token->byte = next_char;
+                i += best_length + 1; // Skip matched bytes + literal
+            } else {
+                // Literal only
+                token->distance_len = 0; // offset=0, len=0
+                token->byte = data[i];
+                i += 1;
+            }
+
+            // Write token (3 bytes)
+  	  tmp = ft_lstnew(token);
+  	  if (!tmp)
+  	    {
+  	      ft_lstclear(&lst, free);
+  	    return (NULL);
+  	    }
+  	  ft_lstadd_back(&lst, tmp);
+    	printf("Token: distlen=0x%04x (offset=%zu, len=%zu), byte=0x%02x at i=%zu\n",
+    	       token->distance_len,
+    	       (size_t)(token->distance_len >> 4),
+    	       (size_t)((token->distance_len & 0xF) == 0 ? 0 : ((token->distance_len & 0xF) + 2)),
+    	       token->byte,
+    	       i - (best_length >= 3 ? best_length + 1 : 1));
+        }
+        return (lst);
+  }
+
+
   uint64_t get_alignment_effective_addr(uint64_t alignment, uint64_t size)
   {
     return (((size + alignment - 1) / alignment) * alignment);
@@ -43,393 +251,6 @@ Add to a compress file syscall, pop rdx, ret -
 
     return (*(uint8_t *)&num == 1);
   }
-
-    #define COMPRESS_LZ77_MAX_MATCH_LEN 17
-    #define COMPRESS_LZ77_MIN_MATCH_LEN 3
-    #define COMPRESS_LZ77_SLIDING_WINDOW_SIZE 0x1000
-
-
-    typedef struct s_lz77
-    {
-      unsigned int distance: 12;
-      unsigned int len: 4;
-      char byte;
-    }	__attribute__((packed)) t_lz77;
-
-    typedef struct s_list
-    {
-    	void			*content;
-    	struct s_list	*next;
-    }	t_list;
-
-    t_list	*ft_lstnew(void *content)
-    {
-    	t_list	*node;
-
-    	node = malloc(sizeof(t_list));
-    	if (!node)
-    		return (NULL);
-    	node->content = content;
-    	node->next = NULL;
-    	return (node);
-    }
-
-    t_lz77 *create_lz77_tkn(size_t len, size_t distance, char byte)
-    {
-      t_lz77 *tkn = malloc(sizeof(*tkn));
-
-      if (tkn)
-        {
-          if (len >= COMPRESS_LZ77_MIN_MATCH_LEN)
-    	tkn->len = len - (COMPRESS_LZ77_MIN_MATCH_LEN - 1);
-          else
-    	tkn->len = 0;
-          /* tkn->len = len; */
-          tkn->distance = distance;
-          tkn->byte = byte;
-        }
-      return (tkn);
-    }
-
-    t_list	*ft_lstlast(t_list *lst)
-    {
-    	if (!lst)
-    		return (NULL);
-    	while (lst->next)
-    		lst = lst->next;
-    	return (lst);
-    }
-
-    int	ft_lstsize(t_list *lst)
-    {
-    	int	lst_num;
-
-    	if (!(size_t)lst)
-    		return (0);
-    	lst_num = 1;
-    	while (lst->next)
-    	{
-    		lst_num++;
-    		lst = lst->next;
-    	}
-    	return (lst_num);
-    }
-
-    void	ft_lstadd_back(t_list **lst, t_list *new)
-    {
-    	t_list	*lst_last;
-
-    	if (!new || !lst)
-    		return ;
-    	if (*lst == NULL)
-    		,*lst = new;
-    	else
-    	{
-    		lst_last = ft_lstlast(*lst);
-    		lst_last->next = new;
-    	}
-    }
-
-    void	ft_lstdelone(t_list *lst, void (*del)(void *))
-    {
-    	if (!lst || !del)
-    		return ;
-    	del(lst->content);
-    	free(lst);
-    }
-
-    void	ft_lstclear(t_list **lst, void (*del)(void *))
-    {
-    	t_list	*node;
-    	t_list	*tmp;
-
-    	if (!lst || !*lst)
-    		return ;
-    	node = *lst;
-    	while (node)
-    	{
-    		tmp = node->next;
-    		ft_lstdelone(node, del);
-    		node = tmp;
-    	}
-    	,*lst = NULL;
-    }
-
-    void	ft_lstiter(t_list *lst, void (*f)(void *))
-    {
-    	t_list	*node;
-
-    	if (!lst)
-    		return ;
-    	node = lst;
-    	while (node)
-    	{
-    		f(node->content);
-    		node = node->next;
-    	}
-    }
-
-    void add_sliding_window(char *buffer, size_t *buffer_start, size_t *buffer_end, size_t *buffer_size, const char *data, size_t len)
-    {
-        size_t i;
-        
-        // Add data to ring buffer - new data goes at the end
-        i = 0;
-        while (i < len)
-        {
-            // Add new byte to end of buffer
-            buffer[*buffer_end] = data[i];
-            ,*buffer_end = (*buffer_end + 1) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
-            
-            // Update size
-            if (*buffer_size < COMPRESS_LZ77_SLIDING_WINDOW_SIZE)
-                (*buffer_size)++;
-            else
-                ,*buffer_start = (*buffer_start + 1) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
-    	i++;
-        }
-        if (*buffer_size == COMPRESS_LZ77_SLIDING_WINDOW_SIZE && *buffer_start == *buffer_end)
-          ,*buffer_start = (*buffer_start + 1) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
-
-    }
-
-    // Access buffer from end backwards (most recent first)
-    char get_sliding_window_char_from_end(const char *buffer, size_t buffer_end, size_t buffer_size, size_t backward_index)
-    {
-        if (!buffer_size || backward_index >= buffer_size)
-            return 0; // Out of bounds
-       size_t target_pos = (buffer_end - 1 - backward_index + COMPRESS_LZ77_SLIDING_WINDOW_SIZE) 
-                           % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
-        return buffer[target_pos]; 
-    }
-
-    char get_sliding_window_char(const char *buffer, size_t buffer_start, size_t buffer_size, size_t index)
-    {
-      if (!buffer || !buffer_size || index >= buffer_size)
-        return (0);
-      size_t actual_index = (buffer_start + index) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
-      return (buffer[actual_index]);
-    }
-    int lz77_compress_find_best_match(const char *sliding_window, size_t sliding_window_start, size_t sliding_window_end, size_t sliding_window_buffer_size, const char *src, size_t src_len, size_t *best_distance, size_t *best_len)
-    {
-      size_t search_pos;
-      size_t match_len;
-      size_t window_ndx;
-      size_t sliding_window_start_reached;
-
-      if (!sliding_window||! src)
-        return (-1);
-      ,*best_distance = 0;
-      ,*best_len = 0;
-      sliding_window_start_reached = 0;
-      search_pos = sliding_window_end;//
-      match_len = 0;
-      while (sliding_window_buffer_size && !sliding_window_start_reached && src_len && *best_len != COMPRESS_LZ77_MAX_MATCH_LEN)
-        {
-          search_pos = (search_pos - 1 + COMPRESS_LZ77_SLIDING_WINDOW_SIZE) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
-          if (search_pos == sliding_window_start)
-    	sliding_window_start_reached = 1;
-          match_len = 0;
-          window_ndx = (search_pos + match_len) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
-          while (match_len < COMPRESS_LZ77_MAX_MATCH_LEN && match_len < src_len && window_ndx < sliding_window_buffer_size
-    	     && get_sliding_window_char(sliding_window, sliding_window_start, sliding_window_buffer_size, window_ndx) == src[match_len])
-    	{
-    	  match_len++;
-    	  window_ndx = (search_pos + match_len) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
-    	}
-          if (COMPRESS_LZ77_MAX_MATCH_LEN < match_len)
-    	match_len = COMPRESS_LZ77_MAX_MATCH_LEN;
-          if (match_len >= COMPRESS_LZ77_MIN_MATCH_LEN &&match_len > *best_len)
-    	{
-    	  ,*best_len = match_len;
-    	  ,*best_distance = (sliding_window_end - search_pos + COMPRESS_LZ77_SLIDING_WINDOW_SIZE) % COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
-    	  if (!*best_distance || *best_distance > sliding_window_buffer_size)
-    	    {
-    	      ,*best_distance = 0;
-    	      ,*best_len = 0;
-    	    }
-    	}
-        }
-      return (0);
-    }
-
-    t_list *lz77_compress_list(const char *src, size_t src_len)
-    {
-      char sliding_window[COMPRESS_LZ77_SLIDING_WINDOW_SIZE];
-      size_t sliding_window_end = 0;
-      size_t sliding_window_start = 0;
-      size_t sliding_window_buffer_size = 0;
-      size_t distance;
-      size_t len;
-      t_list *tokens_lst;
-      t_list *token_lst;
-      t_lz77 *token;
-      char		byte;
-      size_t token_count;
-      size_t total_input_processed;
-      size_t og_src_len = src_len;
-      size_t literal_count = 0;
-      size_t match_count = 0;
-      size_t total_match_length = 0;
-
-      token_count = 0;
-      total_input_processed = 0;
-      tokens_lst = NULL;
-      while (src_len)
-        {
-          if (lz77_compress_find_best_match(&sliding_window[0], sliding_window_start, sliding_window_end, sliding_window_buffer_size, src, src_len, &distance, &len))
-    	{
-    	  ft_lstclear(&tokens_lst, free);
-    	  return (tokens_lst);
-    	}
-          byte = 0;
-          if (len >= src_len)
-    	printf("Ignored next byte inside the token\n");
-          else
-    	byte = src[len];
-
-          token = create_lz77_tkn(len, distance, byte);
-          if (byte != '\n')
-    	printf("(%lu, %lu, %c)\t", distance, len, byte);
-          else
-    	printf("(%lu, %lu, \\n)\t", distance, len);
-          if (!len)
-    	literal_count++;
-          else
-    	{
-    	  match_count++;
-    	  total_match_length += len;
-    	}
-    	
-          if (!token)
-    	{
-    	  ft_lstclear(&tokens_lst, free);
-    	  return (tokens_lst);
-    	}
-          token_lst = ft_lstnew(token);
-          if (!token_lst)
-    	{
-    	  free(token);
-    	  ft_lstclear(&tokens_lst, free);
-    	  return (tokens_lst);
-    	}
-          ft_lstadd_back(&tokens_lst, token_lst);
-          len++;// INFO If delete this line all len should be + 1
-          add_sliding_window(sliding_window, &sliding_window_start, &sliding_window_end, &sliding_window_buffer_size, src, len);
-          src += len;
-          if (len > src_len)
-    	{
-    	  len = src_len;
-    	  src_len = 0;
-    	}
-          else
-    	src_len -= len;
-          token_count++;
-          total_input_processed += len;
-          printf("Total tokens: %zu\t", token_count);
-          printf("Total input processed: %zu\t", total_input_processed);
-          printf("Original input size: %zu\t", og_src_len);
-          printf("window_start %lu\t", sliding_window_start);
-          printf("window_end %lu\t", sliding_window_end);
-          printf("Tokens per byte: %.2f\n", (double)token_count / total_input_processed);
-        }
-      printf("Literals: %ld, Matches: %ld\n", literal_count, match_count);
-      printf("Average match length: %.2f\n", (double)total_match_length / match_count);
-      printf("Compression efficiency: %.2f%%\n", (double)(literal_count + match_count) / total_input_processed * 100);
-      return (tokens_lst);
-    }
-
-    int lz77_compress(char *src, size_t src_len, int fd)
-    {
-      t_list *tokens = lz77_compress_list(src, src_len);
-      t_list *tmp;
-      t_lz77 *token;
-      size_t compress_size;
-
-      if (!tokens)
-        return (-1);
-      tmp = tokens;
-      // Write original size.
-      compress_size = ft_lstsize(tmp) * sizeof(*token) + sizeof(compress_size);
-      printf("compress_size %lu, src_size %lu, compress_ratio %f\n", compress_size, src_len, (double)compress_size / src_len);
-      if (compress_size > src_len)
-        printf("don't compress\n");
-      compress_size = src_len;
-      write(fd, &compress_size, sizeof(compress_size));
-      while (tmp)
-        {
-          token = tmp->content;
-          if (!token)//Shouldn't happend.
-    	return (-1);
-          /* if (tmp == tokens) */
-          write(fd, token, sizeof(*token));
-          tmp = tmp->next;
-        }
-      ft_lstclear(&tokens, free);
-      return (0);
-    }
-
-
-    int lz77_decompress(const char *compressed_data, size_t compressed_size, int fd)
-    {w
-      size_t original_size;
-      char *output;
-      char window[COMPRESS_LZ77_SLIDING_WINDOW_SIZE] = {0};
-      size_t window_start = 0, window_end = 0, window_size = 0, output_pos = 0;
-      const char *current = compressed_data + sizeof(size_t);
-      size_t length;
-      t_lz77 *token;
-      if (!compressed_data || compressed_size < sizeof(size_t))
-        return (-1);
-
-      memcpy(&original_size, compressed_data, sizeof(size_t));
-      output = malloc(original_size); 
-      if (!output)
-        return (-1);
-        
-      // Use your existing sliding window functions
-      while ((current + sizeof(*token)) <= (compressed_data + compressed_size) && output_pos < original_size) {
-        token = (t_lz77*)current;
-            
-        // Unified processing
-        length = 0;
-        if (token->len > 0)
-          length = (token->len + 2);
-            
-        // Copy referenced data using your get function
-        for (size_t i = 0; token->distance && i < length && output_pos < original_size; i++) {
-          // For decompression, we want to read from (distance) positions back
-    	size_t backward_idx = window_end - length; // 1 = most recent
-    	printf("backward_idx %lu\n, window_size %lu\n", backward_idx, window_size);
-    	if (backward_idx == window_size)
-    	    break;
-    	char byte = get_sliding_window_char(window, window_start, window_size, backward_idx + i);
-    	output[output_pos++] = byte;
-          }
-            
-        // Add next character
-        if (output_pos < original_size)
-          output[output_pos++] = token->byte;
-            
-        // Update window using your add function
-        add_sliding_window(window, &window_start, &window_end, &window_size,
-    		       output + (output_pos - length - 1), length + 1);
-            
-        current += sizeof(t_lz77);
-      }
-        
-      if (output_pos == original_size) {
-        write(fd, output, output_pos);
-        free(output);
-        return (0);
-      }
-        
-      free(output);
-      return (-1);
-    }
-
-
-
 
   // Begin setter eh/ph/sh
   void elf_phdr_set_memsz(t_elf_ph *phdr, uint64_t value, unsigned char class)
@@ -1375,9 +1196,11 @@ Add to a compress file syscall, pop rdx, ret -
     t_elf_h 		ehdr = (t_elf_h){.elf32 = elf_mmap};
     const uint64_t     e_entrypoint = elf_get_elfh_entry(&ehdr);
     /* const uint64_t 	shnum = elf_get_elfh_shnum(&ehdr); */
-    const uint64_t 	phnum = elf_get_elfh_phnum(&ehdr);
+    /* const uint64_t 	phnum = elf_get_elfh_phnum(&ehdr); */
     const unsigned char 	class = elf_get_elfh_e_ident_class(elf_mmap);
-    const size_t free_vaddr = elf_get_free_exec_vaddr_avalaible(&ehdr, class, phnum);
+    /* const size_t free_vaddr = elf_get_free_exec_vaddr_avalaible(&ehdr, class, phnum); */
+    if (!compressed_size)
+      return (1);
     // in case find the section show relevant info function.
 
     int eip_pre_hc_vaddr_fd;
@@ -1989,7 +1812,7 @@ Add to a compress file syscall, pop rdx, ret -
   /*     return 0; */
   /* } */
 
-  int generated_packed_file(void *elf_mmap, size_t file_size, void *generated_bytecode, size_t payload_size, int packed)
+  int generated_packed_file(void *elf_mmap, size_t file_size, uint64_t compress_file_size, void *generated_bytecode, size_t payload_size, int packed, t_list **tkns)
   {
     t_elf_h ehdr = (t_elf_h){.elf32 = elf_mmap};
     uint64_t shnum;
@@ -1998,6 +1821,8 @@ Add to a compress file syscall, pop rdx, ret -
     uint64_t new_phdr_vaddr;
     uint64_t writed;
     uint64_t new_phnum;
+    unsigned char *arr_compress;
+    size_t arr_size;
       
     if (validate_elf_headers(&ehdr, &shnum, &phnum, &class))
       return (1);
@@ -2007,13 +1832,23 @@ Add to a compress file syscall, pop rdx, ret -
     if (copy_and_modify_elf_header(&ehdr, packed, class, new_phdr_vaddr, &new_phnum, phnum, &writed))
       return (3);
     printf("after copy and modify ehdr -> writed: %ld\n", writed);
-    if (write_program_headers(&ehdr, packed, phnum, new_phdr_vaddr, class, payload_size, &writed))
+
+    if (write_program_headers(&ehdr, packed, phnum, new_phdr_vaddr, class, payload_size + compress_file_size, &writed))
       return (4);
     printf("after write phdrs -> writed: %ld\n", writed);
 
     if (write_padding_and_payload(packed, &generated_bytecode, payload_size,
   				0, &writed))
       return (5);
+    arr_compress = lz77_get_compress_arr(tkns, &arr_size);
+    if (write(packed, &compress_file_size, sizeof(compress_file_size)) != (ssize_t) sizeof(compress_file_size)
+        || write(packed, arr_compress, arr_size) != (ssize_t) arr_size)
+      {
+    free(arr_compress);
+    printf("Unsuccessfully packed %lu\n", file_size);
+    return (0);
+      }	
+    free(arr_compress);
     printf("Successfully packed %lu\n", file_size);
     return (0);
   }
@@ -2041,28 +1876,39 @@ Add to a compress file syscall, pop rdx, ret -
     void *elf_mmap = mmap(NULL, file_size, PROT_READ, MAP_SHARED, fd, 0);
     close(fd);
     if (!elf_mmap)
+      {
+    close(fd);
       return (4);
-    t_list *lz77 = lz77_compress_list(elf_mmap, file_size);
+      }
+    t_list *lz77 = lz77_compress(elf_mmap, file_size);
     if (!lz77)
       {
+    close(fd);
         munmap(elf_mmap, file_size);
         return (5);
       }
     size_t lz77_size = ft_lstsize(lz77) * sizeof(t_lz77);
     if (!lz77_size)
       {
+        ft_lstclear(&lz77, free);
+    close(fd);
         munmap(elf_mmap, file_size);
         return (5);
       } 
+    lz77_size += sizeof(uint64_t);
     size_t generated_bytecode_size;
     char *generated_bytecode = NULL;
     if (generate_payload(elf_mmap, lz77_size, &generated_bytecode, &generated_bytecode_size))
       {
+        ft_lstclear(&lz77, free);
+    close(fd);
         munmap(elf_mmap, file_size);
         return (5);
       }
     if (!generated_bytecode || !generated_bytecode_size)
       {
+        ft_lstclear(&lz77, free);
+    close(fd);
         munmap(elf_mmap, file_size);
         return (6);
       }
@@ -2070,16 +1916,20 @@ Add to a compress file syscall, pop rdx, ret -
     int packed = open("woody", O_CREAT | O_TRUNC | O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
     if (packed < 0)
       {
+        ft_lstclear(&lz77, free);
+    close(fd);
         munmap(elf_mmap, file_size);
         return (7);
       }
-    if (generated_packed_file(elf_mmap, file_size, generated_bytecode, generated_bytecode_size, packed))
+    if (generated_packed_file(elf_mmap, file_size, lz77_size, generated_bytecode, generated_bytecode_size, packed, &lz77))
       {
-        close(packed);
+        ft_lstclear(&lz77, free);
+        close(fd);
         munmap(elf_mmap, file_size);
         return (8);
       }
-    close(packed);
+        ft_lstclear(&lz77, free);
+    close(fd);
     munmap(elf_mmap, file_size);
     return (0);
   }
@@ -2315,15 +2165,14 @@ CLOSED: [2025-09-14 Sun 14:08]
 ******** jmp to the elf file.
 
 #+begin_src asm :tangle payload/allin.s
-    section .text
-        	global _start
+  global _start
 
     _start:
     	.aslr_offset:
     	call   $+5
-    	pop    rax
-    	sub    rax,0x401005	;aslr in rax
-    	push rax		;aslr in [rsp]
+    	pop    r15
+    	sub    r15,0x401005	;aslr in rex
+    	push r15		;aslr in [rsp]
     	.mmap_stage_2:
     	xor    r9d,r9d		;offset
     	push -1			;
@@ -2342,6 +2191,8 @@ CLOSED: [2025-09-14 Sun 14:08]
     	js _exit
     	push rax		;[rsp] vaddr stage 2 [rsp + 8] aslr_offset.
 
+  .write_stage_2:
+  	;; Need to develop further
   .mprotect_stage_2:
   	xchg rdi, rax		;vaddr
   	push 0x5 
@@ -2353,71 +2204,57 @@ CLOSED: [2025-09-14 Sun 14:08]
     	jnz _exit
 
   .readelf:		;[rsp] vaddr stage 2 [rsp + 8] aslr_offset.
-  	push 0x40115b	; change further
-  	pop rdi
-  	push 0x17C8		; size of all elf file.
-  	pop rsi
-  	
-  	;; pop rbx			; rbx = vaddr stage_2
-    	;; pop rcx			; rcx = aslr
-    	jmp _exit
-  				;// Don't tested
-    _read_compress_elf:	
-    	push 0x402000		; phdr[1].p_vaddr
-    	pop rdx			; rdx
-    	add rdi, rcx		; rdx + aslr
-    	push rcx		; [rsp] = aslr_offset
-    	
+    	xor    r9d,r9d		;offset ;; Create a mmap for decryp the file
+    	push -1			;
+    	pop    r8		;fd
+    	push 0x22		;anonymous | private
+    	pop r10			; MAP
+    	push 0x3		; RW
+    	pop rdx			; prot
+    	xor    edi,edi 		;Vaddr
+    	push 0x1000		;size
+    	pop rsi
+    	push 0x9
+    	pop rax
+  	syscall
+    	test rax, rax
+    	js _exit
+  	xchg r14, rax
 
+  	;; push 0x401163	; vaddr start elf file
+  	;; pop r14		; 
+  	push 0x17F8	; size of all elf file.
+  	pop r13
+  	.decompress_elf_file:
 
-    _prep_syscall_open:	
-    	xchg	rbp, rax     ;rbp hold the aslr offset
-    	push 0x2		;open_syscall
-    	pop rax                 ; syscall_nbr
-    	xor esi, esi            ; Perm
-    	call _syscall_open 	;insert bytecode/proc_self_exe_64.bin
-    	ret
-    	ret
-    	ret
-    	ret
-    	ret
-    	ret
-    	ret
-    	ret
-    	ret
-    	ret
-    	ret
-    	ret
-    	ret
-    	ret
-    	ret
-    _syscall_open:	
-    	pop rdi
-    	syscall
-    	push rax		; save on stack fd
-
-    			
-      patch_auxv_and_jump:
-          ; Patch auxv entries
-          push rsp
-          pop rdi
-          xor ecx, ecx
+  	;; rdi should be rsp begin
+  	;; r15 aslr
+  	;; r14 ehdr ptr in the correct mmap
+  	;; r13 ehdr ptr size
+  	;; r12 base interp 
+  	;; Modified reg rdi, rsi, r/ecx
+      set_auxv:
+  	lea rdi, [rsp + 0x10]
+  				; Patch auxv entries
+  	;;  rdi, rsp at begin
+          xor ecx, ecx		; counter for detect end argv, envp.
 
       .reaching_auxv:
           add rdi, 8
           mov rsi, qword [rdi]
-          test rsi, rsi
+          test rsi, rsi		; register check value
           jnz .reaching_auxv
           inc ecx
           cmp ecx, 2
           jne .reaching_auxv
 
       .auxv_loop:
-          add rdi, 8
-          mov rsi, qword [rdi]
+          add rdi, 8		;First case NULL, next field of auxv,rest value -> field.
+          mov rsi, qword [rdi]	
           test rsi, rsi
-          jz .jump_to_entry
-          add rdi, 8
+    	jz _exit
+          ;; jz .jump_to_entry
+          add rdi, 8		;Advance to value
           
           cmp rsi, 3          ; AT_PHDR
           je .set_phdr
@@ -2430,36 +2267,73 @@ CLOSED: [2025-09-14 Sun 14:08]
           jmp .auxv_loop
 
       .set_phdr:
-        	mov    rax,QWORD  [rbx+0x20] ; rbx ehdr ptr
-    	add    rax,rbp			; rbp aslr + 0x40
+        	mov    rax,QWORD  [r14+0x20]	; r14 ehdr ptr; rax == phdr_offset
+    	add    rax,r14			; r14 == 0x40 + ehdr ptr -> phdr ptr.
     	mov qword [rdi], rax
     	jmp .auxv_loop
 
       .set_phnum:
-    	movzx  eax,WORD  [rbx+0x38] ; rbx ehdr ptr
+    	movzx  eax,WORD  [r14+0x38] ; rbx ehdr ptr
           mov qword [rdi], rax
           jmp .auxv_loop
 
       .set_base:
-          mov qword [rdi], r8	; r8 base interp
+          mov qword [rdi], r12	; r12 base interp
           jmp .auxv_loop
 
       .set_entry:
-    	mov    rax,QWORD  [rbx+0x18]
-    	add rax, rdx ; aslr 
+    	mov    rax,QWORD  [r14+0x18] ;entrypoint
+    	add rax, r15 ; aslr  r15
     	mov qword [rdi], rax
     	jmp .auxv_loop
 
+  				;// Don't tested
+    _read_compress_elf:	
+  	push 0x402000		; phdr[1].p_vaddr
+  	pop rdx			; rdx
+  	add rdx, r15		; rdx + aslr
+
+    	
+
+
+    _prep_syscall_open:	
+  	xchg	rbp, rax     ;rbp hold the aslr offset
+  	push 0x2		;open_syscall
+  	pop rax                 ; syscall_nbr
+  	xor esi, esi            ; Perm
+  	call _syscall_open 	;insert bytecode/proc_self_exe_64.bin
+  	ret
+  	ret
+  	ret
+  	ret
+  	ret
+  	ret
+  	ret
+  	ret
+  	ret
+  	ret
+  	ret
+  	ret
+  	ret
+  	ret
+  	ret
+    _syscall_open:	
+  	pop rdi
+  	syscall
+  	push rax		; save on stack fd
+
+    			
+
     .jump_to_entry:
-    	test r8, r8
-    	jne .prepare_register_entry
-    	mov    r8,QWORD  [rbx+0x18]
-    	add r8, rdx ; aslr	 
+  	test r8, r8
+  	jne .prepare_register_entry
+  	mov    r8,QWORD  [rbx+0x18]
+  	add r8, rdx ; aslr	 
     .prepare_register_entry:
-    	sub rsp, 0
-    	xor edx, edx
-    	push r8
-    	ret
+  	sub rsp, 0
+  	xor edx, edx
+  	push r8
+  	ret
 
         calculate_elf_memory_range:
         	xor eax, eax
@@ -2492,11 +2366,11 @@ CLOSED: [2025-09-14 Sun 14:08]
         	ret
     ;// end_Untested
         _exit:	
-    	push 60
-           	pop rax
+  	push 60
+         	pop rax
         	push 128
         	pop rdi
-           	syscall
+         	syscall
 
 #+end_src
 ******* DONE Get updated values for auxv.
@@ -2770,6 +2644,8 @@ CLOSED: [2025-09-14 Sun 12:22]
 ***** NEXT 3nd stage
 **** DONE Decompress elf file.
 CLOSED: [2025-09-14 Sun 12:23]
+* TODO Use the decompress on allin.s
+SCHEDULED: <2025-09-19 Fri>
 #+begin_src asm :tangle no
   000000000040149b <lz77_decompress_asm>:
 
