@@ -1,5 +1,5 @@
-#+title: Packed_file
 Test further packed file.
+#+title: Packed_file
 * ASLR?
 PIE == ~Elfh_type == ET_DYN~
 - add the diff between expected vaddr and real vaddr
@@ -2211,7 +2211,7 @@ CLOSED: [2025-09-14 Sun 14:08]
     	push 0x3		; RW
     	pop rdx			; prot
     	xor    edi,edi 		;Vaddr
-    	push 0x1000		;size
+    	push 0x2000		;size
     	pop rsi
     	push 0x9
     	pop rax
@@ -2220,9 +2220,9 @@ CLOSED: [2025-09-14 Sun 14:08]
     	js _exit
   	xchg rdx, rax
 
-  	push 0x40127c	; vaddr start of compress elf file
+  	push 0x401281	; vaddr start of compress elf file
   	pop rdi		; 
-  	push 0x7D9	; size of all compress elf file.
+  	push 0x7E8	; size of all compress elf file.
   	pop rsi
 
   	;; .decompress_elf_file:
