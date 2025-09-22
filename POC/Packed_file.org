@@ -2152,16 +2152,22 @@ CLOSED: [2025-09-14 Sun 12:20]
 ***** Set auxv
 ****** DONE Linker
 CLOSED: [2025-09-14 Sun 14:08]
-******* DONE run auxv
-CLOSED: [2025-09-14 Sun 14:08]
-******* BabySteps
-******** Read Plain elf at the end of the file.
-******** Decrypt to the elf file.
-******** Set auxv with the read of the elf file.
-******** Open the /proc/self/exe and mmap on whatever first 0x1000. 
-******** Mmap the elf file.
-******** clean stages.
-******** jmp to the elf file.
+**** TODO BabySteps
+***** DONE Read Plain elf at the end of the file.
+CLOSED: [2025-09-22 Mon 14:38]
+***** DONE Decrypt to the elf file.
+CLOSED: [2025-09-22 Mon 14:38]
+***** DONE Set auxv with the read of the elf file.
+CLOSED: [2025-09-22 Mon 14:38]
+***** DONE Open the /proc/self/exe
+CLOSED: [2025-09-22 Mon 14:38]
+***** TODO Mmap the elf file.
+****** DONE Calculate_mem_range
+****** TODO The rest.
+***** Mmap the linker file
+***** 
+***** clean stages.
+***** jmp to the elf file.
 
 #+begin_src asm :tangle payload/allin.s
   global _start
@@ -2218,15 +2224,15 @@ CLOSED: [2025-09-14 Sun 14:08]
   	syscall
     	test rax, rax
     	js _exit
+  	push rax
   	xchg rdx, rax
-
-  	push 0x401281	; vaddr start of compress elf file
+  	push 0x401ac3	; vaddr start of compress elf file
   	pop rdi		; 
-  	push 0x7E8	; size of all compress elf file.
+  	push 0x816	; size of all compress elf file.
   	pop rsi
 
   	;; .decompress_elf_file:
-  lz77_decompress_asm:
+  lz77_decompress:
       ; Function entry - validate input parameters
       ; rdi = in, rsi = in_size, rdx = out
 
@@ -2304,6 +2310,7 @@ CLOSED: [2025-09-14 Sun 14:08]
       jne    .copy_loop         ; Jump if i < len
 
       ; Update position and copy literal byte
+      pop    rbx
       add    rax, rdx           ; pos += len
       cmp    rax, rsi           ; Compare pos with orig_size
       jae    .after_literal     ; Jump if pos >= orig_size
@@ -2333,7 +2340,7 @@ CLOSED: [2025-09-14 Sun 14:08]
       jmp    .copy_match        ; Jump to copy match
   	
   .finish_final:
-      pop    rbx                ; Restore rbx
+      ;; pop    rbx                ; Restore rbx
   .finish:
       cmp    rax, rsi           ; Compare pos with orig_size
       setne  al                 ; Set AL if not equal
@@ -2348,6 +2355,12 @@ CLOSED: [2025-09-14 Sun 14:08]
   	;; r12 base interp 
   	;; Modified reg rdi, rsi, r/ecx
       set_auxv:
+
+  	pop r14			;mmap ehdr ptr
+  	push 0x2000
+  	pop r13
+  	push 0
+  	pop r12			; reset r12
   	lea rdi, [rsp + 0x10]	; This is a patch.
   				; Patch auxv entries
   	;;  rdi, rsp at begin
@@ -2366,7 +2379,9 @@ CLOSED: [2025-09-14 Sun 14:08]
           add rdi, 8		;First case NULL, next field of auxv,rest value -> field.
           mov rsi, qword [rdi]	
           test rsi, rsi
-    	jz _exit
+  	;; jz read_elf
+    	;; jz _exit
+  	jz set_calculate_test
           ;; jz .jump_to_entry
           add rdi, 8		;Advance to value
           
@@ -2402,14 +2417,6 @@ CLOSED: [2025-09-14 Sun 14:08]
     	jmp .auxv_loop
 
   				;// Don't tested
-    _read_compress_elf:	
-  	push 0x402000		; phdr[1].p_vaddr
-  	pop rdx			; rdx
-  	add rdx, r15		; rdx + aslr
-
-    	
-
-
     _prep_syscall_open:	
   	xchg	rbp, rax     ;rbp hold the aslr offset
   	push 0x2		;open_syscall
@@ -2434,7 +2441,17 @@ CLOSED: [2025-09-14 Sun 14:08]
     _syscall_open:	
   	pop rdi
   	syscall
+  	test rax, rax
+  	js _exit
   	push rax		; save on stack fd
+
+  _syscall_close:
+  	pop rdi
+  	push 0x3
+  	pop rax
+  	syscall
+  	test rax, rax
+  	jmp _exit
 
     			
 
@@ -2449,9 +2466,16 @@ CLOSED: [2025-09-14 Sun 14:08]
   	push r8
   	ret
 
-        calculate_elf_memory_range:
+  set_calculate_test:
+  	mov rdi, r9
+  	add rdi, 0x40
+  	push 0x2
+  	pop rsi
+  	;; rdx == Min
+  	;; rcx == Max
+  calculate_elf_memory_range:
         	xor eax, eax
-        	mov rdx, -1
+        	mov rdx, -1		;rdx == Max
         	mov rcx, rax
         	movsxd rax,esi		; phnum signed extension
         	imul rax, rax,0x38      ; phnum * sizeof(elf64_phdr)
@@ -2463,13 +2487,12 @@ CLOSED: [2025-09-14 Sun 14:08]
         	cmp DWORD [rdi-0x38], 1 ; PT_LOAD of previos phdr
         	jne .continue_loop
         	mov rax, QWORD [rdi-0x28] ; p_vaddr prev phdr
-        	cmp rax, QWORD [rdx] 	; p_vaddr > *min_addr
-        	jae .max_vaddr			; skip
-        	mov rdx,rax     ; min_addr = p_vaddr
+        	cmp rax, rdx 	; p_vaddr < *min_addr
+        	cmovb rdx,rax     ; min_addr = p_vaddr
         	.max_vaddr:
-        	mov rax, QWORD [rdi-0x10] ; rax = p_mmesz
-        	add rax, QWORD [rdi-0x28] ; rax = p_mmesz + p_vaddr
-        	cmp rcx, rax
+        	add rax, QWORD [rdi-0x10] ; rax = p_mmesz
+        	cmp rax, rcx
+  	cmova rcx, rax
         	.continue_loop:
         	sub rdi, 0x38  		;reduce one phdr size.
         	jmp .loop_check
@@ -2477,7 +2500,7 @@ CLOSED: [2025-09-14 Sun 14:08]
         	and rdx, 0xfffffffffffff000
         	add rcx, 0xfff
         	and rcx, 0xfffffffffffff000
-        	ret
+        	
     ;// end_Untested
         _exit:	
   	push 60
@@ -2487,7 +2510,9 @@ CLOSED: [2025-09-14 Sun 14:08]
          	syscall
 
 #+end_src
-******* DONE Get updated values for auxv.
+***** DONE run auxv
+CLOSED: [2025-09-14 Sun 14:08]
+***** DONE Get updated values for auxv.
 CLOSED: [2025-09-14 Sun 12:28]
 #+begin_src c :tangle payload/get_elf_auxv_data.c
   # include <elf.h>    // Typedef ELFNN_*, ST_BIND, ...
@@ -2758,8 +2783,8 @@ CLOSED: [2025-09-14 Sun 12:22]
 ***** NEXT 3nd stage
 **** DONE Decompress elf file.
 CLOSED: [2025-09-14 Sun 12:23]
-* TODO Use the decompress on allin.s
-SCHEDULED: <2025-09-19 Fri>
+* DONE Use the decompress on allin.s
+CLOSED: [2025-09-22 Mon 11:46] SCHEDULED: <2025-09-19 Fri>
 #+begin_src asm :tangle no
         lz77_decompress_asm:
 
