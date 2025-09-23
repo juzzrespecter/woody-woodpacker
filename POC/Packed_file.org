@@ -2161,16 +2161,48 @@ CLOSED: [2025-09-22 Mon 14:38]
 CLOSED: [2025-09-22 Mon 14:38]
 ***** DONE Open the /proc/self/exe
 CLOSED: [2025-09-22 Mon 14:38]
-***** TODO Mmap the elf file.
+***** DONE Mmap the elf file.
+CLOSED: [2025-09-23 Tue 15:13]
 ****** DONE Calculate_mem_range
-****** TODO The rest.
+****** DONE The rest.
+CLOSED: [2025-09-23 Tue 15:13]
+
 ***** Mmap the linker file
-***** 
 ***** clean stages.
 ***** jmp to the elf file.
 
 #+begin_src asm :tangle payload/allin.s
   global _start
+
+  _mmap:
+  	push 0x9
+  	pop rax
+  	syscall
+  	ret
+  _mprotect:
+  	push 0xA
+  	pop rax		
+    	syscall
+  	ret
+  _munmap:
+  	push 0xb		
+  	pop rax
+  	syscall
+  	ret
+  _open:
+  	push 0x2
+  	pop rax
+  	syscall
+  	ret
+  _read:
+  	xor eax, eax		;syscall 0
+  	syscall
+  	ret
+  _close:
+  	push 0x3
+  	pop rax
+  	syscall
+  	ret
 
     _start:
     	.aslr_offset:
@@ -2189,9 +2221,9 @@ CLOSED: [2025-09-22 Mon 14:38]
     	xor    edi,edi 		;Vaddr
     	push 0x1000		;size
     	pop rsi
-    	push 0x9
-    	pop rax
-    	syscall
+  	push 0x9
+  	pop rax
+  	syscall
     	test rax, rax
     	js _exit
     	push rax		;[rsp] vaddr stage 2 [rsp + 8] aslr_offset.
@@ -2217,7 +2249,7 @@ CLOSED: [2025-09-22 Mon 14:38]
     	push 0x3		; RW
     	pop rdx			; prot
     	xor    edi,edi 		;Vaddr
-    	push 0x2000		;size
+    	push 0x5000		;size
     	pop rsi
     	push 0x9
     	pop rax
@@ -2226,9 +2258,9 @@ CLOSED: [2025-09-22 Mon 14:38]
     	js _exit
   	push rax
   	xchg rdx, rax
-  	push 0x401ac3	; vaddr start of compress elf file
+  	push 0x40146c	; vaddr start of compress elf file
   	pop rdi		; 
-  	push 0x816	; size of all compress elf file.
+  	push 0xBBA	; size of all compress elf file.
   	pop rsi
 
   	;; .decompress_elf_file:
@@ -2381,7 +2413,7 @@ CLOSED: [2025-09-22 Mon 14:38]
           test rsi, rsi
   	;; jz read_elf
     	;; jz _exit
-  	jz set_calculate_test
+  	jz set_load_elf_generic
           ;; jz .jump_to_entry
           add rdi, 8		;Advance to value
           
@@ -2445,14 +2477,6 @@ CLOSED: [2025-09-22 Mon 14:38]
   	js _exit
   	push rax		; save on stack fd
 
-  _syscall_close:
-  	pop rdi
-  	push 0x3
-  	pop rax
-  	syscall
-  	test rax, rax
-  	jmp _exit
-
     			
 
     .jump_to_entry:
@@ -2468,15 +2492,15 @@ CLOSED: [2025-09-22 Mon 14:38]
 
   set_calculate_test:
   	mov rdi, r9
-  	add rdi, 0x40
-  	push 0x2
+  	add rdi, 0x40		;lea rdi, [r9 + 0x40] &phdr[0]
+  	push 0x2		;phnum
   	pop rsi
   	;; rdx == Min
   	;; rcx == Max
   calculate_elf_memory_range:
         	xor eax, eax
-        	mov rdx, -1		;rdx == Max
-        	mov rcx, rax
+        	mov QWORD [rdx], -1		;rdx == Max
+        	mov QWORD [rcx], rax		;rcx == Min
         	movsxd rax,esi		; phnum signed extension
         	imul rax, rax,0x38      ; phnum * sizeof(elf64_phdr)
         	add rdi, rax            ; ptr + offset end array
@@ -2487,26 +2511,235 @@ CLOSED: [2025-09-22 Mon 14:38]
         	cmp DWORD [rdi-0x38], 1 ; PT_LOAD of previos phdr
         	jne .continue_loop
         	mov rax, QWORD [rdi-0x28] ; p_vaddr prev phdr
-        	cmp rax, rdx 	; p_vaddr < *min_addr
-        	cmovb rdx,rax     ; min_addr = p_vaddr
+        	cmp rax, QWORD [rdx] 	; p_vaddr < *min_addr
+  	jae .max_vaddr
+        	mov QWORD [rdx], rax     ; min_addr = p_vaddr
         	.max_vaddr:
         	add rax, QWORD [rdi-0x10] ; rax = p_mmesz
-        	cmp rax, rcx
-  	cmova rcx, rax
+        	cmp rax, QWORD [rcx]
+  	jle .continue_loop
+  	mov QWORD [rcx], rax
         	.continue_loop:
         	sub rdi, 0x38  		;reduce one phdr size.
         	jmp .loop_check
         	.alignment:
-        	and rdx, 0xfffffffffffff000
-        	add rcx, 0xfff
-        	and rcx, 0xfffffffffffff000
+        	and QWORD [rdx], 0xfffffffffffff000
+        	add QWORD [rcx], 0xfff
+        	and QWORD [rcx], 0xfffffffffffff000
+  	ret
         	
+  load_elf_segment:
+      ; Check if segment type is PT_LOAD (1)
+      cmp    DWORD [rdx], 0x1      ; Compare p_type with PT_LOAD
+      jne    .not_load_segment         ; .purpose: Exit if not PT_LOAD segment
+      
+      ; Save caller-saved registers
+      push   r15
+      push   r14
+      push   r13
+      push   r12
+      push   rbp
+      push   rbx
+      push   r9
+      
+      ; Extract segment information
+      mov    r13, QWORD [rdx+0x10] ; r13 = p_vaddr
+      mov    rbx, QWORD [rdx+0x8]  ; rbx = p_offset
+      and    r13, 0xfffffffffffff000   ; Align vaddr to page boundary
+      mov    r9, rbx                   ; Copy offset to r9
+      mov    rax, r13                  ; Copy aligned vaddr
+      add    rbx, QWORD [rdx+0x20] ; rbx = p_offset + p_filesz
+      sub    rax, rcx                  ; rax = aligned_vaddr - base_addr
+      add    rbx, 0xfff                ; Add page size for rounding
+      mov    ecx, DWORD [rdx+0x4]  ; ecx = p_flags
+      and    r9, 0xfffffffffffff000    ; Align offset to page boundary
+      and    rbx, 0xfffffffffffff000   ; Align end to page boundary
+      lea    r12, [rdi+rax*1]          ; r12 = base_addr + aligned_offset
+      sub    rbx, r9                   ; rbx = aligned_size
+      
+      ; Check segment flags for write permission
+      test   cl, 0x2                   ; Test PF_W flag
+      jne    .segment_writable         ; .purpose: Handle writable segment
+      mov    eax, 0x1                  ; Read
+      cmp    r8, -1 			; Check if fd is invalid
+      je    .segment_writable         ; .purpose: Handle writable case
+      mov    eax, 0x3                  ; Read Execute?
+      
+  .segment_writable:
+      mov    rbp, rdx                  ; Save segment header pointer
+      xor    edx, edx                  ; Clear edx
+      push 0x12
+      cmp    r8, -1           ; Check if fd is invalid
+      mov    r14, rsi                  ; Save file size
+      setne  dl                      ; Set dl if fd is valid
+  	cmp r8, -1
+  	jnz .correct_flags
+  	mov [rsp], 0x22		; Anon for use fd -1
+  	.correct_flags:
+      pop r10			
+      mov    rsi, rbx                  ; rsi = segment size
+      mov    rdi, r12                  ; rdi = mapping address
+      mov    r15, r8                 ; Save file descriptor
+      and    edx, ecx                  ; Apply flags to mapping
+  	cmp r8, -1
+  	jnz .correct_flags
+  	or r10, 0x20
+      shl    edx, 0x2                  ; Shift flags
+      or     edx, eax                  ; Combine mapping type
+  	cmp edx, 0x7
+  	je .fix_flags_selinux
+  	mov edx, 0x3 
+  	.fix_flags_selinux:
+      call   _mmap; .purpose: Make mmap system call <0 in error.
+      test rax,rax
+      js .mmap_failed
+      cmp    r8, -1 ; Check if fd is invalid
+      jne    .after_mmap               ; .purpose: Continue after mmap
+
+  .invalid_fd:
+      mov    rsi, QWORD [rbp+0x8]  ; rsi = p_offset
+      sub    rax, r13                  ; Adjust mapping address mmap - offset
+      add    rax, QWORD [rbp+0x10] ; rax = adjusted_addr + p_vaddr
+      mov    rcx, QWORD [rbp+0x20] ; rcx = p_filesz ; N times
+      mov    rdi, rax                  ; rdi = destination
+      add    rsi, r14                  ; rsi = file_offset + file_base = source
+      rep movsb			 ;;;;; Copy segment data
+      mov    rsi, rbx                  ; rsi = segment size
+      mov    rdi, r12                  ; rdi = mapping address
+      mov    edx, DWORD [rbp+0x4]  ; edx = p_flags
+      mov    eax, edx                  ; Copy flags
+      and    eax, 0x2                  ; Extract write flag
+      cmp    eax, 0x1                  ; Compare with write flag
+      sbb    eax, eax                  ; Set eax based on comparison
+      and    edx, 0x1                  ; Extract execute flag
+      and    eax, 0xfffffffe           ; Mask eax
+      shl    edx, 0x2                  ; Shift execute flag
+      add    eax, 0x3                  ; Add mprotect constants
+      or     edx, eax                  ; Combine flags
+      call   _mprotect; .purpose: Make mprotect system call <0 in error
+      
+  .mmap_failed:
+  .end:
+      pop    rdx                       ; Restore registers
+      pop    rbx
+      pop    rbp
+      pop    r12
+      pop    r13
+      pop    r14
+      pop    r15
+      ret
+
+  .after_mmap:
+      xor    eax, eax                  ; Return 0 (success)
+      jmp .end
+  .not_load_segment:
+  	xor eax, eax
+  	ret
+  set_load_elf_generic:
+  	mov rdi, r14
+  	xor esi, esi
+  	xor edx, edx
+  	push -1
+  	pop rcx
+  	;; rdi ehdr, rsi aslr_offset, rdx base, ecx fd
+  load_elf_generic:
+      ; Save all caller-saved registers
+      push   r15
+      mov    r9, rsi                   ; Save parameters
+      mov    r8, rdx
+      push   r14
+      push   r13
+      push   r12
+      push   rbp
+      mov    rbp, rdi                  ; Save elf_header
+      push   rbx
+      sub    rsp, 0x28                 ; Allocate stack space
+      
+      ; Get program header information
+      mov    r12, QWORD [rdi+0x20] ; r12 = e_phoff
+      movzx  esi, WORD [rdi+0x38] ; esi = e_phnum
+      mov    DWORD [rsp+0xc], ecx  ; Save parameter fd
+      lea    rdx, [rsp+0x10]          ; rdx = stack space for result min
+      lea    rcx, [rsp+0x18]          ; rcx = stack space for result max
+      add    r12, rdi                  ; r12 = elf_header + phoff
+      mov    rdi, r12                  ; rdi = program headers
+      call   calculate_elf_memory_range; .purpose: Call helper function
+      
+      ; Process program headers
+      mov    r14, QWORD [rsp+0x10] ; r14 = result min
+      test r8, r8
+      jz .no_base_addr
+      add r8, r9
+  .no_base_addr:
+      mov    rdi, r8           ; rdi = base_addr + offset
+      xor    edx, edx                  ; Clear edx
+      mov    r13, QWORD [rsp+0x18] ; r13 = result
+      xor    r9d, r9d                  ; Clear r9d
+      push -1
+      pop    r8
+      push 0x22
+      pop r10
+      mov    ecx, 0x22                 ; mmap flags
+      sub    r13, r14                  ; Calculate size
+      mov    rsi, r13                  ; rsi = size
+      call   _mmap			; .purpose: Map memory for segments
+      cmp    rax, rax   ; Check for error
+      js     .generic_error            ; .purpose: Handle mmap error
+      
+      ; Initialize loop for processing segments
+      mov    rbx, rax                  ; Save mapping address
+      xor    r15d, r15d                ; Clear counter
+      jmp    .process_segment          ; .purpose: Start processing segments
+
+  .process_next_segment:
+      add    r12, 0x38                 ; Advance to next phdr (size=56)
+      inc    r15d                      ; Increment counter
+
+  .process_segment:
+      movzx  eax, WORD [rbp+0x38]  ; eax = e_phnum
+      cmp    eax, r15d                 ; Compare with counter
+      jle    .all_segments_done        ; .purpose: Exit if all processed
+      
+      ; Load segment
+      movsxd r8, DWORD [rsp+0xc]  ; r8d = parameter fd
+      mov    rcx, r14                  ; rcx = base address
+      mov    rdx, r12                  ; rdx = current phdr
+      mov    rsi, rbp                  ; rsi = elf header
+      mov    rdi, rbx                  ; rdi = mapping address
+      call   load_elf_segment     ; .purpose: Load individual segment
+      inc    eax                       ; Increment result in case return -1
+      jne    .process_next_segment     ; .purpose: Continue if not Zero
+      
+      ; Final cleanup
+      mov    rsi, r13                  ; rsi = size
+      mov    rdi, rbx                  ; rdi = mapping address
+      call   _munmap          ; .purpose: Final cleanup call
+
+  .generic_error:
+      mov    rax, 0xffffffffffffffff   ; Return error
+      jmp    .generic_cleanup          ; .purpose: Cleanup and return
+
+  .all_segments_done:
+      mov    rax, rbx                  ; rax = mapping address
+      sub    rax, r14                  ; Adjust address
+      add    rax, QWORD [rbp+0x18] ; rax = adjusted + entry point
+
+  .generic_cleanup:
+      add    rsp, 0x28                 ; Deallocate stack space
+      pop    rbx                       ; Restore registers
+      pop    rbp
+      pop    r12
+      pop    r13
+      pop    r14
+      pop    r15
+      ret
+
     ;// end_Untested
         _exit:	
+        	push 127
+        	pop rdi
   	push 60
          	pop rax
-        	push 128
-        	pop rdi
          	syscall
 
 #+end_src
@@ -2785,131 +3018,6 @@ CLOSED: [2025-09-14 Sun 12:22]
 CLOSED: [2025-09-14 Sun 12:23]
 * DONE Use the decompress on allin.s
 CLOSED: [2025-09-22 Mon 11:46] SCHEDULED: <2025-09-19 Fri>
-#+begin_src asm :tangle no
-        lz77_decompress_asm:
-
-          ; Function entry - validate input parameters
-          ; rdi = in, rsi = in_size, rdx = out
-
-         cmp    rsi,0x7           ; Compare in_size with 7
-         mov    r9,rdx            ; Save 'out' pointer to r9
-         setbe  al                ; Set AL if in_size <= 7
-         test   rdx,rdx           ; Test if 'out' is NULL
-         sete   dl                ; Set DL if 'out' is NULL
-        or     al,dl             ; Combine error flags
-      jne    4014d1 <error>    ; Jump to error if any flag set
-      	test   rdi,rdi           ; Test if 'in' is NULL
-    je     4014d1 <error>    ; Jump to error if NULL
-
-          ; Read original size from compressed data
-           	mov    rcx,rsi           ; Save in_size to rcx
-           	mov    rsi,QWORD PTR [rdi] ; Load orig_size from *in
-  mov    rax,0xffffffffffffffff ; Prepare error return (-1)
-  test   rsi,rsi           ; Check if orig_size is 0
-  je     40151e <error>    ; Jump to error if 0
-
-          ; Initialize loop variables
-  lea    r8,[rdi+0x8]      ; p = in + 8 (skip size header)
-  xor    eax,eax           ; pos = 0
-  add    rdi,rcx           ; rdi = in + in_size (end pointer)
-  jmp    4014f6 <loop_check> ; Jump to loop condition
-
-          ; Error handler - return -1
-  mov    rax,0xffffffffffffffff ; Return -1
-  ret                      ; Return
-
-          ; Loop bounds check and main processing
-  cmp    rax,rsi           ; Compare pos with orig_size
-  jae    401512 <finish>   ; Jump if pos >= orig_size
-
-          ; Read token data (distance/length)
-  mov    cx,WORD PTR [r8-0x3] ; Read dl = p[0] | (p[1] << 8)
-  mov    edx,ecx           ; Copy to edx
-  and    dx,0xf            ; Extract length: dl & 0xF
-  jne    401501 <has_length> ; Jump if length != 0
-
-          ; No length - just copy literal byte
-  mov    dl,BYTE PTR [r8-0x1] ; byte = p[2]
-  mov    BYTE PTR [r9+rax*1],dl ; out[pos] = byte
-  inc    rax               ; pos++
-  add    r8,0x3            ; p += 3
-  cmp    r8,rdi            ; Compare p with end pointer
-  jbe    4014d9 <loop_start> ; Jump if p <= end (continue loop)
-  jmp    401512 <finish>   ; Jump to finish
-
-          ; Process token with length
-  shr    cx,0x4            ; Shift right to get distance
-  movzx  r11d,cx           ; Zero-extend distance to r11
-  je     4014eb <copy_literal> ; Jump if distance == 0
-  cmp    rax,r11           ; Compare pos with distance
-  jb     4014eb <copy_literal> ; Jump if distance > pos
-  jmp    40151f <copy_match> ; Jump to copy match logic
-
-          ; Finish - check if decompression was complete
-  cmp    rax,rsi           ; Compare pos with orig_size
-  setne  al                ; Set AL if not equal
-  movzx  eax,al            ; Zero-extend to eax
-  neg    rax               ; Negate: 0->0, 1->-1
-  ret                      ; Return
-
-          ; Copy match data section
-  push   rbx               ; Save rbx
-  add    edx,0x2           ; len += 2 (token length 1-15 → 3-17)
-  mov    rcx,rsi           ; rcx = orig_size
-  lea    rbx,[r9+rax*1]    ; rbx = out + pos (destination)
-  mov    r10,rax           ; r10 = pos (save current pos)
-  sub    rcx,rax           ; rcx = orig_size - pos (max copy length)
-  movsx  rdx,dx            ; Sign-extend len to rdx
-  cmp    rcx,rdx           ; Compare max_copy with len
-  cmovbe rdx,rcx           ; If len > max_copy, set len = max_copy
-
-          ; Setup source pointer and copy loop
-  sub    r10,r11           ; r10 = pos - distance (source offset)
-  xor    ecx,ecx           ; i = 0
-  add    r10,r9            ; r10 = out + (pos - distance) (source)
-  mov    r11b,BYTE PTR [r10+rcx*1] ; Load byte from source
-  mov    BYTE PTR [rbx+rcx*1],r11b ; Store byte to destination
-  inc    rcx               ; i++
-  cmp    rdx,rcx           ; Compare len with i
-  jne    401543 <copy_loop> ; Jump if i < len
-
-          ; Update position and copy literal byte
-  add    rax,rdx           ; pos += len
-  cmp    rax,rsi           ; Compare pos with orig_size
-  jae    401566 <after_literal> ; Jump if pos >= orig_size
-
-          ; Copy literal byte
-  mov    dl,BYTE PTR [r8-0x1] ; byte = p[2]
-  mov    BYTE PTR [r9+rax*1],dl ; out[pos] = byte
-  inc    rax               ; pos++
-
-          ; Continue main loop
-  add    r8,0x3            ; p += 3
-  cmp    r8,rdi            ; Compare p with end pointer
-  ja     401592 <finish_final> ; Jump if p > end
-  cmp    rax,rsi           ; Compare pos with orig_size
-  jae    401592 <finish_final> ; Jump if pos >= orig_size
-
-          ; Read next token
-  mov    cx,WORD PTR [r8-0x3] ; Read next token
-  mov    edx,ecx           ; Copy to edx
-  and    dx,0xf            ; Extract length
-  je     40155b <copy_literal_final> ; Jump if no length
-  shr    cx,0x4            ; Extract distance
-  movzx  r11d,cx           ; Zero-extend distance
-  je     40155b <copy_literal_final> ; Jump if distance == 0
-  cmp    rax,r11           ; Compare pos with distance
-  jb     40155b <copy_literal_final> ; Jump if distance > pos
-  jmp    401520 <copy_match> ; Jump to copy match
-
-          ; Final finish check
-  cmp    rax,rsi           ; Compare pos with orig_size
-  pop    rbx               ; Restore rbx
-  setne  al                ; Set AL if not equal
-  movzx  eax,al            ; Zero-extend to eax
-  neg    rax               ; Negate result
-  ret                      ; Return
-#+end_src
 
 **** DONE ASLR
 CLOSED: [2025-09-08 Mon 14:14]
@@ -3001,6 +3109,7 @@ open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the 
       
       // Reserve entire address space with PROT_NONE
       void *base_addr;
+      if (target_vaddr)
       base_addr = mmap((void *)(target_vaddr + aslr_offset), total_size, 
                           PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
       
