@@ -1,5 +1,5 @@
-Test further packed file.
 #+title: Packed_file
+Test further packed file.
 * ASLR?
 PIE == ~Elfh_type == ET_DYN~
 - add the diff between expected vaddr and real vaddr
@@ -2204,7 +2204,7 @@ CLOSED: [2025-09-23 Tue 15:13]
   	syscall
   	ret
 
-    _start:
+  _start:
     	.aslr_offset:
     	call   $+5
     	pop    r15
@@ -2258,9 +2258,9 @@ CLOSED: [2025-09-23 Tue 15:13]
     	js _exit
   	push rax
   	xchg rdx, rax
-  	push 0x40146c	; vaddr start of compress elf file
+  	push 0x401488	; vaddr start of compress elf file
   	pop rdi		; 
-  	push 0xBBA	; size of all compress elf file.
+  	push 0xBe1	; size of all compress elf file.
   	pop rsi
 
   	;; .decompress_elf_file:
@@ -2560,43 +2560,45 @@ CLOSED: [2025-09-23 Tue 15:13]
       ; Check segment flags for write permission
       test   cl, 0x2                   ; Test PF_W flag
       jne    .segment_writable         ; .purpose: Handle writable segment
-      mov    eax, 0x1                  ; Read
+      push 0x1
+      pop    rax                  ; Read
       cmp    r8, -1 			; Check if fd is invalid
       je    .segment_writable         ; .purpose: Handle writable case
-      mov    eax, 0x3                  ; Read Execute?
+  .valid_fd:
+  	push 0x3		;Read Execute
+  	pop rax
       
   .segment_writable:
-      mov    rbp, rdx                  ; Save segment header pointer
-      xor    edx, edx                  ; Clear edx
+      ; Check if PF_X (execute) flag is set
+      and    cl, 0x1                   ; cl = p_flags & PF_X
+      je     .check_fd_anonymous       ; .purpose: Skip exec flag if PF_X not set
+      cmp    r8d, 0xffffffff           ; Check if fd == -1
+      je     .check_fd_anonymous
+      or     eax, 0x4                  ; eax |= PROT_EXEC
+
+  .check_fd_anonymous:
+      cmp    r8d, 0xffffffff           ; Check if fd == -1
+      push 0x32
+      pop r10                 ; r10 = MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS (default)
       push 0x12
-      cmp    r8, -1           ; Check if fd is invalid
+      pop    rbp                ; rbp = MAP_PRIVATE | MAP_FIXED
+      cmovne  r10, rbp                 ; r10 = MAP_PRIVATE | MAP_FIXED if fd != -1
+      push 0x3
+      pop rbp
+      cmove rax, rbp
+
+  .setup_mmap_params:
+      mov    rbp, rdx                  ; Save segment header pointer
       mov    r14, rsi                  ; Save file size
-      setne  dl                      ; Set dl if fd is valid
-  	cmp r8, -1
-  	jnz .correct_flags
-  	mov [rsp], 0x22		; Anon for use fd -1
-  	.correct_flags:
-      pop r10			
       mov    rsi, rbx                  ; rsi = segment size
       mov    rdi, r12                  ; rdi = mapping address
       mov    r15, r8                 ; Save file descriptor
-      and    edx, ecx                  ; Apply flags to mapping
-  	cmp r8, -1
-  	jnz .correct_flags
-  	or r10, 0x20
-      shl    edx, 0x2                  ; Shift flags
-      or     edx, eax                  ; Combine mapping type
-  	cmp edx, 0x7
-  	je .fix_flags_selinux
-  	mov edx, 0x3 
-  	.fix_flags_selinux:
+      mov    edx, eax                  ; Combine mapping type
       call   _mmap; .purpose: Make mmap system call <0 in error.
       test rax,rax
       js .mmap_failed
       cmp    r8, -1 ; Check if fd is invalid
       jne    .after_mmap               ; .purpose: Continue after mmap
-
-  .invalid_fd:
       mov    rsi, QWORD [rbp+0x8]  ; rsi = p_offset
       sub    rax, r13                  ; Adjust mapping address mmap - offset
       add    rax, QWORD [rbp+0x10] ; rax = adjusted_addr + p_vaddr
@@ -2635,6 +2637,7 @@ CLOSED: [2025-09-23 Tue 15:13]
   .not_load_segment:
   	xor eax, eax
   	ret
+
   set_load_elf_generic:
   	mov rdi, r14
   	xor esi, esi
@@ -2734,7 +2737,6 @@ CLOSED: [2025-09-23 Tue 15:13]
       pop    r15
       ret
 
-    ;// end_Untested
         _exit:	
         	push 127
         	pop rdi
@@ -3073,12 +3075,15 @@ open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the 
       size_t map_size = map_end - page_offset;
       
       // Map at the correct address with MAP_FIXED
-      void *map_addr = (char *)base + (page_vaddr - min_vaddr);
       int prot = PROT_READ;
       if (phdr->p_flags & PF_W || fd == -1) prot |= PROT_WRITE;
       if (phdr->p_flags & PF_X && fd != -1) prot |= PROT_EXEC;
+      int flags = MAP_FIXED | MAP_PRIVATE;
+      if (fd != -1)
+        flags |= MAP_ANONYMOUS;
+      void *map_addr = (char *)base + (page_vaddr - min_vaddr);
       void *result = mmap(map_addr, map_size, prot, 
-  			MAP_PRIVATE | MAP_FIXED, fd, page_offset);
+  			flags, fd, page_offset);
       if (result == MAP_FAILED)
         return -1;
       if (fd == -1) {
@@ -3110,7 +3115,8 @@ open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the 
       // Reserve entire address space with PROT_NONE
       void *base_addr;
       if (target_vaddr)
-      base_addr = mmap((void *)(target_vaddr + aslr_offset), total_size, 
+        target_vaddr += aslr_offset;
+      base_addr = mmap((void *)target_vaddr, total_size, 
                           PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
       
       if (base_addr == MAP_FAILED)
