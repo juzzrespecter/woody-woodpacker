@@ -2167,13 +2167,15 @@ CLOSED: [2025-09-23 Tue 15:13]
 ****** DONE The rest.
 CLOSED: [2025-09-23 Tue 15:13]
 
-***** Mmap the linker file
-***** clean stages.
-***** jmp to the elf file.
+***** TODO Handle the interp
+
+***** TODO Logic of the payload.
+
+***** TODO clean stages.
+***** TODO jmp to the elf file.
 
 #+begin_src asm :tangle payload/allin.s
   global _start
-
   _mmap:
   	push 0x9
   	pop rax
@@ -2258,9 +2260,9 @@ CLOSED: [2025-09-23 Tue 15:13]
     	js _exit
   	push rax
   	xchg rdx, rax
-  	push 0x401488	; vaddr start of compress elf file
+  	push 0x40151a	; vaddr start of compress elf file
   	pop rdi		; 
-  	push 0xBe1	; size of all compress elf file.
+  	push 0xe84	; size of all compress elf file.
   	pop rsi
 
   	;; .decompress_elf_file:
@@ -2282,16 +2284,17 @@ CLOSED: [2025-09-23 Tue 15:13]
       mov    rcx, rsi           ; Save in_size to rcx
       mov    rsi, QWORD [rdi] ; Load orig_size from *in
       test   rsi, rsi           ; Check if orig_size is 0
-      je     .error             ; Jump to error if 0
+      jne    .init_loop         ; Jump to init loop if orig_size != 0
+  .error:
+      jmp _exit
 
+  .init_loop:
       ; Initialize loop variables
       lea    r8, [rdi+0x8]      ; p = in + 8 (skip size header)
       xor    eax, eax           ; pos = 0
       add    rdi, rcx           ; rdi = in + in_size (end pointer)
       jmp    .after_literal     ; Jump to advance token
 
-  .error:
-      jmp _exit
   .loop_start:
       cmp    rax, rsi           ; Compare pos with orig_size
       jae    .finish            ; Jump if pos >= orig_size
@@ -2548,7 +2551,7 @@ CLOSED: [2025-09-23 Tue 15:13]
       and    r13, 0xfffffffffffff000   ; Align vaddr to page boundary
       mov    r9, rbx                   ; Copy offset to r9
       mov    rax, r13                  ; Copy aligned vaddr
-      add    rbx, QWORD [rdx+0x20] ; rbx = p_offset + p_filesz
+      add    rbx, QWORD [rdx+0x28] ; rbx = p_offset + p_memsz
       sub    rax, rcx                  ; rax = aligned_vaddr - base_addr
       add    rbx, 0xfff                ; Add page size for rounding
       mov    ecx, DWORD [rdx+0x4]  ; ecx = p_flags
@@ -2558,24 +2561,16 @@ CLOSED: [2025-09-23 Tue 15:13]
       sub    rbx, r9                   ; rbx = aligned_size
       
       ; Check segment flags for write permission
-      test   cl, 0x2                   ; Test PF_W flag
-      jne    .segment_writable         ; .purpose: Handle writable segment
       push 0x1
       pop    rax                  ; Read
-      cmp    r8, -1 			; Check if fd is invalid
-      je    .segment_writable         ; .purpose: Handle writable case
+      test   cl, 0x2                   ; Test PF_W flag
+      jz    .segment_executable         ; .purpose: Handle writable segment
+      or eax, 0x2
   .valid_fd:
-  	push 0x3		;Read Execute
-  	pop rax
+      test   cl, 0x1                   ; Test PF_W flag
+      jz .check_fd_anonymous
+      or eax, 0x4
       
-  .segment_writable:
-      ; Check if PF_X (execute) flag is set
-      and    cl, 0x1                   ; cl = p_flags & PF_X
-      je     .check_fd_anonymous       ; .purpose: Skip exec flag if PF_X not set
-      cmp    r8d, 0xffffffff           ; Check if fd == -1
-      je     .check_fd_anonymous
-      or     eax, 0x4                  ; eax |= PROT_EXEC
-
   .check_fd_anonymous:
       cmp    r8d, 0xffffffff           ; Check if fd == -1
       push 0x32
@@ -2583,7 +2578,7 @@ CLOSED: [2025-09-23 Tue 15:13]
       push 0x12
       pop    rbp                ; rbp = MAP_PRIVATE | MAP_FIXED
       cmovne  r10, rbp                 ; r10 = MAP_PRIVATE | MAP_FIXED if fd != -1
-      push 0x3
+      push 0x3			     ; Read | Write
       pop rbp
       cmove rax, rbp
 
@@ -2737,12 +2732,75 @@ CLOSED: [2025-09-23 Tue 15:13]
       pop    r15
       ret
 
-        _exit:	
-        	push 127
-        	pop rdi
-  	push 60
-         	pop rax
-         	syscall
+  	get_at_interp_x64:
+      push   rbp
+      xor    edx, edx                ; ndx_ph = 0 (initialize program header index)
+      push   rbx
+      sub    rsp, 0x408              ; Allocate 1032 bytes on stack for buffer (1024 + 8)
+      mov    rax, QWORD [rdi + 0x20] ; rax = e_phoff (program header offset)
+      movzx  ecx, WORD [rdi + 0x38]  ; ecx = e_phnum (program header number)
+  	add    rax, rdi                ; rax = ptr + e_phoff (pointer to first phdr)
+  .loop_start:
+      cmp    rdx, rcx                ; Compare ndx_ph with e_phnum
+      jb     .find_interp_segment    ; .purpose: Check if current phdr is PT_INTERP
+      xor    ebx, ebx                ; ebx = 0 (no interpreter found)
+      jmp     .cleanup_and_return     ; .purpose: Exit if no PT_INTERP found
+
+  .find_interp_segment:
+      imul   rsi, rdx, 0x38          ; rsi = ndx_ph * sizeof(Elf64_Phdr) (offset to current phdr)
+      cmp    DWORD [rax + rsi*1], 0x3 ; Compare p_type with PT_INTERP (3)
+      je     .interp_found           ; .purpose: Found PT_INTERP segment
+      inc    rdx                     ; ndx_ph++ (increment to check next phdr)
+      jmp    .loop_start             ; .purpose: Continue searching for PT_INTERP
+
+  .interp_found:
+      imul   rdx, rdx, 0x38          ; rdx = ndx_ph * sizeof(Elf64_Phdr) (offset to found phdr)
+      xor    esi, esi                ; esi = 0 (clear for open() flags)
+      add    rdi, QWORD [rax + rdx*1 + 0x8] ; rdi = ptr + phdr[ndx_ph].p_offset (interp string address)
+      xor    eax, eax                ; eax = 0 (clear for open() system call)
+      call   _open              ; .purpose: Call open() to open interpreter file
+      mov    ebp, eax                ; interp_fd = result of open()
+      test   eax, eax
+      js     .error_cleanup          ; .purpose: Handle error if open() failed
+      mov    edx, 0x400              ; edx = 1024 (buffer size for read)
+      mov    rsi, rsp                ; rsi = &interp_elfh[0] (buffer on stack)
+      mov    edi, eax                ; edi = interp_fd (file descriptor)
+      call   _read              ; .purpose: Call read() to read interpreter ELF header
+      cmp    rax, 0x3ff              ; Compare bytes read with 1023 (check if < 1024)
+      jg     .process_interpreter    ; .purpose: Process if we read at least 1024 bytes
+      mov    edi, ebp                ; edi = interp_fd
+      call   _close             ; .purpose: Close file on read error
+      jmp    .error_cleanup          ; .purpose: Return error
+
+  .process_interpreter:
+      mov    rdi, rsp                ; rdi = &interp_elfh[0] (buffer address)
+      mov    ecx, ebp                ; ecx = interp_fd
+      xor    edx, edx                ; edx = 0 (target_vaddr = 0)
+      xor    esi, esi                ; esi = 0 (aslr_offset = 0)
+      call   load_elf_generic  ; .purpose: Call load_elf_generic for interpreter
+      mov    edi, ebp                ; edi = interp_fd
+      mov    rbx, rax                ; rbx = result from load_elf_generic
+      call   _close
+      cmp  rbx, -1
+      jne .cleanup_and_return
+
+  .error_cleanup:
+      mov    rbx, 0xffffffffffffffff ; rbx = -1 (error return value)
+
+  .cleanup_and_return:
+      add    rsp, 0x408              ; Deallocate 1032 bytes from stack
+      mov    rax, rbx                ; rax = return value
+      pop    rbx
+      pop    rbp
+      ret
+
+
+  _exit:	
+      push 127
+      pop rdi
+      push 60
+      pop rax
+      syscall
 
 #+end_src
 ***** DONE run auxv
@@ -3071,7 +3129,7 @@ open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the 
       // Align offset and size to page boundaries
       uint64_t page_offset = phdr->p_offset & ~(PAGE_SIZE - 1);
       uint64_t page_vaddr = phdr->p_vaddr & ~(PAGE_SIZE - 1);
-      uint64_t map_end = (phdr->p_offset + phdr->p_filesz + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+      uint64_t map_end = (phdr->p_offset + phdr->p_memsz + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
       size_t map_size = map_end - page_offset;
       
       // Map at the correct address with MAP_FIXED
@@ -3079,7 +3137,7 @@ open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the 
       if (phdr->p_flags & PF_W || fd == -1) prot |= PROT_WRITE;
       if (phdr->p_flags & PF_X && fd != -1) prot |= PROT_EXEC;
       int flags = MAP_FIXED | MAP_PRIVATE;
-      if (fd != -1)
+      if (fd == -1)
         flags |= MAP_ANONYMOUS;
       void *map_addr = (char *)base + (page_vaddr - min_vaddr);
       void *result = mmap(map_addr, map_size, prot, 
@@ -3153,7 +3211,7 @@ open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the 
       return elf->e_entry;
   }
 
-  uint64_t get_at_interp_x64(void *ptr, uint64_t aslr_offset)
+  uint64_t get_at_interp_x64(void *ptr)
   {
       Elf64_Ehdr *elf = (Elf64_Ehdr *)ptr;
       Elf64_Phdr *elf_ph = (Elf64_Phdr *)((char *)ptr + elf->e_phoff);
@@ -3180,7 +3238,7 @@ open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the 
       }
       
       // Use the generic unpacker for the interpreter
-      uint64_t result = load_elf_generic(&interp_elfh[0], aslr_offset, 0, interp_fd);
+      uint64_t result = load_elf_generic(&interp_elfh[0], 0, 0, interp_fd);
       
       close(interp_fd);
       return result;
