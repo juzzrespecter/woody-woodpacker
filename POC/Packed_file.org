@@ -133,7 +133,7 @@ Add to a compress file syscall, pop rdx, ret -
 
   unsigned char *lz77_get_compress_arr(t_list *lst, size_t *arr_size)
   {
-    t_list *tmp = *lst;
+    t_list *tmp = lst;
     ,*arr_size = ft_lstsize(tmp) * sizeof(t_lz77);
     t_lz77 *str = malloc(*arr_size);
     t_lz77 *str_pos = str;
@@ -431,7 +431,7 @@ Add to a compress file syscall, pop rdx, ret -
         phdr = elf_get_program_header(ehdr, i);
         p_vaddr = elf_get_program_header_vaddr(&phdr, class);
         //  is loadable phdr
-        if (PT_LOAD == elf_get_program_header_type(&phdr, class) && is_between(p_vaddr, p_vaddr + elf_get_program_header_filesz(&phdr, class) - 1, addr))
+        if (PT_LOAD == elf_get_program_header_type(&phdr, class) && is_between(p_vaddr, p_vaddr + elf_get_program_header_memsz(&phdr, class) - 1, addr))
   	return  (i);
         i++;
       }
@@ -1057,12 +1057,12 @@ Add to a compress file syscall, pop rdx, ret -
   }
 
   // End dynamic Bytecode
-  void encrypt(unsigned char *src, size_t size)
-  {
-    size_t i = 0;
-    while ( i < size)
-      src[i++] += 13;
-  }
+  /* void encrypt(unsigned char *src, size_t size) */
+  /* { */
+  /*   size_t i = 0; */
+  /*   while ( i < size) */
+  /*     src[i++] += 13; */
+  /* } */
 
   /* void decrypt(char *payload, size_t size) */
   /* { */
@@ -1202,15 +1202,16 @@ Add to a compress file syscall, pop rdx, ret -
     return (false_val);
   }
 
-  void *encrypt(void *raw)
+  void *encrypt(void *raw, size_t raw_size, size_t *ret_size)
   {
+    if (raw_size)
+      ,*ret_size = raw_size;
     return (raw);
   }
 
   int load_stage_buffer(int class, char **stage_buffer, size_t *stage_fd_size, char *filename_x86, char *filename_x64)
   {
       int stage_fd;
-      off_t stage_fd_size;
       
       // Validate input parameters
       if (!stage_buffer || !stage_fd_size)
@@ -1221,21 +1222,21 @@ Add to a compress file syscall, pop rdx, ret -
       ,*stage_fd_size = 0;
       
       stage_fd = open(ft_ternary(ELFCLASS32 == class, filename_x86,filename_x64), O_RDONLY);
-      if (stage_fd < 0 || get_file_size(stage_fd, &stage_fd_size) || !stage_fd_size)
+      if (stage_fd < 0 || get_file_size(stage_fd, (off_t *)stage_fd_size) || !*stage_fd_size)
       {
           if (stage_fd >= 0)
               close(stage_fd);
           return (1);
       }
       
-      ,*stage_buffer = malloc(stage_fd_size);
+      ,*stage_buffer = malloc(*stage_fd_size);
       if (!(*stage_buffer))
       {
           close(stage_fd);
           return (5);
       }
       
-      if (read(stage_fd, *stage_buffer, stage_fd_size) != stage_fd_size)
+      if (read(stage_fd, *stage_buffer, *stage_fd_size) != (ssize_t) *stage_fd_size)
       {
           free(*stage_buffer);
           ,*stage_buffer = NULL;
@@ -1244,11 +1245,28 @@ Add to a compress file syscall, pop rdx, ret -
       }
       
       close(stage_fd);
-      ,*stage_fd_size = (size_t)stage_fd_size;
       return (0);
   }
 
-  static bool elf_is_a_avalaible_gap_in_exec_load_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, size_t gap_sizeuint64_t *ret_vaddr, uint64_t *ret_offset)
+  static uint64_t elf_get_closest_higher_p_offset(const t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t p_offset)
+  {
+    t_elf_ph phdr;
+    uint64_t ph_ndx;
+    uint64_t closest_offset = -1;
+    uint64_t cur_offset;
+    ph_ndx = 0;
+    while (ph_ndx < phnum)
+      {
+        phdr = elf_get_program_header(ehdr, ph_ndx);
+        cur_offset = elf_get_program_header_offset(&phdr, class);
+        if (cur_offset > p_offset && cur_offset < closest_offset)
+  	closest_offset = cur_offset;
+        ph_ndx++;
+      }
+    return (closest_offset);
+  }
+
+  static bool elf_is_a_avalaible_gap_in_exec_load_phdr(const t_elf_h *ehdr, unsigned char class, uint64_t phnum, size_t gap_size, uint64_t *ret_vaddr, uint64_t *ret_offset)
   {
     if (!ehdr || !phnum)
       return (false);
@@ -1272,7 +1290,7 @@ Add to a compress file syscall, pop rdx, ret -
   	      ph_ndx++;
   	      continue;
   	}
-        cur_vaddr_top = elf_get_program_header_vaddr(&phdr, class) + elf_get_program_header_pmemsz(&phdr, class);
+        cur_vaddr_top = elf_get_program_header_vaddr(&phdr, class) + elf_get_program_header_memsz(&phdr, class);
         top_vaddr = get_alignment_effective_addr(0x1000, cur_vaddr_top);
         avalaible_vaddr = top_vaddr - cur_vaddr_top;
         if (avalaible_vaddr < gap_size)
@@ -1280,13 +1298,15 @@ Add to a compress file syscall, pop rdx, ret -
   	  ph_ndx++;
   	  continue;
   	}
-        cur_offset_top = elf_get_program_header_offset(&phdr, class) + elf_get_program_header_pfilesz(&phdr, class);
+        cur_offset_top = elf_get_program_header_offset(&phdr, class) + elf_get_program_header_filesz(&phdr, class);
         top_offset = elf_get_closest_higher_p_offset(ehdr, class, phnum, cur_offset_top);
+        if (top_offset == (uint64_t) -1)
+  	top_offset = elf_get_elfh_shoff(ehdr);
         avalaible_offset = top_offset - cur_offset_top;
         if (avalaible_offset >= gap_size)
   	{
   	  ,*ret_offset = avalaible_offset;
-  	  ,*ret_vaddr = avalaible_vaddr;
+  	  ,*ret_vaddr = cur_vaddr_top - 1;
   	  return (true);
   	}
         ph_ndx++;
@@ -1296,17 +1316,17 @@ Add to a compress file syscall, pop rdx, ret -
 
   int generate_payload(void *elf_mmap, size_t elf_size, char **payload_ptr, size_t *payload_size, char **stage3, size_t *stage3_size, void **new_elf_buffer)
   {
-    const t_elf_h *ehdr = (t_elf_h){.elf32 = elf_mmap};
+    const t_elf_h ehdr = (const t_elf_h){.elf32 = elf_mmap};
     const unsigned char 	class = elf_get_elfh_e_ident_class(elf_mmap);
-    const uint64_t phnum = elf_get_elfh_phnum(ehdr);
+    const uint64_t phnum = elf_get_elfh_phnum(&ehdr);
 
     off_t stage3_fd_size;
     char *stage3_buffer;
-    if (load_stage_buffer(class, &stage3_buffer, &stage3_fd_size, "bytecode/x86/stage3.bin", "bytecode/x64/stage3.bin"))
+    if (load_stage_buffer(class, &stage3_buffer, (size_t *)&stage3_fd_size, "bytecode/x86/stage3.bin", "bytecode/x64/stage3.bin"))
         return (5);
     uint64_t avalaible_vaddr;
     uint64_t avalaible_offset;
-    if (elf_is_a_avalaible_gap_in_exec_load_phdr(ehdr, class, phnum, stage3_buffer, &avalaible_vaddr, &avalaible_offset))
+    if (elf_is_a_avalaible_gap_in_exec_load_phdr((void *)&ehdr, class, phnum, stage3_fd_size, &avalaible_vaddr, &avalaible_offset))
       {
         ,*new_elf_buffer = malloc(elf_size);
         if (!*new_elf_buffer)
@@ -1315,16 +1335,16 @@ Add to a compress file syscall, pop rdx, ret -
   	  return (5);
   	}
         memcpy(*new_elf_buffer, elf_mmap, elf_size);
-        memcpy(new_elf_buffer[0] + avalaible_offset, stage3_buffer, stage3_fd_size);
+        memcpy(*new_elf_buffer + avalaible_offset, stage3_buffer, stage3_fd_size);
         free(stage3_buffer);
-        const uint64_t ndx_ph = elf_get_program_ndx_from_addr(&ehdr, class, phnum, avalaible_vaddr);
-        if (ndx_ph => phnum)
+        const uint64_t ndx_ph = elf_get_program_ndx_from_addr((void *)&ehdr, class, phnum, avalaible_vaddr);
+        if (ndx_ph >= phnum)
   	  return (5);
         uint64_t ehdr_struct_size = elf_get_struct_size_elf_header(elf_mmap);
-        t_elf_ph phdr =(t_elf_ph){.elf32 = new_elf_buffer + (elf_get_struct_size_elf_ph(class) * ndx_ph) + ehdr_struct_size};
+        t_elf_ph phdr =(t_elf_ph){.elf32 = *new_elf_buffer + (elf_get_struct_size_elf_ph(class) * ndx_ph) + ehdr_struct_size};
 
-        elf_phdr_set_filesz(&phdr, elf_get_program_header_pfilesz(&phdr, class) + stage3_fd_size, class);
-        elf_phdr_set_memsz(&phdr, elf_get_program_header_pmemsz(&phdr, class) + stage3_fd_size, class);
+        elf_phdr_set_filesz(&phdr, elf_get_program_header_filesz(&phdr, class) + stage3_fd_size, class);
+        elf_phdr_set_memsz(&phdr, elf_get_program_header_memsz(&phdr, class) + stage3_fd_size, class);
       }
     else
       {
@@ -1335,29 +1355,37 @@ Add to a compress file syscall, pop rdx, ret -
     
     char *stage2_buffer;
     size_t stage2_fd_size;
-    if (load_stage_buffer(class, &stage2_buffer, &stage2_fd_size, "bytecode/x86/stage2.bin", "bytecode/x64/stage2.bin"))
+    if (load_stage_buffer(class, &stage2_buffer, (size_t *)&stage2_fd_size, "bytecode/x86/stage2.bin", "bytecode/x64/stage2.bin"))
       return (5);
+    // Modify need data
+    size_t offset_mod_stage2[] = {0x8};
+    uint32_t tmp_val_stage2[] = {elf_size};
+    uint64_t i = 0;
+    while (i < sizeof(offset_mod_stage2) / sizeof(*offset_mod_stage2))
+      {
+        memcpy(stage2_buffer + offset_mod_stage2[i], &tmp_val_stage2[i], sizeof(*tmp_val_stage2));
+        i++;
+      }
+
     // Join with elf file
     size_t stage2_elf_buffer_size = stage2_fd_size + elf_size;
     char *stage2_elf_buffer = malloc(stage2_elf_buffer_size);
     if (!stage2_elf_buffer)
       {
-        free(stage1_buffer);
         free(stage2_buffer);
-        free(stage3_buffer);
         return (5);
       }
     memcpy(stage2_elf_buffer, stage2_buffer, stage2_fd_size);
     free(stage2_buffer);
     memcpy(stage2_elf_buffer + stage2_fd_size, elf_mmap, elf_size);
     // Compress the data.
-    t_list *lz77_buffer = lz77_compress(stage2_elf_buffer, stage2_elf_buffer_size);
+    t_list *lz77_buffer = lz77_compress((unsigned char *)stage2_elf_buffer, stage2_elf_buffer_size);
     free(stage2_elf_buffer);
     if (!lz77_buffer)
         return (5);
     // Get the array of the compress lst
     size_t stage2_elf_compress_size;
-    char *stage2_elf_compress = lz77_get_compress_arr(&lz77_buffer, &stage2_elf_compress_size);
+    unsigned char *stage2_elf_compress = lz77_get_compress_arr(lz77_buffer, &stage2_elf_compress_size);
     ft_lstclear(&lz77_buffer, free);
     if (!stage2_elf_compress)
         return (5);
@@ -1376,7 +1404,7 @@ Add to a compress file syscall, pop rdx, ret -
     // Encrypt the join
     size_t stage2_elf_compress_encrypt_header_size;
     char *stage2_elf_compress_encrypt_header = encrypt(stage2_elf_compress_header, stage2_elf_compress_size, &stage2_elf_compress_encrypt_header_size);
-    free(stage2_elf_compress_header);
+    /* free(stage2_elf_compress_header);// TODO On really cypher may i need to free. */
     if (!stage2_elf_compress_encrypt_header || !stage2_elf_compress_encrypt_header_size)
     {
       free(stage2_elf_compress_encrypt_header);
@@ -1385,12 +1413,22 @@ Add to a compress file syscall, pop rdx, ret -
    // Get the first stage
     char *stage1_buffer;
     size_t stage1_fd_size;
-    if (load_stage_buffer(class, &stage1_buffer, &stage1_fd_size,  "bytecode/x86/stage1.bin",  "bytecode/x64/stage1.bin"))
+    if (load_stage_buffer(class, &stage1_buffer, (size_t *)&stage1_fd_size,  "bytecode/x86/stage1.bin",  "bytecode/x64/stage1.bin"))
       {
-        free(stage2_elf_compress);
+        free(stage2_elf_compress_encrypt_header);
         return (5); 
       }
-    // Join the first stage with comprsecond and elf file
+    //Modify the entrypoint for math the aslr, size of stage1
+    size_t offset_mod[] = {0x9, 0x18, 0x4f, 0x80};
+    uint32_t tmp_val[] = {elf_get_highest_loadable_vaddr_avalaible((void *)&ehdr, phnum, class) + elf_get_struct_size_elf_header((char *)ehdr.elf32) + elf_get_elfh_phentsize(&ehdr) * (2 + elf_is_gnu_stack_phdr((void *)&ehdr, class, phnum)) + 5, stage1_fd_size, stage2_elf_compress_encrypt_header_size, stage2_elf_compress_header_size};
+
+    i = 0;
+    while (i < sizeof(offset_mod) / sizeof(*offset_mod))
+      {
+        memcpy(stage1_buffer + offset_mod[i], &tmp_val[i], sizeof(*tmp_val));
+        i++;
+      }
+    // Join the first stage with compress and encrypt stage2 + elf file
     size_t stage1_stage2_elf_size = stage2_elf_compress_encrypt_header_size + stage1_fd_size;
     char *stage1_stage2_elf = malloc(stage1_stage2_elf_size);
     if (!stage1_stage2_elf)
@@ -1504,7 +1542,6 @@ Add to a compress file syscall, pop rdx, ret -
 
   static int copy_and_modify_elf_header(t_elf_h *ehdr, int packed, unsigned char class,
   				      uint64_t new_phdr_vaddr, uint64_t *new_phnum ,uint64_t phnum, uint64_t *writed)
-  p_memsz = payload_size + ehdr_struct_size + phdr_struct_size * (2 + elf_is_gnu_stack_phdr(ehdr, class, phnum));
   {
     uint64_t elf_struct_size = elf_get_struct_size_elf_header((char *)ehdr->elf32);
     t_elf_h ehdr_cp = {.elf32 = malloc(elf_struct_size)};
@@ -1513,7 +1550,7 @@ Add to a compress file syscall, pop rdx, ret -
       return 14;
     memcpy(ehdr_cp.elf32, ehdr->elf32, elf_struct_size);
     ,*new_phnum = 2 + elf_is_gnu_stack_phdr(ehdr, class, phnum);// if is a PHDR PT_GNU_STACK
-    elf_ehdr_set_entry(&ehdr_cp, new_phdr_vaddr + elf_get_elfh_phentsize(ehdr) * *new_phnum, class);
+    elf_ehdr_set_entry(&ehdr_cp, new_phdr_vaddr + elf_get_struct_size_elf_header((char *)ehdr->elf32) + elf_get_elfh_phentsize(ehdr) * *new_phnum, class);
     elf_ehdr_set_phnum(&ehdr_cp, *new_phnum, class);
     elf_ehdr_set_shoff(&ehdr_cp, 0, class);
     elf_ehdr_set_shnum(&ehdr_cp, 0, class);
@@ -1531,23 +1568,7 @@ Add to a compress file syscall, pop rdx, ret -
   /*   return (elf_get_program_ndx_from_addr(ehdr, class, phnum, elf_get_section_header_addr(&shdr, class)) != ndx_ph); */
   /* } */
 
-  static uint64_t elf_get_closest_higher_p_offset(t_elf_eh *ehdr, unsigned char class, uint64_t phnum, uint64_t p_offset)
-  {
-    t_elf_ph phdr;
-    uint64_t ph_ndx;
-    uint64_t closest_offset = -1;
-    uint64_t cur_offset;
-    ph_ndx = 0;
-    while (ph_ndx < phnum)
-      {
-        phdr = elf_get_program_header(ehdr, ph_ndx);
-        cur_offset = elf_get_program_header_offset(&phdr, class);
-        if (cur_offset > p_offset && cur_offset < closest_offset)
-  	closest_offset = cur_offset;
-        ph_ndx++;
-      }
-    return (closest_offset);
-  }
+
 
 
 
@@ -1934,7 +1955,7 @@ Add to a compress file syscall, pop rdx, ret -
     size_t stage3_size = 0;
     char *stage3 = NULL;
     char *new_elf_buffer = NULL;
-    if (generate_payload(elf_mmap, file_size, &generated_bytecode, &generated_bytecode_size, &stage3, &stage3_size, &new_elf_buffer))
+    if (generate_payload(elf_mmap, file_size, &generated_bytecode, &generated_bytecode_size, &stage3, &stage3_size, (void **)&new_elf_buffer))
       {
         munmap(elf_mmap, file_size);
         free(new_elf_buffer);
@@ -1956,7 +1977,7 @@ Add to a compress file syscall, pop rdx, ret -
         return (7);
       }
 
-    if (generated_packed_file(ft_ternary(new_elf_buffer, new_elf_buffer, elf_mmap), file_size, generated_bytecode, generated_bytecode_size, packed, stage3, stage3_size))
+    if (generated_packed_file(ft_ternary(new_elf_buffer, new_elf_buffer, elf_mmap), file_size, generated_bytecode, generated_bytecode_size, packed))
       {
         munmap(elf_mmap, file_size);
         free(new_elf_buffer);
@@ -2242,10 +2263,11 @@ CLOSED: [2025-09-29 Mon 11:58]
   .stage1:
     	.aslr_offset:
     	call   $+5
-    	pop    r15
-  	push r15
-    	sub    r15,0x401028	;r15 aslr,
   	pop rax
+  	push rax
+    	sub    rax, 0xfffffffffffff000	; r15 aslr
+  	xchg rax, r15		;r15 aslr
+    	pop    rax
   	and rax, 0xfffffffffffff000
   	push rax		;[rsp] = vaddr mmap stage 1
   	push 0x500		;[rsp + 8] = vaddr mmap stage 1, [rsp] = size of mmap stage 1
@@ -2286,6 +2308,7 @@ CLOSED: [2025-09-29 Mon 11:58]
     	xor    edi,edi 		;Vaddr
    	push 0x5000		;size stage2 + elf_decompress_file
     	pop rsi
+  	push rsi		;[rsp] [rsp + 8] [rsp + 16] [rsp + 24] size_stage2, fd, size_stage1, vaddr stage1
   	push 0x9
   	pop rax
   	syscall
@@ -2295,11 +2318,11 @@ CLOSED: [2025-09-29 Mon 11:58]
   	pop r13		;r13 vaddr stage 2, r15 aslr_offset.
   	jmp end_of_stage1
   .return_crypt_compress_addr:
-  	pop rsi		; src = vaddr start of compress stage2
-  	push rsi
-  	push 0x500
-  	pop rdx			;src_len
-  	sub rsp, 0x500		;leave space to decrypt
+  	pop rsi		; src = vaddr start of decrypt compress stage2_elf
+  	pop rdx		; rcx size_stage2_elf_crypt_compress TODO May for decrypt need more space? 
+  	push rsi	;[rsp] [rsp + 8] [rsp + 16] [rsp + 24] vaddr 2 size_stage2, fd, size_stage1, vaddr stage1
+  	push rdx	;[rsp] [rsp + 8] [rsp + 16] [rsp + 24] size_stage2, vaddr s2, fd, size_stage1, vaddr stage1
+  	sub rsp, rdx
   	push rsp		;dest
   	pop rdi
   	call decrypt
@@ -2311,8 +2334,12 @@ CLOSED: [2025-09-29 Mon 11:58]
   	pop rdi		; src
   	push 0xe84	; size of compress stage2
   	pop rsi		; src_size/len
+  	push rsi
   	call lz77_decompress
-  	add rsp, 0x500		;Restore stack
+  	pop rdx
+  	push rdx        ;[rsp] [rsp + 8] [rsp + 16] [rsp + 24] size_stage2, vaddr s2, fd, size_stage1, vaddr stage1
+
+  	add rsp, rdx ;Restore stack
   	test rax, rax
   	jnz _exit
 
@@ -2321,8 +2348,8 @@ CLOSED: [2025-09-29 Mon 11:58]
   	pop rdi			;vaddr
   	push 0x5 
   	pop rdx			;prot R-X
-   	push 0x5000		;size of mmap
-  	pop rsi
+  	pop rsi			;stage_
+  	push rsi
   	push 0xA
   	pop rax			;syscall mprotect 10
     	syscall
@@ -2330,7 +2357,7 @@ CLOSED: [2025-09-29 Mon 11:58]
     	jnz _exit
   	.jmp_stage_2:
   	push r13
-  	ret;[rsp + 16] = vaddr mmap stage 1, [rsp + 8] = size of mmap stage 1, [rsp] = fd -> /proc/self/exe
+  	ret;		 ;[rsp] size_stage2, vaddr s2, fd, size_stage1, vaddr stage1
 
   _exit:	
       push 127
