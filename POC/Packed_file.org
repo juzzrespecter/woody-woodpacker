@@ -1403,7 +1403,7 @@ Add to a compress file syscall, pop rdx, ret -
    
     // Encrypt the join
     size_t stage2_elf_compress_encrypt_header_size;
-    char *stage2_elf_compress_encrypt_header = encrypt(stage2_elf_compress_header, stage2_elf_compress_size, &stage2_elf_compress_encrypt_header_size);
+    char *stage2_elf_compress_encrypt_header = encrypt(stage2_elf_compress_header, stage2_elf_compress_header_size, &stage2_elf_compress_encrypt_header_size);
     /* free(stage2_elf_compress_header);// TODO On really cypher may i need to free. */
     if (!stage2_elf_compress_encrypt_header || !stage2_elf_compress_encrypt_header_size)
     {
@@ -1419,12 +1419,19 @@ Add to a compress file syscall, pop rdx, ret -
         return (5); 
       }
     //Modify the entrypoint for math the aslr, size of stage1
-    size_t offset_mod[] = {0x9, 0x18, 0x4f, 0x80};
-    uint32_t tmp_val[] = {elf_get_highest_loadable_vaddr_avalaible((void *)&ehdr, phnum, class) + elf_get_struct_size_elf_header((char *)ehdr.elf32) + elf_get_elfh_phentsize(&ehdr) * (2 + elf_is_gnu_stack_phdr((void *)&ehdr, class, phnum)) + 5, stage1_fd_size, stage2_elf_compress_encrypt_header_size, stage2_elf_compress_header_size};
+    size_t offset_mod[] = {0x9, 0x18, 0x4f, 0x69, 0x84};
+    uint32_t prefix_size = elf_get_struct_size_elf_header((char *)ehdr.elf32) + elf_get_elfh_phentsize(&ehdr) * (2 + elf_is_gnu_stack_phdr((void *)&ehdr, class, phnum));
+    uint32_t size_decrypt_buffer = stage2_elf_compress_encrypt_header_size;// Need to get somehow.
+    uint32_t tmp_val[] = {elf_get_highest_loadable_vaddr_avalaible((void *)&ehdr, phnum, class) + prefix_size + 5,
+  			stage1_fd_size + prefix_size + stage2_elf_compress_encrypt_header_size,
+  			stage2_elf_compress_encrypt_header_size,
+  			size_decrypt_buffer,
+  			stage2_elf_compress_header_size};
 
     i = 0;
     while (i < sizeof(offset_mod) / sizeof(*offset_mod))
       {
+        printf("index = %ld, val = %x\n", i, tmp_val[i]);
         memcpy(stage1_buffer + offset_mod[i], &tmp_val[i], sizeof(*tmp_val));
         i++;
       }
@@ -2261,18 +2268,19 @@ CLOSED: [2025-09-29 Mon 11:58]
 
   _start:
   .stage1:
-    	.aslr_offset:
+  .aslr_offset:
     	call   $+5
   	pop rax
   	push rax
     	sub    rax, 0xfffffffffffff000	; r15 aslr
   	xchg rax, r15		;r15 aslr
+  .vaddr_stage1:
     	pop    rax
   	and rax, 0xfffffffffffff000
   	push rax		;[rsp] = vaddr mmap stage 1
   	push 0x500		;[rsp + 8] = vaddr mmap stage 1, [rsp] = size of mmap stage 1
   	call .open
-  	.proc_self_exec:
+  .proc_self_exec:
   	ret			;/
   	ret			;p
   	ret			;r
@@ -2288,16 +2296,16 @@ CLOSED: [2025-09-29 Mon 11:58]
   	ret			;x
   	ret			;e
   	ret			;\0
-  	.open:
+  .open:
   	xor esi, esi
   	pop rdi
   	push 0x2
   	pop rax
   	syscall
-  	push rax		;[rsp] [rsp + 8] [rsp + 16] fd, size_stage1, vaddr stage1
+  	push rax		;[rsp] fd, size_stage1, vaddr stage1
   	test rax, rax
   	js _exit
-    	.mmap_stage_2:
+  .mmap_stage_2:
     	xor    r9d,r9d		;offset
     	push -1			;
     	pop    r8		;fd
@@ -2306,9 +2314,9 @@ CLOSED: [2025-09-29 Mon 11:58]
     	push 0x3		; RW
     	pop rdx			; prot
     	xor    edi,edi 		;Vaddr
-   	push 0x5000		;size stage2 + elf_decompress_file
+   	push 0x5000		;size s2 elf
     	pop rsi
-  	push rsi		;[rsp] [rsp + 8] [rsp + 16] [rsp + 24] size_stage2, fd, size_stage1, vaddr stage1
+  	push rsi		;[rsp] size_s2_elf, fd, size_stage1, vaddr stage1
   	push 0x9
   	pop rax
   	syscall
@@ -2318,28 +2326,30 @@ CLOSED: [2025-09-29 Mon 11:58]
   	pop r13		;r13 vaddr stage 2, r15 aslr_offset.
   	jmp end_of_stage1
   .return_crypt_compress_addr:
-  	pop rsi		; src = vaddr start of decrypt compress stage2_elf
-  	pop rdx		; rcx size_stage2_elf_crypt_compress TODO May for decrypt need more space? 
-  	push rsi	;[rsp] [rsp + 8] [rsp + 16] [rsp + 24] vaddr 2 size_stage2, fd, size_stage1, vaddr stage1
-  	push rdx	;[rsp] [rsp + 8] [rsp + 16] [rsp + 24] size_stage2, vaddr s2, fd, size_stage1, vaddr stage1
+  	pop rsi		;src;;[rsp] size_s2_elf, fd, size_stage1, vaddr stage1
+  	push 0x500	;size decrypt buffer.
+  	pop rdx		;rdx [rsp] size_s2_elf, fd, size_stage1, vaddr stage1
   	sub rsp, rdx
   	push rsp		;dest
   	pop rdi
+  	push rdx	;[rsp] size_buffer_decrypt, decrypt_buffer, size_s2_elf, fd, size_s1, vaddr_s1
   	call decrypt
   	test rax, rax
   	jz _exit
   	push r13
   	pop rdx		; mmap dest
-  	push rax	; vaddr of decrypt stage2
+  	push rax	; vaddr of decrypted_s2_elf
   	pop rdi		; src
-  	push 0xe84	; size of compress stage2
+  	push 0xe84	; s2_elf_size_c_h -> modify in packer.
   	pop rsi		; src_size/len
-  	push rsi
+  	push rsi	;[rsp] size_elf_size_c_h, size_buffer_decrypt, decrypt_buffer, size_s2_elf, fd, size_s1, vaddr_s1
   	call lz77_decompress
-  	pop rdx
-  	push rdx        ;[rsp] [rsp + 8] [rsp + 16] [rsp + 24] size_stage2, vaddr s2, fd, size_stage1, vaddr stage1
+  	pop rsi			;size_s2_elf_c_h [rsp]size_buffer_decrypt, decrypt_buffer,size_s2_elf,  fd, size_s1, vaddr_s1
+  	pop rdx			;size_buffer_decrypt [rsp] decrypt_buffer, size_s2_elf, fd, size_s1, vaddr_s1
+  	;; push rsi		;[rsp] size_s2_elf_c_h, fd, size_s1, vaddr_s1
+  	;; push rsi		;[rsp] size_s2_elf_c_h, size_s2_elf_c_h, fd, size_s1, vaddr_s1
 
-  	add rsp, rdx ;Restore stack
+  	add rsp, rdx ;Restore stack [rsp] decrypt_buffer, size_s2_elf, fd, size_s1, vaddr_s1
   	test rax, rax
   	jnz _exit
 
@@ -2348,16 +2358,19 @@ CLOSED: [2025-09-29 Mon 11:58]
   	pop rdi			;vaddr
   	push 0x5 
   	pop rdx			;prot R-X
-  	pop rsi			;stage_
-  	push rsi
+  	pop rsi			;size_s2_elf [rsp] fd_s1, size_s1, vaddr_s1
+  	push r13		;[rsp] vaddr_s2_elf, fd_s1, size_s1, vaddr_s1
+  	push rsi		;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr_s1
   	push 0xA
   	pop rax			;syscall mprotect 10
     	syscall
   	test rax, rax
     	jnz _exit
   	.jmp_stage_2:
-  	push r13
-  	ret;		 ;[rsp] size_stage2, vaddr s2, fd, size_stage1, vaddr stage1
+  	pop rsi;size_s2_elf [rsp]vaddr_s2_elf, fd_s1, size_s1, vaddr s1
+  	push rsi;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
+  	push r13;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
+  	ret;		 ;(pop rip [rsp] -> vaddr_s2_elf)[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
 
   _exit:	
       push 127
@@ -2370,7 +2383,7 @@ CLOSED: [2025-09-29 Mon 11:58]
       ; Function entry - validate input parameters
       ; rdi = in, rsi = in_size, rdx = out
 
-      cmp    rsi, 0x7           ; Compare in_size with 7
+      cmp    esi, 0x7           ; Compare in_size with 7
       mov    r9, rdx            ; Save 'out' pointer to r9
       setbe  al                 ; Set AL if in_size <= 7
       test   rdx, rdx           ; Test if 'out' is NULL
@@ -2491,16 +2504,17 @@ CLOSED: [2025-09-29 Mon 11:58]
   end_of_stage1:
   	call _start.return_crypt_compress_addr
 #+end_src
+
 #+begin_src asm :tangle payload/stage2.s
   global _start
 
 
   _start:		 ;r15 aslr
-  .stage2:	;[rsp] [rsp + 8] [rsp + 16] fd, size_stage1, vaddr stage1
+  .stage2:	 ;[rsp] size_s2, vaddr s2, fd s1, size_s1, vaddr s1
   	jmp end_of_stage_2
-  .return_ehdr_ptr:
+  .return_ehdr_ptr:;[rsp] ehdr_ptr size_s2, vaddr s2, fd s1, size_s1, vaddr s1
   	pop rdi		; ehdr_ptr
-  	push rdi	; save ptr
+  	push rdi	; ;[rsp] ehdr_ptr size_s2, vaddr s2, fd s1, size_s1, vaddr s1
   	push 0xe84	; size of all elf file.
   	pop rsi
   .set_load_compress_elf:
@@ -2508,14 +2522,15 @@ CLOSED: [2025-09-29 Mon 11:58]
   	sub    rsp, 0x10                 ; Allocate stack space
       
       ; Get program header information
-      movzx  esi, WORD [rdi+0x38] ; esi = e_phnum
-      add    rdi, QWORD [rdi+0x20] ; rdi = e_phoff
-      lea    rdx, [rsp]          ; rdx = stack space for result min
-      lea    rcx, [rsp+0x8]          ; rcx = stack space for result max
-      call   calculate_elf_memory_range; .purpose: Call helper function
-      mov rdx, QWORD [rsp]		     ;base
+  	movzx  esi, WORD [rdi+0x38] ; esi = e_phnum
+  	add    rdi, QWORD [rdi+0x20] ; rdi = e_phoff
+  	lea    rdx, [rsp]          ; rdx = stack space for result min
+  	lea    rcx, [rsp+0x8]          ; rcx = stack space for result max
+  	call   calculate_elf_memory_range; .purpose: Call helper function
+  	mov rdx, QWORD [rsp]		     ;base
   	;; xor edx, edx				
-  	pop rdi			;restore ehdr
+  	pop rdi			;pop  ehdr;[rsp] size_s2, vaddr s2, fd s1, size_s1, vaddr s1
+
   	;; push rdi		;Don't need bk -> start to use mmap.
   	push r15
   	pop rsi			;rsi aslr_offset
@@ -2527,7 +2542,7 @@ CLOSED: [2025-09-29 Mon 11:58]
   	push rdi		;ehdr
   	pop r14
   	;; mov r14, QWORD[rsp+0x10]
-  	add rsp, 0x10		;
+  	add rsp, 0x10		;restore rsp
   	;; add r14, r15		;r14 mmap ehdr
   	push rax
   	pop r13			;r13 entrypoint to jmp
@@ -2644,13 +2659,13 @@ CLOSED: [2025-09-29 Mon 11:58]
     	jz .end
           add rdi, 8		;Advance to value
           
-          cmp rsi, 3          ; AT_PHDR
+          cmp esi, 3          ; AT_PHDR
           je .set_phdr
-          cmp rsi, 5          ; AT_PHNUM
+          cmp esi, 5          ; AT_PHNUM
           je .set_phnum
-          cmp rsi, 7          ; AT_BASE
+          cmp esi, 7          ; AT_BASE
           je .set_base
-          cmp rsi, 9          ; AT_ENTRY
+          cmp esi, 9          ; AT_ENTRY
           je .set_entry
           jmp .auxv_loop
 
@@ -2672,7 +2687,7 @@ CLOSED: [2025-09-29 Mon 11:58]
   .set_entry:
       	mov qword [rdi], r13
       	jmp .auxv_loop
-        .end:
+  .end:
     	ret
 
   	;; Untested
