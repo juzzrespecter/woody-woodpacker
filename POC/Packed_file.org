@@ -2510,13 +2510,14 @@ CLOSED: [2025-09-29 Mon 11:58]
 
 
   _start:		 ;r15 aslr
-  .stage2:	 ;[rsp] size_s2, vaddr s2, fd s1, size_s1, vaddr s1
+  	ret;		 ;(pop rip [rsp] -> vaddr_s2_elf)
+  .stage2:   ;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
   	jmp end_of_stage_2
-  .return_ehdr_ptr:;[rsp] ehdr_ptr size_s2, vaddr s2, fd s1, size_s1, vaddr s1
-  	pop rdi		; ehdr_ptr
+  .return_ehdr_ptr:;[rsp] ehdr_ptr size_s2, size_s2_elf, vaddr s2, fd s1, size_s1, vaddr s1
+  	pop rdi		; ehdr_ptr [rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
   	push rdi	; ;[rsp] ehdr_ptr size_s2, vaddr s2, fd s1, size_s1, vaddr s1
-  	push 0xe84	; size of all elf file.
-  	pop rsi
+  	push 0xe84	; ;[rsp] elf_size ehdr_ptr size_s2, vaddr s2, fd s1, size_s1, vaddr s1
+  	pop rsi		; ;[rsp] ehdr_ptr size_s2, vaddr s2, fd s1, size_s1, vaddr s1
   .set_load_compress_elf:
   .get_base:
   	sub    rsp, 0x10                 ; Allocate stack space
@@ -2526,9 +2527,8 @@ CLOSED: [2025-09-29 Mon 11:58]
   	add    rdi, QWORD [rdi+0x20] ; rdi = e_phoff
   	lea    rdx, [rsp]          ; rdx = stack space for result min
   	lea    rcx, [rsp+0x8]          ; rcx = stack space for result max
-  	call   calculate_elf_memory_range; .purpose: Call helper function
+  	call   calculate_elf_memory_range; 
   	mov rdx, QWORD [rsp]		     ;base
-  	;; xor edx, edx				
   	pop rdi			;pop  ehdr;[rsp] size_s2, vaddr s2, fd s1, size_s1, vaddr s1
 
   	;; push rdi		;Don't need bk -> start to use mmap.
@@ -2942,6 +2942,7 @@ CLOSED: [2025-09-29 Mon 11:58]
         cmp    rdx, rcx                ; Compare ndx_ph with e_phnum
         jb     .find_interp_segment    ; .purpose: Check if current phdr is PT_INTERP
         xor    ebx, ebx                ; ebx = 0 (no interpreter found)
+        xor    edi, edi                ; edi = 0 (interpreter base)
         jmp     .cleanup_and_return     ; .purpose: Exit if no PT_INTERP found
 
   .find_interp_segment:
