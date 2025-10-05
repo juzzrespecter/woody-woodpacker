@@ -1,5 +1,5 @@
-#+title: Packed_file
 Test further packed file.
+#+title: Packed_file
 * ASLR?
 PIE == ~Elfh_type == ET_DYN~
 - add the diff between expected vaddr and real vaddr
@@ -1358,8 +1358,10 @@ Add to a compress file syscall, pop rdx, ret -
     if (load_stage_buffer(class, &stage2_buffer, (size_t *)&stage2_fd_size, "bytecode/x86/stage2.bin", "bytecode/x64/stage2.bin"))
       return (5);
     // Modify need data
-    size_t offset_mod_stage2[] = {0x8};
-    uint32_t tmp_val_stage2[] = {elf_size};
+
+    avalaible_vaddr = 0;// TODO del when is tested that work fine.
+    size_t offset_mod_stage2[] = {0x38, 0x9B};
+    uint32_t tmp_val_stage2[] = {elf_size, avalaible_vaddr};
     uint64_t i = 0;
     while (i < sizeof(offset_mod_stage2) / sizeof(*offset_mod_stage2))
       {
@@ -2510,15 +2512,43 @@ CLOSED: [2025-09-29 Mon 11:58]
 
 
   _start:		 ;r15 aslr
-  	ret;		 ;(pop rip [rsp] -> vaddr_s2_elf)
   .stage2:   ;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
+  .mmap_fd:
+  	pop r14			;size_s2_elf [rsp] vaddr_s2_elf, fd_s1, size_s1, vaddr s1
+  	pop r13			;vaddr_s2_elf [rsp] fd_s1, size_s1, vaddr s1
+  	push 0x2		;MAP_PRIVATE
+  	pop r10			; flags
+  	xor r9, r9		; offset
+  	pop r8			;fd_s1 [rsp] size_s1, vaddr s1
+  	xor edi, edi		;addr
+  	push 0x1000		
+  	pop rsi			;size
+  	push 1
+  	pop rdx			;perm
+  	push r8			;[rsp] fd_s1, size_s1, vaddr s1
+  	push 0x9
+  	pop rax
+  	syscall
+  .close_fd:
+  	pop rdi			;;fd_s1 [rsp] size_s1, vaddr s1
+  	push 0x3
+    	pop rax
+    	syscall
+  .unmmap_s1:
+  	pop rsi			;size_s1 [rsp]  vaddr_s1
+  	pop rdi			;vaddr_s1 [rsp]
+  	push 0xb
+  	pop rax
+  	syscall
+
+  	push r13
+  	push r14		; [rsp] size_s2_elf, vaddr_s2_elf	
   	jmp end_of_stage_2
   .return_ehdr_ptr:;[rsp] ehdr_ptr size_s2, size_s2_elf, vaddr s2, fd s1, size_s1, vaddr s1
   	pop rdi		; ehdr_ptr [rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
   	push rdi	; ;[rsp] ehdr_ptr size_s2, vaddr s2, fd s1, size_s1, vaddr s1
-  	push 0xe84	; ;[rsp] elf_size ehdr_ptr size_s2, vaddr s2, fd s1, size_s1, vaddr s1
+  	push 0x2013a ; ;[rsp] elf_size ehdr_ptr size_s2, vaddr s2, fd s1, size_s1, vaddr s1
   	pop rsi		; ;[rsp] ehdr_ptr size_s2, vaddr s2, fd s1, size_s1, vaddr s1
-  .set_load_compress_elf:
   .get_base:
   	sub    rsp, 0x10                 ; Allocate stack space
       
@@ -2559,6 +2589,47 @@ CLOSED: [2025-09-29 Mon 11:58]
   	push rsp		;mmap elf
   	pop rdi
   	call set_auxv
+  	push 0x402013a		;vaddr stage3
+  	pop r12
+  	test r12, r12
+  	jne .woody_payload
+  .create_stage3:
+  	push 0x22		;MAP_PRIVATE | MAP_ANONYMOUS
+  	pop r10			; flags
+  	;; xor r9, r9		; offset
+  	push -1
+  	pop r8			;fd
+  	xor edi, edi		;addr
+  	push 0x1000		
+  	pop rsi			;size
+  	push 3			;RW
+  	pop rdx			;perm
+  	push 0x9
+  	pop rax
+  	syscall
+  	cmp rax, 0
+  	jb _exit
+  	push 0x4		     ; size of stage3
+  	pop rcx			     ; N times
+  	push rcx
+  	push rax
+  	xchg    rdi, rax             ; rdi = destination mmap
+  	call .bytecode_stage3
+  	syscall			;call munmap s2
+  	xor edi, edi		;reset this register
+  	ret			;jmp to entrypoint Interp or not.
+  	.bytecode_stage3:
+  	pop rsi		      ;src
+  	rep movsb
+  	.munmap_stage3:
+  	pop rdi			;mmap stage3
+  	pop rsi			;size of bytecode_stage3
+  	push 0xb
+  	pop rax
+  	push rdi
+  	syscall
+  	pop r13
+  	
   	.woody_payload:
   	call .woody_write		; Woody Payload.
   	ret 			;.
@@ -2584,18 +2655,26 @@ CLOSED: [2025-09-29 Mon 11:58]
   	push 0x1		;write syscall
   	pop rax
           syscall
-  	.clean:			;[rsp] [rsp + 8] [rsp + 16] fd, size_stage1, vaddr stage1
-  	push rax
-  	pop rax
-  .stage3:
-  	.is_interp:
+  .jmp_entry_for_stage3:
   	test r11, r11
-  	jnz .jmp_interp
-  	push r13
-  	ret			;jmp stage 3
-  	.jmp_interp:
-  	push r11
-  	ret			;jmp stage 3
+  	cmovne r13, r11		;if r11 != 0  set r13 = r11
+
+  .jmp_stage3:
+  	pop rsi			;size_s1 [rsp]  vaddr_s1
+  	pop rdi			;vaddr_s1 [rsp]
+  	push 0xb
+  	pop rax
+  	push r13		;jmp entry in stage3.
+  	push r12		;jmp to stage 3
+  	ret			;
+
+
+  	
+
+  stage3:
+  	syscall			;call munmap s2
+  	xor edi, edi		;reset this register
+  	ret			;jmp to entrypoint Interp or not.
   	;; .append before call the stage2 with the elf file 
 
   _exit:	
@@ -2604,11 +2683,6 @@ CLOSED: [2025-09-29 Mon 11:58]
       push 60
       pop rax
       syscall
-  _mmap:
-    	push 0x9
-    	pop rax
-    	syscall
-    	ret
     _mprotect:
     	push 0xA
     	pop rax		
@@ -2689,19 +2763,6 @@ CLOSED: [2025-09-29 Mon 11:58]
       	jmp .auxv_loop
   .end:
     	ret
-
-  	;; Untested
-  .jump_to_entry:
-    	test r8, r8
-    	jne .prepare_register_entry
-    	mov    r8,QWORD  [rbx+0x18]
-    	add r8, rdx ; aslr	 
-  .prepare_register_entry:
-    	syscall
-    	xor edx, edx
-    	push r8
-    	ret
-  	;; End Untested
 
   calculate_elf_memory_range:
           	xor eax, eax
@@ -2792,10 +2853,12 @@ CLOSED: [2025-09-29 Mon 11:58]
         mov    rdi, r12                  ; rdi = mapping address
         mov    r15, r8                 ; Save file descriptor
         mov    edx, eax                  ; Combine mapping type
-        call   _mmap; .purpose: Make mmap system call <0 in error.
+  	push 0x9
+  	pop rax
+  	syscall
         test rax,rax
         js .mmap_failed
-        cmp    r8, -1 ; Check if fd is invalid
+        cmp    r8d, -1 ; Check if fd is invalid
         jne    .after_mmap               ; .purpose: Continue after mmap
         mov    rsi, QWORD [rbp+0x8]  ; rsi = p_offset
         sub    rax, r13                  ; Adjust mapping address mmap - offset
@@ -2864,21 +2927,24 @@ CLOSED: [2025-09-29 Mon 11:58]
         ; Process program headers
         mov    r14, QWORD [rsp+0x10] ; r14 = result min
         test r8, r8
+        push 0x22			;ANON | PRIVATE
+        pop r10
         jz .no_base_addr
         add r8, r9
+        or r10d, 0x10		;FIXED
   .no_base_addr:
         mov    rdi, r8           ; rdi = base_addr + offset
         xor    edx, edx                  ; Clear edx
-        mov    r13, QWORD [rsp+0x18] ; r13 = result
+        mov    r13, QWORD [rsp+0x18] ; r13 = result -> May change r13 to rsi and still working  for avoid the mov; it used for clean up but could just use exit and avoid this.
         xor    r9d, r9d                  ; Clear r9d
         push -1
         pop    r8
-        push 0x22
-        pop r10
         mov    ecx, 0x22                 ; mmap flags
-        sub    r13, r14                  ; Calculate size
-        mov    rsi, r13                  ; rsi = size
-        call   _mmap			; .purpose: Map memory for segments
+        sub    r13, r14                  ; Calculate size change this with rsi
+        mov    rsi, r13                  ; rsi = size Could  delete this line.?
+  	push 0x9
+  	pop rax
+  	syscall
         cmp    rax, rax   ; Check for error
         js     .generic_error            ; .purpose: Handle mmap error
         
