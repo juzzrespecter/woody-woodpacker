@@ -1322,10 +1322,14 @@ Add to a compress file syscall, pop rdx, ret -
 
     off_t stage3_fd_size;
     char *stage3_buffer;
+
+    uint64_t avalaible_vaddr = 0;
+    uint64_t avalaible_offset = 0;
+    uint64_t ndx_ph = 0;
+    uint64_t ehdr_struct_size;
+    t_elf_ph phdr;
     if (load_stage_buffer(class, &stage3_buffer, (size_t *)&stage3_fd_size, "bytecode/x86/stage3.bin", "bytecode/x64/stage3.bin"))
         return (5);
-    uint64_t avalaible_vaddr;
-    uint64_t avalaible_offset;
     if (elf_is_a_avalaible_gap_in_exec_load_phdr((void *)&ehdr, class, phnum, stage3_fd_size, &avalaible_vaddr, &avalaible_offset))
       {
         ,*new_elf_buffer = malloc(elf_size);
@@ -1337,14 +1341,14 @@ Add to a compress file syscall, pop rdx, ret -
         memcpy(*new_elf_buffer, elf_mmap, elf_size);
         memcpy(*new_elf_buffer + avalaible_offset, stage3_buffer, stage3_fd_size);
         free(stage3_buffer);
-        const uint64_t ndx_ph = elf_get_program_ndx_from_addr((void *)&ehdr, class, phnum, avalaible_vaddr);
+        ndx_ph = elf_get_program_ndx_from_addr((void *)&ehdr, class, phnum, avalaible_vaddr);
         if (ndx_ph >= phnum)
   	  return (5);
-        uint64_t ehdr_struct_size = elf_get_struct_size_elf_header(elf_mmap);
-        t_elf_ph phdr =(t_elf_ph){.elf32 = *new_elf_buffer + (elf_get_struct_size_elf_ph(class) * ndx_ph) + ehdr_struct_size};
-
+        ehdr_struct_size = elf_get_struct_size_elf_header(elf_mmap);
+        phdr =(t_elf_ph){.elf32 = *new_elf_buffer + (elf_get_struct_size_elf_ph(class) * ndx_ph) + ehdr_struct_size};
         elf_phdr_set_filesz(&phdr, elf_get_program_header_filesz(&phdr, class) + stage3_fd_size, class);
         elf_phdr_set_memsz(&phdr, elf_get_program_header_memsz(&phdr, class) + stage3_fd_size, class);
+        elf_mmap = *new_elf_buffer;
       }
     else
       {
@@ -1360,7 +1364,7 @@ Add to a compress file syscall, pop rdx, ret -
     // Modify need data
 
     avalaible_vaddr = 0;// TODO del when is tested that work fine.
-    size_t offset_mod_stage2[] = {0x38, 0x9B};
+    size_t offset_mod_stage2[] = {0x38, 0x9D};
     uint32_t tmp_val_stage2[] = {elf_size, avalaible_vaddr};
     uint64_t i = 0;
     while (i < sizeof(offset_mod_stage2) / sizeof(*offset_mod_stage2))
@@ -1399,7 +1403,7 @@ Add to a compress file syscall, pop rdx, ret -
         free(stage2_elf_compress);
         return (5);
       }
-    memcpy(stage2_elf_compress_header, &stage2_elf_compress_size, sizeof(size_t));
+    memcpy(stage2_elf_compress_header, &stage2_elf_buffer_size, sizeof(size_t));
     memcpy(stage2_elf_compress_header + sizeof(size_t) , stage2_elf_compress, stage2_elf_compress_size);
     free(stage2_elf_compress);
    
@@ -1425,8 +1429,8 @@ Add to a compress file syscall, pop rdx, ret -
     uint32_t prefix_size = elf_get_struct_size_elf_header((char *)ehdr.elf32) + elf_get_elfh_phentsize(&ehdr) * (2 + elf_is_gnu_stack_phdr((void *)&ehdr, class, phnum));
     uint32_t size_decrypt_buffer = stage2_elf_compress_encrypt_header_size;// Need to get somehow.
     uint32_t tmp_val[] = {elf_get_highest_loadable_vaddr_avalaible((void *)&ehdr, phnum, class) + prefix_size + 5,
-  			stage1_fd_size + prefix_size + stage2_elf_compress_encrypt_header_size,
-  			stage2_elf_compress_encrypt_header_size,
+  			stage1_fd_size + prefix_size + stage2_elf_compress_encrypt_header_size,// s1 size
+  			stage2_elf_buffer_size,// stage2_elf_buffer_size?
   			size_decrypt_buffer,
   			stage2_elf_compress_header_size};
 
@@ -2544,11 +2548,13 @@ CLOSED: [2025-09-29 Mon 11:58]
   	push r13
   	push r14		; [rsp] size_s2_elf, vaddr_s2_elf	
   	jmp end_of_stage_2
-  .return_ehdr_ptr:;[rsp] ehdr_ptr size_s2, size_s2_elf, vaddr s2, fd s1, size_s1, vaddr s1
-  	pop rdi		; ehdr_ptr [rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
-  	push rdi	; ;[rsp] ehdr_ptr size_s2, vaddr s2, fd s1, size_s1, vaddr s1
-  	push 0x2013a ; ;[rsp] elf_size ehdr_ptr size_s2, vaddr s2, fd s1, size_s1, vaddr s1
-  	pop rsi		; ;[rsp] ehdr_ptr size_s2, vaddr s2, fd s1, size_s1, vaddr s1
+  .return_ehdr_ptr:;[rsp] ehdr_ptr size_s2, size_s2_elf, vaddr s2
+  	pop rdi		; ehdr_ptr [rsp] size_s2_elf, vaddr_s2_elf
+  	push rdi	; ;[rsp] ehdr_ptr size_s2, vaddr s2
+  	push 0x2013a ; ;[rsp] elf_size ehdr_ptr size_s2, vaddr s2
+  	pop rsi		; ;[rsp] ehdr_ptr size_s2, vaddr s2
+  	pop rbx 	;ehdr_ptr [rsp] size_s2, vaddr s2
+
   .get_base:
   	sub    rsp, 0x10                 ; Allocate stack space
       
@@ -2559,44 +2565,46 @@ CLOSED: [2025-09-29 Mon 11:58]
   	lea    rcx, [rsp+0x8]          ; rcx = stack space for result max
   	call   calculate_elf_memory_range; 
   	mov rdx, QWORD [rsp]		     ;base
-  	pop rdi			;pop  ehdr;[rsp] size_s2, vaddr s2, fd s1, size_s1, vaddr s1
+  	push rbx
+  	pop rdi			;pop  ehdr;[rsp] size_s2, vaddr s2
 
   	;; push rdi		;Don't need bk -> start to use mmap.
   	push r15
   	pop rsi			;rsi aslr_offset
   	push -1
   	pop rcx			;rcx fd
-  	call load_elf_generic
+  	call load_elf_generic	;TODO Something here isn't loading correctly the data in 2nd phdr...
   	cmp rax, -1		;rax entrypoint
   	je _exit
-  	push rdi		;ehdr
-  	pop r14
-  	;; mov r14, QWORD[rsp+0x10]
   	add rsp, 0x10		;restore rsp
-  	;; add r14, r15		;r14 mmap ehdr
+
+  	push rdi
+  	pop r14
   	push rax
   	pop r13			;r13 entrypoint to jmp
 
-  	push r14
-  	pop rdi			; ehdr
-  	call get_at_interp_x64
+  	call get_at_interp_x64	;[rsp] size_s2, vaddr s2
   	cmp rax, -1
   	je _exit
   	push rax
   	pop r11			;entrypoint interp
   	push rdi
   	pop r12			;base interp
-  	push rsp		;mmap elf
-  	pop rdi
+  	;; This should 
+  	lea rdi, [rsp + 0x10]
+  	;; push rsp		;mmap elf
+  	;; pop rdi
   	call set_auxv
   	push 0x402013a		;vaddr stage3
-  	pop r12
-  	test r12, r12
+  	pop r14
+  	push r14
+  	test r14, r14
   	jne .woody_payload
+  	pop r14
   .create_stage3:
   	push 0x22		;MAP_PRIVATE | MAP_ANONYMOUS
   	pop r10			; flags
-  	;; xor r9, r9		; offset
+  	xor r9, r9		; offset
   	push -1
   	pop r8			;fd
   	xor edi, edi		;addr
@@ -2606,29 +2614,36 @@ CLOSED: [2025-09-29 Mon 11:58]
   	pop rdx			;perm
   	push 0x9
   	pop rax
+  	push r11
   	syscall
+  	pop r11
   	cmp rax, 0
   	jb _exit
-  	push 0x4		     ; size of stage3
+  	push 0x5		     ; size of stage3
   	pop rcx			     ; N times
-  	push rcx
-  	push rax
+  	push rcx			     ; N times
+  	push rax		;[rsp]vaddr s3, size_s2, vaddr s2
   	xchg    rdi, rax             ; rdi = destination mmap
   	call .bytecode_stage3
   	syscall			;call munmap s2
   	xor edi, edi		;reset this register
   	ret			;jmp to entrypoint Interp or not.
   	.bytecode_stage3:
-  	pop rsi		      ;src
+  	pop rsi		      ;src s3, [rsp]vaddr_s3, size_s3, size_s2, vaddr s2
   	rep movsb
-  	.munmap_stage3:
-  	pop rdi			;mmap stage3
-  	pop rsi			;size of bytecode_stage3
-  	push 0xb
+  	.mprotect_stage3:
+  	push 5			;RX
+  	pop rdx			;perm
+  	pop rdi			;vaddr s3 [rsp]size s3, size_s2, vaddr s2
+
+  	pop rsi			;size of bytecode_stage3 [rsp]size_s2, vaddr s2
+
+  	push 0xa		;mprotect
   	pop rax
-  	push rdi
+  	push rdi		;[rsp]vaddr_s3 size_s2, vaddr s2
+  	push r11
   	syscall
-  	pop r13
+  	pop r11
   	
   	.woody_payload:
   	call .woody_write		; Woody Payload.
@@ -2647,35 +2662,31 @@ CLOSED: [2025-09-29 Mon 11:58]
   	ret 			;.
   	ret 			;\n No need null becouse we use write and don't care null ended. ;) a byte less.
   .woody_write:
-          pop    rsi		;....WOODY....\n ptr.
+          pop    rsi		;....WOODY....\n ptr.		;[rsp]vaddr s3 size_s2, vaddr s2
   	push 0xe		;ptr_size
   	pop rdx
   	push 0x1		;fd to write syscall
   	pop rdi
   	push 0x1		;write syscall
   	pop rax
+  	push r11
           syscall
+  	pop r11;[rsp]vaddr, size s3 size_s2, vaddr s2
+
   .jmp_entry_for_stage3:
+  	pop r14		;vaddr s3 [rsp]size_s2, vaddr s2
   	test r11, r11
-  	cmovne r13, r11		;if r11 != 0  set r13 = r11
+  	cmovne r13, r11		;if r11 != 0  set r12 = r11
 
   .jmp_stage3:
-  	pop rsi			;size_s1 [rsp]  vaddr_s1
+  	pop rsi			;size_s2 [rsp]  vaddr_s2
   	pop rdi			;vaddr_s1 [rsp]
   	push 0xb
   	pop rax
-  	push r13		;jmp entry in stage3.
-  	push r12		;jmp to stage 3
-  	ret			;
+  	push r13		;[rsp]vaddr entrypoint that go jmp from stage3
+  	push r14		;[rsp] vaddr stage3, vaddr entrypoint
+  	ret			; jmp -> vaddr s3, [rsp] vaddr entrypoint
 
-
-  	
-
-  stage3:
-  	syscall			;call munmap s2
-  	xor edi, edi		;reset this register
-  	ret			;jmp to entrypoint Interp or not.
-  	;; .append before call the stage2 with the elf file 
 
   _exit:	
       push 127
@@ -2683,16 +2694,6 @@ CLOSED: [2025-09-29 Mon 11:58]
       push 60
       pop rax
       syscall
-    _mprotect:
-    	push 0xA
-    	pop rax		
-      	syscall
-    	ret
-    _munmap:
-    	push 0xb		
-    	pop rax
-    	syscall
-    	ret
     _open:
     	push 0x2
     	pop rax
@@ -2860,26 +2861,31 @@ CLOSED: [2025-09-29 Mon 11:58]
         js .mmap_failed
         cmp    r8d, -1 ; Check if fd is invalid
         jne    .after_mmap               ; .purpose: Continue after mmap
-        mov    rsi, QWORD [rbp+0x8]  ; rsi = p_offset
-        sub    rax, r13                  ; Adjust mapping address mmap - offset
-        add    rax, QWORD [rbp+0x10] ; rax = adjusted_addr + p_vaddr
         mov    rcx, QWORD [rbp+0x20] ; rcx = p_filesz ; N times
-        mov    rdi, rax                  ; rdi = destination
-        add    rsi, r14                  ; rsi = file_offset + file_base = source
+        mov    rsi, QWORD [rbp+0x8]  ; rsi = p_offset
+  	push rax
+  	pop rdi
+        add    rsi, r14                  ; rsi = file_offset + elf_ptr = source
         rep movsb			 ;;;;; Copy segment data
-        mov    rsi, rbx                  ; rsi = segment size
-        mov    rdi, r12                  ; rdi = mapping address
-        mov    edx, DWORD [rbp+0x4]  ; edx = p_flags
-        mov    eax, edx                  ; Copy flags
-        and    eax, 0x2                  ; Extract write flag
-        cmp    eax, 0x1                  ; Compare with write flag
-        sbb    eax, eax                  ; Set eax based on comparison
-        and    edx, 0x1                  ; Extract execute flag
-        and    eax, 0xfffffffe           ; Mask eax
-        shl    edx, 0x2                  ; Shift execute flag
-        add    eax, 0x3                  ; Add mprotect constants
-        or     edx, eax                  ; Combine flags
-        call   _mprotect; .purpose: Make mprotect system call <0 in error
+  	push rbx		 ;segment size
+  	pop rsi
+  	push rax		;mapping address
+  	pop rdi
+  	mov    eax, DWORD [rbp+0x4]  ; eax = p_flags
+        push   0x1
+        pop    rdx                   ; Start with PROT_READ = 1
+        test   al, 0x2               ; Test PF_W
+        jz     .no_write
+        or     rdx, 0x2              ; Add PROT_WRITE
+  .no_write:
+        test   al, 0x1               ; Test PF_X  
+        jz     .no_exec
+        or     rdx, 0x4              ; Add PROT_EXEC
+  .no_exec:
+        ; rdi = address, rsi = size, rdx = prot
+        push   0xA
+        pop    rax                   ; mprotect syscall
+        syscall
         
   .mmap_failed:
   .end:
@@ -2975,7 +2981,10 @@ CLOSED: [2025-09-29 Mon 11:58]
         ; Final cleanup
         mov    rsi, r13                  ; rsi = size
         mov    rdi, rbx                  ; rdi = mapping address
-        call   _munmap          ; .purpose: Final cleanup call
+    	push 0xb		
+    	pop rax
+    	syscall
+
 
   .generic_error:
         mov    rax, 0xffffffffffffffff   ; Return error
@@ -2988,6 +2997,8 @@ CLOSED: [2025-09-29 Mon 11:58]
 
   .generic_cleanup:
         add    rsp, 0x28                 ; Deallocate stack space
+  	push rbx
+  	pop rdi
         pop    rbx                       ; Restore registers
         pop    rbp
         pop    r12
@@ -3174,9 +3185,7 @@ open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the 
         return -1;
       if (fd == -1) {
           // Copy data from ELF buffer to mapped memory
-          memcpy((char *)result + (phdr->p_vaddr - page_vaddr),
-                 (char *)elf_ptr + phdr->p_offset,
-                 phdr->p_filesz);
+          memcpy((char *)result, (char *)elf_ptr + phdr->p_offset, phdr->p_filesz);
   	prot = PROT_READ;
   	if (phdr->p_flags & PF_W) prot |= PROT_WRITE;
   	if (phdr->p_flags & PF_X) prot |= PROT_EXEC;
