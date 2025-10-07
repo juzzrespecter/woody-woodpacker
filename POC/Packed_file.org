@@ -1428,7 +1428,7 @@ Add to a compress file syscall, pop rdx, ret -
     size_t offset_mod[] = {0x9, 0x18, 0x4f, 0x69, 0x84};
     uint32_t prefix_size = elf_get_struct_size_elf_header((char *)ehdr.elf32) + elf_get_elfh_phentsize(&ehdr) * (2 + elf_is_gnu_stack_phdr((void *)&ehdr, class, phnum));
     uint32_t size_decrypt_buffer = stage2_elf_compress_encrypt_header_size;// Need to get somehow.
-    uint32_t tmp_val[] = {elf_get_highest_loadable_vaddr_avalaible((void *)&ehdr, phnum, class) + prefix_size + 5,
+    uint32_t tmp_val[] = {elf_get_highest_loadable_vaddr_avalaible((void *)&ehdr, class, phnum) + prefix_size + 5,
   			stage1_fd_size + prefix_size + stage2_elf_compress_encrypt_header_size,// s1 size
   			stage2_elf_buffer_size,// stage2_elf_buffer_size?
   			size_decrypt_buffer,
@@ -1438,6 +1438,8 @@ Add to a compress file syscall, pop rdx, ret -
     while (i < sizeof(offset_mod) / sizeof(*offset_mod))
       {
         printf("index = %ld, val = %x\n", i, tmp_val[i]);
+        if (i == 0)
+  	printf("aslr_value_to_sub 0x%x %u\n", *tmp_val, *tmp_val);
         memcpy(stage1_buffer + offset_mod[i], &tmp_val[i], sizeof(*tmp_val));
         i++;
       }
