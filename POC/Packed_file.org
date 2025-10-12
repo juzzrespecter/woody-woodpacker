@@ -1,5 +1,5 @@
-Test further packed file.
 #+title: Packed_file
+Test further packed file.
 * ASLR?
 PIE == ~Elfh_type == ET_DYN~
 - add the diff between expected vaddr and real vaddr
@@ -127,107 +127,272 @@ Add to a compress file syscall, pop rdx, ret -
   	return (lst_num);
   }
 
-    #define COMPRESS_LZ77_MAX_MATCH_LEN 17
-    #define COMPRESS_LZ77_MIN_MATCH_LEN 3
-    #define COMPRESS_LZ77_SLIDING_WINDOW_SIZE 0x1000
-
   unsigned char *lz77_get_compress_arr(t_list *lst, size_t *arr_size)
   {
-    t_list *tmp = lst;
-    ,*arr_size = ft_lstsize(tmp) * sizeof(t_lz77);
-    t_lz77 *str = malloc(*arr_size);
-    t_lz77 *str_pos = str;
+    ,*arr_size = ft_lstsize(lst) * 3;
+    unsigned char *str = malloc(*arr_size);
+    unsigned char *str_pos = str;
     if (!str)
-      return ((void *)str);
+      return (str);
 
+    t_list *tmp = lst;
     while (tmp)
       {
-        memcpy(str_pos, tmp->content, sizeof(*str_pos));
-        str_pos++;
+        t_lz77 *token = (t_lz77 *)tmp->content;
+          
+        uint16_t dist_len = token->distance_len;
+        str_pos[0] = dist_len & 0xFF;         // low byte
+        str_pos[1] = (dist_len >> 8) & 0xFF;  // high byte  
+        str_pos[2] = token->byte;             // literal byte
+        str_pos += 3;
         tmp = tmp->next;
       }
     return ((void *)str);
   }
 
-  t_list *lz77_compress(const unsigned char *data, size_t data_len)
-  {
-      t_list *lst;
-      t_list *tmp;
-      t_lz77 *token;
+  /* #include "libft.h" // Assuming ft_lst functions are here */
 
-      lst = NULL;
-      if (!data || data_len == 0) return (NULL);
+  // Assuming these constants are defined somewhere
+  #ifndef COMPRESS_LZ77_SLIDING_WINDOW_SIZE
+  # define COMPRESS_LZ77_SLIDING_WINDOW_SIZE 4096
+  #endif
+  #ifndef COMPRESS_LZ77_MAX_MATCH_LEN
+  # define COMPRESS_LZ77_MAX_MATCH_LEN 17
+  #endif
+  #ifndef COMPRESS_LZ77_MIN_MATCH_LEN
+  # define COMPRESS_LZ77_MIN_MATCH_LEN 3
+  #endif
 
+  /* typedef struct { */
+      /* uint16_t distance_len; // Combined offset (12 bits) and length (4 bits) */
+      /* uint8_t  byte;         // Next literal byte */
+  /* } t_lz77; */
+
+  /* t_list *lz77_compress(const unsigned char *data, size_t data_len) { */
+  /*     if (!data || data_len == 0) return NULL; */
+
+  /*     t_list *lst = NULL; */
+  /*     size_t i = 0; */
+
+  /*     while (i < data_len) { */
+  /*         size_t best_offset = 0; */
+  /*         size_t best_length = 0; */
+
+  /*         // Define window start: max(0, i - WINDOW_SIZE) */
+  /*         size_t window_start = (i > COMPRESS_LZ77_SLIDING_WINDOW_SIZE) ? */
+  /*             (i - COMPRESS_LZ77_SLIDING_WINDOW_SIZE) : 0; */
+
+  /*         // Search for the longest match in the sliding window */
+  /*         for (size_t offset = 1; offset <= (i - window_start); offset++) { */
+  /*             size_t match_length = 0; */
+  /*             size_t max_possible = (data_len - i > COMPRESS_LZ77_MAX_MATCH_LEN) ? */
+  /*                 COMPRESS_LZ77_MAX_MATCH_LEN : (data_len - i); */
+
+  /*             while (match_length < max_possible && */
+  /*                    data[i - offset + match_length] == data[i + match_length]) { */
+  /*                 match_length++; */
+  /*             } */
+
+  /*             if (match_length >= COMPRESS_LZ77_MIN_MATCH_LEN && match_length > best_length) { */
+  /*                 best_length = match_length; */
+  /*                 best_offset = offset; */
+  /*             } */
+  /*         } */
+
+  /*         // Allocate token */
+  /*         t_lz77 *token = malloc(sizeof(*token)); */
+  /*         if (!token) { */
+  /*             ft_lstclear(&lst, free); */
+  /*             return NULL; */
+  /*         } */
+  /*         *token = (t_lz77){0}; // Zero-initialize */
+
+  /*         uint8_t next_char = 0; */
+  /*         if (i + best_length < data_len) { */
+  /*             next_char = data[i + best_length]; */
+  /*         } */
+
+  /*         if (best_length >= COMPRESS_LZ77_MIN_MATCH_LEN) { */
+  /*             // Valid match: store (offset << 4) | (length - 2) */
+  /*             if (best_offset > 4095) { */
+  /*                 fprintf(stderr, "Offset %zu too large\n", best_offset); */
+  /*                 free(token); */
+  /*                 ft_lstclear(&lst, free); */
+  /*                 return NULL; */
+  /*             } */
+  /*             size_t token_len = best_length - 2; // Encoded as 1..15 → represents 3..18 */
+  /*             token->distance_len = (uint16_t)((best_offset << 4) | (token_len & 0x0F)); */
+  /*             token->byte = next_char; */
+  /*             i += best_length + 1; // Skip matched portion + next literal */
+  /*         } else { */
+  /*             // Literal only */
+  /*             token->distance_len = 0; // Indicates no match */
+  /*             token->byte = data[i]; */
+  /*             i += 1; */
+  /*         } */
+
+  /*         // Create new list node */
+  /*         t_list *tmp = ft_lstnew(token); */
+  /*         if (!tmp) { */
+  /*             free(token); */
+  /*             ft_lstclear(&lst, free); */
+  /*             return NULL; */
+  /*         } */
+
+  /*         ft_lstadd_back(&lst, tmp); */
+  /*     } */
+
+  /*     return lst; */
+  /* } */
+  // Constants
+  #ifndef COMPRESS_LZ77_SLIDING_WINDOW_SIZE
+  # define COMPRESS_LZ77_SLIDING_WINDOW_SIZE 0x1000
+  #endif
+  #ifndef COMPRESS_LZ77_MAX_MATCH_LEN
+  # define COMPRESS_LZ77_MAX_MATCH_LEN 17
+  #endif
+  #ifndef COMPRESS_LZ77_MIN_MATCH_LEN
+  # define COMPRESS_LZ77_MIN_MATCH_LEN 3
+  #endif
+
+
+  /**
+   ,* @brief Compresses data using LZ77 algorithm and returns a list of t_lz77 tokens.
+   ,*
+   ,* @param data Input data to compress
+   ,* @param data_len Length of input data
+   ,* @return t_list* Head of the list containing t_lz77 tokens, or NULL on error
+   ,*/
+  t_list *lz77_compress_to_list(const unsigned char *data, size_t data_len) {
+      if (!data || data_len == 0) return NULL;
+
+      t_list *lst = NULL;
       size_t i = 0;
-      while (i < data_len)
-        {
-  	size_t best_offset = 0;
-  	size_t best_length = 0;
 
-  	// Search in sliding window: [max(0, i - WINDOW_SIZE), i)
-    	size_t window_start = 0;//(i > COMPRESS_LZ77_SLIDING_WINDOW_SIZE) * (i - COMPRESS_LZ77_SLIDING_WINDOW_SIZE);
-    	if (i > COMPRESS_LZ77_SLIDING_WINDOW_SIZE)
-    	  window_start = i - COMPRESS_LZ77_SLIDING_WINDOW_SIZE;
+      while (i < data_len) {
+          size_t best_offset = 0;
+          size_t best_length = 0;
 
-  	// Try all possible offsets (1 to window_size)
+          // Define window start
+          size_t window_start = (i > COMPRESS_LZ77_SLIDING_WINDOW_SIZE) ?
+                                i - COMPRESS_LZ77_SLIDING_WINDOW_SIZE : 0;
+
+          // Search for the longest match in sliding window
           for (size_t offset = 1; offset <= (i - window_start); offset++) {
-  	  size_t match_length = 0;
-  	  size_t max_possible = (data_len - i > COMPRESS_LZ77_MAX_MATCH_LEN) ? COMPRESS_LZ77_MAX_MATCH_LEN : (data_len - i);
-  	  while (match_length < max_possible &&
-  		 data[i - offset + match_length] == data[i + match_length]) {
-  	    match_length++;
-  	  }
-  	  if (match_length >= COMPRESS_LZ77_MIN_MATCH_LEN && match_length > best_length) {
-  	    best_length = match_length;
-  	    best_offset = offset;
-  	  }
-  	}
-  	uint8_t next_char = 0;
-  	if (i + best_length < data_len) {
-  	  next_char = data[i + best_length];
-  	}
+              size_t match_length = 0;
+              size_t max_possible = (data_len - i > COMPRESS_LZ77_MAX_MATCH_LEN) ?
+                                    COMPRESS_LZ77_MAX_MATCH_LEN : (data_len - i);
 
-  	token = malloc(sizeof(*token));
-  	if (!token)
+              while (match_length < max_possible &&
+                     data[i - offset + match_length] == data[i + match_length]) {
+                  match_length++;
+              }
+
+              if (match_length >= COMPRESS_LZ77_MIN_MATCH_LEN && match_length > best_length) {
+                  best_length = match_length;
+                  best_offset = offset;
+              }
+          }
+
+          // Allocate token
+          t_lz77 *token = __builtin_malloc(sizeof(t_lz77));
+          if (!token) {
+              ft_lstclear(&lst, free);
+              return NULL;
+          }
+          token->distance_len = 0;
+          token->byte = 0;
+
+          if (best_length >= COMPRESS_LZ77_MIN_MATCH_LEN) {
+              // Valid match
+              if (best_offset > 0xFFF) {
+                  fprintf(stderr, "Offset %zu exceeds 12-bit limit\n", best_offset);
+                  free(token);
+                  ft_lstclear(&lst, free);
+                  return NULL;
+              }
+              size_t token_len = best_length - 2; // becomes 1..15
+              token->distance_len = (uint16_t)((best_offset << 4) | (token_len & 0x0F));
+              token->byte = (i + best_length < data_len) ? data[i + best_length] : 0;
+              i += best_length + 1;
+          } else {
+              // Literal byte
+              token->distance_len = 0; // indicates literal
+              token->byte = data[i];
+              i += 1;
+          }
+
+          // Create list node
+          t_list *node = ft_lstnew(token);
+          if (!node) {
+              free(token);
+              ft_lstclear(&lst, free);
+              return NULL;
+          }
+
+          ft_lstadd_back(&lst, node);
+
+          // Optional debug print
+          /*
+          printf("Token: distlen=0x%04x (offset=%zu, len=%zu), byte=0x%02x at i=%zu\n",
+                 token->distance_len,
+                 (size_t)(token->distance_len >> 4),
+                 (size_t)((token->distance_len & 0xF) ? ((token->distance_len & 0xF) + 2) : 0),
+                 token->byte,
+                 i - (best_length >= 3 ? best_length + 1 : 1));
+          ,*/
+      }
+
+      return lst;
+  }
+
+
+  int lz77_decompress(const uint8_t* in, size_t in_size, uint8_t* out)
+  {
+      if (in_size <= 7 || out == NULL || in == NULL) {
+          return -1;
+      }
+
+      uint64_t orig_size = *(const uint64_t*)in;
+      if (orig_size == 0) {
+          return -1;
+      }
+
+      const uint8_t* p = in + 11;  // Start at in+8, then advance 3 for first iteration
+      const uint8_t* in_end = in + in_size;
+      size_t pos = 0;
+
+      while (p <= in_end && pos < orig_size) {
+          
+          // Read token from [p-3, p-2] 
+          uint16_t token = *(const uint16_t*)(p - 3);
+          uint8_t length = token & 0xF;
+          uint16_t distance = token >> 4;
+          
+          if (length || distance || pos >= distance)
   	  {
-  	    ft_lstclear(&lst, free);
-  	    return (NULL);
+              // Copy match
+              length += 2; // Adjust length
+              
+              // Ensure bounds
+              if (pos + length > orig_size) {
+  	      length = orig_size - pos;
+              }
+              
+              // Copy match data (handle overlapping case)
+              size_t src = pos - distance;
+              for (uint16_t i = 0; i < length; i++) {
+  	      out[pos + i] = out[src + i];
+              }
+              pos += length;
   	  }
-
-  	if (best_length >= COMPRESS_LZ77_MIN_MATCH_LEN) {
-  	  // Valid match: store offset and len-2
-  	  if (best_offset > 4095) {
-  	    fprintf(stderr, "Offset %zu too large\n", best_offset);
-  	    ft_lstclear(&lst, free);
-  	    return (NULL);
-  	  }
-  	  size_t token_len = best_length - 2; // 0, 3 to 17
-  	  token->distance_len = (best_offset << 4) | (token_len & 0x0F);
-  	  token->byte = next_char;
-  	  i += best_length + 1; // Skip matched bytes + literal
-  	} else {
-  	  // Literal only
-  	  token->distance_len = 0; // offset=0, len=0
-  	  token->byte = data[i];
-  	  i += 1;
+  	// Add literal if space allows
+  	if (pos < orig_size) {
+  	  out[pos++] = *(p - 1);
   	}
-
-  	// Write token (3 bytes)
-  	tmp = ft_lstnew(token);
-  	if (!tmp)
-  	  {
-  	    ft_lstclear(&lst, free);
-  	    return (NULL);
-  	  }
-  	ft_lstadd_back(&lst, tmp);
-    	printf("Token: distlen=0x%04x (offset=%zu, len=%zu), byte=0x%02x at i=%zu\n",
-    	       token->distance_len,
-    	       (size_t)(token->distance_len >> 4),
-    	       (size_t)((token->distance_len & 0xF) == 0 ? 0 : ((token->distance_len & 0xF) + 2)),
-    	       token->byte,
-    	       i - (best_length >= 3 ? best_length + 1 : 1));
-        }
-      return (lst);
+  	p += 3;
+      }
+      return (pos == orig_size) ? 0 : -1;
   }
 
 
@@ -254,11 +419,11 @@ Add to a compress file syscall, pop rdx, ret -
   {
     if (class == ELFCLASS32) 
       {
-        printf("phdr set memsz elf32\n");
+        /* printf("phdr set memsz elf32\n"); */
         phdr->elf32->p_memsz = (uint32_t) value;
         return ;
       }
-    printf("phdr set memsz elf64\n");
+    /* printf("phdr set memsz elf64\n"); */
     phdr->elf64->p_memsz = value;
   }
 
@@ -266,11 +431,11 @@ Add to a compress file syscall, pop rdx, ret -
   {
     if (class == ELFCLASS32) 
       {
-        printf("phdr set offset elf32\n");
+        /* printf("phdr set offset elf32\n"); */
         phdr->elf32->p_offset = (uint32_t) value;
         return ;
       }
-    printf("phdr set offset elf64\n");
+    /* printf("phdr set offset elf64\n"); */
     phdr->elf64->p_offset = value;
   }
 
@@ -278,11 +443,11 @@ Add to a compress file syscall, pop rdx, ret -
   {
     if (class == ELFCLASS32) 
       {
-        printf("phdr set vaddr elf32\n");
+        /* printf("phdr set vaddr elf32\n"); */
         phdr->elf32->p_vaddr = (uint32_t) value;
         return ;
       }
-    printf("phdr set vaddr elf64\n");
+    /* printf("phdr set vaddr elf64\n"); */
     phdr->elf64->p_vaddr = value;
   }
 
@@ -290,11 +455,11 @@ Add to a compress file syscall, pop rdx, ret -
   {
     if (class == ELFCLASS32) 
       {
-        printf("phdr set paddr elf32\n");
+        /* printf("phdr set paddr elf32\n"); */
         phdr->elf32->p_paddr = (uint32_t) value;
         return ;
       }
-    printf("phdr set paddr elf64\n");
+    /* printf("phdr set paddr elf64\n"); */
     phdr->elf64->p_paddr = value;
   }
 
@@ -302,11 +467,11 @@ Add to a compress file syscall, pop rdx, ret -
   {
     if (class == ELFCLASS32) 
       {
-        printf("phdr set addr elf32\n");
+        /* printf("phdr set addr elf32\n"); */
         phdr->elf32->p_filesz = (uint32_t) value;
         return ;
       }
-    printf("phdr set addr elf64\n");
+    /* printf("phdr set addr elf64\n"); */
     phdr->elf64->p_filesz = value;
   }
 
@@ -314,11 +479,11 @@ Add to a compress file syscall, pop rdx, ret -
   {
     if (class == ELFCLASS32) 
       {
-        printf("phdr set addr elf32\n");
+        /* printf("phdr set addr elf32\n"); */
         phdr->elf32->p_align = (uint32_t) value;
         return ;
       }
-    printf("phdr set addr elf64\n");
+    /* printf("phdr set addr elf64\n"); */
     phdr->elf64->p_align = value;
   }
 
@@ -327,11 +492,11 @@ Add to a compress file syscall, pop rdx, ret -
   {
     if (class == ELFCLASS32) 
       {
-        printf("phdr set addr elf32\n");
+        /* printf("phdr set addr elf32\n"); */
         phdr->elf32->p_flags = (uint32_t) value;
         return ;
       }
-    printf("phdr set addr elf64\n");
+    /* printf("phdr set addr elf64\n"); */
     phdr->elf64->p_flags = value;
   }
 
@@ -339,11 +504,11 @@ Add to a compress file syscall, pop rdx, ret -
   {
     if (class == ELFCLASS32) 
       {
-        printf("phdr set addr elf32\n");
+        /* printf("phdr set addr elf32\n"); */
         phdr->elf32->p_type = (uint32_t) value;
         return ;
       }
-    printf("phdr set addr elf64\n");
+    /* printf("phdr set addr elf64\n"); */
     phdr->elf64->p_type = value;
   }
 
@@ -351,11 +516,11 @@ Add to a compress file syscall, pop rdx, ret -
   {
     if (class == ELFCLASS32) 
       {
-        printf("ehdr set shoff elf32\n");
+        /* printf("ehdr set shoff elf32\n"); */
         ehdr->elf32->e_shoff = (uint32_t) value;
         return ;
       }
-    printf("ehdr set shoff elf64\n");
+    /* printf("ehdr set shoff elf64\n"); */
     ehdr->elf64->e_shoff = value;
   }
 
@@ -363,11 +528,11 @@ Add to a compress file syscall, pop rdx, ret -
   {
     if (class == ELFCLASS32) 
       {
-        printf("ehdr set shoff elf32\n");
+        /* printf("ehdr set shoff elf32\n"); */
         ehdr->elf32->e_shentsize = (uint32_t) value;
         return ;
       }
-    printf("ehdr set shoff elf64\n");
+    /* printf("ehdr set shoff elf64\n"); */
     ehdr->elf64->e_shentsize = value;
   }
 
@@ -375,11 +540,11 @@ Add to a compress file syscall, pop rdx, ret -
   {
     if (class == ELFCLASS32) 
       {
-        printf("ehdr set shoff elf32\n");
+        /* printf("ehdr set shoff elf32\n"); */
         ehdr->elf32->e_shstrndx = (uint32_t) value;
         return ;
       }
-    printf("ehdr set shoff elf64\n");
+    /* printf("ehdr set shoff elf64\n"); */
     ehdr->elf64->e_shstrndx = value;
   }
 
@@ -387,11 +552,11 @@ Add to a compress file syscall, pop rdx, ret -
   {
     if (class == ELFCLASS32) 
       {
-        printf("ehdr set entry elf32\n");
+        /* printf("ehdr set entry elf32\n"); */
         ehdr->elf32->e_entry = (uint32_t) value;
         return ;
       }
-    printf("ehdr set entry elf64\n");
+    /* printf("ehdr set entry elf64\n"); */
     ehdr->elf64->e_entry = value;
   }
 
@@ -399,11 +564,11 @@ Add to a compress file syscall, pop rdx, ret -
   {
     if (class == ELFCLASS32) 
       {
-        printf("ehdr set phnum elf32\n");
+        /* printf("ehdr set phnum elf32\n"); */
         ehdr->elf32->e_phnum = (uint32_t) value;
         return ;
       }
-    printf("ehdr set phnum elf64\n");
+    /* printf("ehdr set phnum elf64\n"); */
     ehdr->elf64->e_phnum = value;
   }
 
@@ -411,11 +576,11 @@ Add to a compress file syscall, pop rdx, ret -
   {
     if (class == ELFCLASS32) 
       {
-        printf("ehdr set shnum elf32\n");
+        /* printf("ehdr set shnum elf32\n"); */
         ehdr->elf32->e_shnum = (uint32_t) value;
         return ;
       }
-    printf("ehdr set shnum elf64\n");
+    /* printf("ehdr set shnum elf64\n"); */
     ehdr->elf64->e_shnum = value;
   }
 
@@ -503,7 +668,7 @@ Add to a compress file syscall, pop rdx, ret -
         if (elf_get_program_header_type(&phdr, class) != PT_LOAD || !(elf_get_program_header_flags(&phdr, class) & PF_X)) // If not loadable and executable ignore
   	{
   	  i++;
-  	continue ;
+  	  continue ;
   	}
         p_memsz = elf_get_program_header_memsz(&phdr, class);
         p_align = elf_get_program_header_align(&phdr, class);
@@ -528,7 +693,10 @@ Add to a compress file syscall, pop rdx, ret -
       {
         phdr = elf_get_program_header(ehdr, i);
         if (elf_get_program_header_type(&phdr, class) != PT_LOAD) // If not loadable ignore
-  	continue ;
+  	{
+  	  i++;
+  	  continue ;
+  	}
         p_vaddr = elf_get_program_header_vaddr(&phdr, class);
         p_memsz = elf_get_program_header_memsz(&phdr, class);
         p_end_vaddr = p_vaddr + p_memsz;
@@ -1385,7 +1553,7 @@ Add to a compress file syscall, pop rdx, ret -
     free(stage2_buffer);
     memcpy(stage2_elf_buffer + stage2_fd_size, elf_mmap, elf_size);
     // Compress the data.
-    t_list *lz77_buffer = lz77_compress((unsigned char *)stage2_elf_buffer, stage2_elf_buffer_size);
+    t_list *lz77_buffer = lz77_compress_to_list((unsigned char *)stage2_elf_buffer, stage2_elf_buffer_size);
     free(stage2_elf_buffer);
     if (!lz77_buffer)
         return (5);
@@ -1406,6 +1574,11 @@ Add to a compress file syscall, pop rdx, ret -
     memcpy(stage2_elf_compress_header, &stage2_elf_buffer_size, sizeof(size_t));
     memcpy(stage2_elf_compress_header + sizeof(size_t) , stage2_elf_compress, stage2_elf_compress_size);
     free(stage2_elf_compress);
+    /* if (write(2, stage2_elf_compress_header, stage2_elf_compress_header_size) != (ssize_t) stage2_elf_compress_header_size) */
+    /*   { */
+    /*     free(stage2_elf_compress_header); */
+    /*     return (5); */
+    /*   } */
    
     // Encrypt the join
     size_t stage2_elf_compress_encrypt_header_size;
@@ -1437,9 +1610,7 @@ Add to a compress file syscall, pop rdx, ret -
     i = 0;
     while (i < sizeof(offset_mod) / sizeof(*offset_mod))
       {
-        printf("index = %ld, val = %x\n", i, tmp_val[i]);
-        if (i == 0)
-  	printf("aslr_value_to_sub 0x%x %u\n", *tmp_val, *tmp_val);
+        /* printf("index = %ld, val = %x\n", i, tmp_val[i]); */
         memcpy(stage1_buffer + offset_mod[i], &tmp_val[i], sizeof(*tmp_val));
         i++;
       }
@@ -1614,9 +1785,9 @@ Add to a compress file syscall, pop rdx, ret -
     p_filesz = p_align;
     p_memsz = elf_get_highest_used_vaddr_avalaible(ehdr, class, phnum);
     p_offset = 0;
-    p_vaddr = elf_get_program_header_vaddr(&phdr, class);
+    p_vaddr = elf_get_program_header_vaddr(&phdr, class) & ~(p_align - 1);
     p_memsz -= p_vaddr;
-    p_paddr = elf_get_program_header_paddr(&phdr, class);
+    p_paddr = elf_get_program_header_paddr(&phdr, class) & ~(p_align - 1);
     p_type = PT_LOAD;
     p_flags = PF_R | PF_W;
     elf_phdr_set_filesz(&phdr_cp, p_filesz, class);
@@ -1665,7 +1836,7 @@ Add to a compress file syscall, pop rdx, ret -
   static int write_padding_and_payload(int packed, void **generated_bytecode, uint64_t payload_size,
   				     uint64_t padding, uint64_t *writed)
   {
-    printf("padding: %lu\n", padding);
+    /* printf("padding: %lu\n", padding); */
     while (padding--)
       {
         if (write(packed, "\0", 1) != 1)
@@ -1858,23 +2029,23 @@ Add to a compress file syscall, pop rdx, ret -
                       /* *offset = offset_start + (vaddr - vaddr_start); */
                       /* return 0;  // In BSS, no file offset */
                   /* } */
-
-  /* int write_dyn(t_elf_h *ehdr, t_elf_sh *shdr, unsigned char class, uint32_t phnum, size_t *writed, int packed) */
+  // TODO Need to addapt to asm.
+  /* int write_dyn(void *ptr, size_t aslr) */
   /* { */
-  /*   if (!shdr->elf32) */
-  /*     return (1); */
-  /*   uint64_t dyn_offset = elf_get_section_header_offset(shdr, class); */
+  /*   t_elf_h ehdr = (t_elf_h) {.elf32 = ptr}; */
+  /*   t_elf_ph phdr = (t_elf_ph) {.elf32 = ptr + elf_get_elfh_phof(&ehdr)}; */
+  /*   uint64_t dyn_offset = elf_get_program_header_offset(phdr, class); */
   /*   uint64_t dyn_size = elf_get_section_header_size(shdr, class); */
   /*   uint64_t dyn_entsize = elf_get_struct_size_elf_dyn(class); */
               
-  /*   t_elf_dyn dyn_cp = {.elf32=malloc(dyn_entsize)}; */
-  /*   if  (!dyn_cp.elf32) */
-  /*     return (2); */
+  /*   /\* t_elf_dyn dyn_cp = {.elf32=malloc(dyn_entsize)}; *\/ */
+  /*   /\* if  (!dyn_cp.elf32) *\/ */
+  /*     /\* return (2); *\/ */
   /*   // Read the dynamic section data */
   /*   void *dynamic_data = (void *)((char *)ehdr->elf32 + dyn_offset); */
   /*   uint64_t entry_count = dyn_size / dyn_entsize; */
-  /*   printf("entry_count %lu\n", entry_count);  */
-  /*   printf("dyn_entsize %lu\n", dyn_entsize);  */
+  /*   printf("entry_count %lu\n", entry_count); */
+  /*   printf("dyn_entsize %lu\n", dyn_entsize); */
   /*   // Update entries that point to shifted addresses */
   /*   uint64_t ndx_dyn = 0; */
   /*   uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class); */
@@ -1884,27 +2055,14 @@ Add to a compress file syscall, pop rdx, ret -
   /*   while (ndx_dyn < entry_count) */
   /*     { */
   /*       t_elf_dyn dyn = elf_get_dyn(dynamic_data, class, ndx_dyn); */
-  /*       memcpy(dyn_cp.elf32, dyn.elf32, dyn_entsize); */
   /*       uint64_t d_tag = elf_get_dyn_tag(&dyn, class); */
                   
   /*       // Check if this entry contains a virtual address that needs updating */
   /*       if (elf_is_addres_type_entry(d_tag)) */
-  /* 	{  */
-  /* 	uint64_t d_val = elf_get_dyn_val(&dyn, class); */
-                      
-  /* 	// If this address is in the affected range, update it */
-  /* 	//Change vaddr for offset. */
-  /* 	if (vaddr_to_offset_safe(ehdr, d_val, &offset, class)) */
-  /* 	  return (4); */
-  /* 	if (increment_offset_phdr(ehdr, offset, phnum, class)) */
-  /* 	  { */
-  /* 	    printf("Updating DT_%ld from 0x%lx to 0x%lx\n",  */
-  /* 		   d_tag, d_val, d_val + phdr_struct_size); */
-  /* 	    elf_set_dyn_val(&dyn_cp, d_val + phdr_struct_size, class); */
-  /* 	  } */
-  /*       } */
-  /*       if ((ssize_t) dyn_entsize != write(packed, dyn_cp.elf32, dyn_entsize)) */
-  /* 	return (3); */
+  /* 	{ */
+  /* 	  uint64_t d_val = elf_get_dyn_val(&dyn, class); */
+  /* 	  elf_set_dyn_val(&dyn_cp, d_val + aslr, class); */
+  /* 	} */
   /*       *writed += dyn_entsize; */
   /*       ndx_dyn++; */
   /*     } */
@@ -2300,8 +2458,8 @@ CLOSED: [2025-09-29 Mon 11:58]
   	ret			;l
   	ret			;f
   	ret			;/
-  	ret			;e
   	ret			;x
+  	ret			;e
   	ret			;e
   	ret			;\0
   .open:
@@ -2386,123 +2544,106 @@ CLOSED: [2025-09-29 Mon 11:58]
       push 60
       pop rax
       syscall
-
   lz77_decompress:
       ; Function entry - validate input parameters
       ; rdi = in, rsi = in_size, rdx = out
 
-      cmp    esi, 0x7           ; Compare in_size with 7
-      mov    r9, rdx            ; Save 'out' pointer to r9
-      setbe  al                 ; Set AL if in_size <= 7
       test   rdx, rdx           ; Test if 'out' is NULL
-      sete   dl                 ; Set DL if 'out' is NULL
-      or     al, dl             ; Combine error flags
-      jne    .finish             ; Jump to error if any flag set
+      mov    r9, rdx            ; Save 'out' pointer to r9
+      sete   al                 ; Set AL if 'out' is NULL (1 if NULL, 0 if not)
       test   rdi, rdi           ; Test if 'in' is NULL
-      je     .finish             ; Jump to error if NULL
+      sete   dl                 ; Set DL if 'in' is NULL (1 if NULL, 0 if not)
+      or     al, dl             ; Combine error flags (AL = 1 if either is NULL)
+      jne    .error_return      ; Jump to error if any pointer is NULL
+      cmp    rsi, 0x7           ; Compare in_size with 7
+      jbe    .error_return      ; Jump to error if in_size <= 7
 
-      ; Read original size from compressed data
-      mov    rcx, rsi           ; Save in_size to rcx
-      mov    rsi, QWORD [rdi] ; Load orig_size from *in
-      test   rsi, rsi           ; Check if orig_size is 0
-      push 0
-      pop rax	
-      je    .finish	; Jump to init loop if orig_size != 0
+      mov    rcx, QWORD PTR [rdi] ; Load orig_size from *in
+      mov    eax, 0xffffffff    ; Set error return value (-1)
+      test   rcx, rcx           ; Check if orig_size is 0
+      jne    .init_loop         ; Jump to init loop if orig_size != 0
+      ret                       ; Return -1 if orig_size is 0
+
+  .error_return:
+      mov    eax, 0xffffffff    ; Return -1
+      ret
 
   .init_loop:
-      ; Initialize loop variables
-      lea    r8, [rdi+0x8]      ; p = in + 8 (skip size header)
-      ;; xor    eax, eax           ; pos = 0
-      add    rdi, rcx           ; rdi = in + in_size (end pointer)
-      jmp    .after_literal     ; Jump to advance token
+      lea    r8, [rdi+0xb]      ; p = in + 11 (start processing from in+11)
+      add    rdi, rsi           ; rdi = in + in_size (end pointer, overwrites rdi)
+      xor    eax, eax           ; pos = 0
 
-  .loop_start:
-      cmp    rax, rsi           ; Compare pos with orig_size
-      jae    .finish            ; Jump if pos >= orig_size
+  .check_end:
+      cmp    rdi, r8            ; Compare end pointer with current pointer (inverted order!)
+      jb     .process_token     ; Jump if rdi < r8 (current pointer beyond end)
+      cmp    rax, rcx           ; Compare current pos with original size
+      jb     .process_token     ; Jump if pos < orig_size
 
-      ; Read token data (distance/length)
-      mov    cx, WORD [r8-0x3] ; Read dl = p[0] | (p[1] << 8)
-      mov    edx, ecx           ; Copy to edx
-      and    dx, 0xf            ; Extract length: dl & 0xF
-      jne    .has_length        ; Jump if length != 0
+  .finish:
+      cmp    rax, rcx           ; Compare pos with orig_size
+      setne  al                 ; Set AL to 1 if pos != orig_size (incomplete)
+      movzx  eax, al            ; Zero-extend AL to EAX
+      neg    eax                ; Negate: -1 if incomplete, 0 if complete
+      ret
 
-  .copy_literal:
-      ; No length - just copy literal byte
-      mov    dl, BYTE [r8-0x1] ; byte = p[2]
-      mov    BYTE [r9+rax*1], dl ; out[pos] = byte
-      inc    rax                ; pos++
-      add    r8, 0x3            ; p += 3
-      cmp    r8, rdi            ; Compare p with end pointer
-      jbe    .loop_start        ; Jump if p <= end (continue loop)
-      jmp    .finish            ; Jump to finish
-
-  .has_length:
-      shr    cx, 0x4            ; Shift right to get distance
-      movzx  r11d, cx           ; Zero-extend distance to r11
-      je     .copy_literal      ; Jump if distance == 0
-      cmp    rax, r11           ; Compare pos with distance
-      jb     .copy_literal      ; Jump if distance > pos
+  .process_token:
+      push   r14                ; Save r14 register
+      push   rbx                ; Save rbx register
+      mov    si, WORD PTR [r8-0x3] ; Load 16-bit token from [p-3]
+      mov    edx, esi           ; Copy token to edx
+      shr    si, 0x4            ; Extract distance: token >> 4 (upper 12 bits to si)
+      and    edx, 0xf           ; Extract length: token & 0xf (lower 4 bits to edx)
+      add    edx, 0x2           ; Add 2 to length (adjust: 1-15 becomes 3-17)
+      movzx  r10d, edx          ; Zero-extend adjusted length to r10d
+      add    r10, rax           ; r10 = pos + adjusted_length
+      cmp    rcx, r10           ; Compare orig_size with (pos + length)
+      jae    .copy_match        ; Jump if no overflow (orig_size >= pos + length)
+      mov    edx, ecx           ; edx = orig_size
+      sub    edx, eax           ; edx = orig_size - pos (max allowed length)
 
   .copy_match:
-      push   rbx               ; Save rbx
-      add    edx, 0x2           ; len += 2 (token length 1-15 → 3-17)
-      mov    rcx, rsi           ; rcx = orig_size
-      lea    rbx, [r9+rax*1]    ; rbx = out + pos (destination)
-      mov    r10, rax           ; r10 = pos (save current pos)
-      sub    rcx, rax           ; rcx = orig_size - pos (max copy length)
-      movsx  rdx, dx            ; Sign-extend len to rdx
-      cmp    rcx, rdx           ; Compare max_copy with len
-      cmovbe rdx, rcx           ; If len > max_copy, set len = max_copy
+      movzx  esi, si            ; Zero-extend distance to esi
+      mov    r10, rax           ; r10 = current pos
+      lea    rbx, [r9+rax*1]    ; rbx = out + pos (destination pointer)
+      movzx  r11d, edx          ; Zero-extend length to r11d
+      sub    r10, rsi           ; r10 = pos - distance (source offset)
+      xor    esi, esi           ; esi = 0 (loop counter)
+      add    r10, r9            ; r10 = out + (pos - distance) (source pointer)
 
-      ; Setup source pointer and copy loop
-      sub    r10, r11           ; r10 = pos - distance (source offset)
-      xor    ecx, ecx           ; i = 0
-      add    r10, r9            ; r10 = out + (pos - distance) (source)
   .copy_loop:
-      mov    r11b, BYTE [r10+rcx*1] ; Load byte from source
-      mov    BYTE [rbx+rcx*1], r11b ; Store byte to destination
-      inc    rcx                ; i++
-      cmp    rdx, rcx           ; Compare len with i
-      jne    .copy_loop         ; Jump if i < len
+      cmp    si, r11w           ; Compare loop counter with length
+      jae    .finish_copy       ; Jump if counter >= length
+      mov    r14b, BYTE PTR [r10+rsi*1] ; Load byte from source [out + src_offset + i]
+      mov    BYTE PTR [rbx+rsi*1], r14b ; Store byte to destination [out + pos + i]
+      inc    rsi                ; Increment loop counter
+      jmp    .copy_loop         ; Jump back to copy_loop
 
-      ; Update position and copy literal byte
-      pop    rbx
-      add    rax, rdx           ; pos += len
-      cmp    rax, rsi           ; Compare pos with orig_size
+  .finish_copy:
+      movzx  edx, dl            ; Zero-extend original length to edx
+      add    rax, rdx           ; pos += length
+      cmp    rax, rcx           ; Compare pos with orig_size
       jae    .after_literal     ; Jump if pos >= orig_size
 
-  .copy_literal_final:
-      mov    dl, BYTE [r8-0x1] ; byte = p[2]
-      mov    BYTE [r9+rax*1], dl ; out[pos] = byte
+  .copy_literal:
+      mov    dl, BYTE PTR [r8-0x1] ; Load literal byte from [p-1]
+      mov    BYTE PTR [r9+rax*1], dl ; Store literal to out[pos]
       inc    rax                ; pos++
 
   .after_literal:
-      add    r8, 0x3            ; p += 3
-      cmp    r8, rdi            ; Compare p with end pointer
-      ja     .finish_final      ; Jump if p > end
-      cmp    rax, rsi           ; Compare pos with orig_size
-      jae    .finish_final      ; Jump if pos >= orig_size
+      add    r8, 0x3            ; p += 3 (advance to next token)
+      cmp    rdi, r8            ; Compare end pointer with current pointer
+      jb     .finish_final      ; Jump if current pointer beyond end
+      cmp    rax, rcx           ; Compare pos with orig_size
+      jb     .process_token     ; Jump back to process next token if pos < orig_size
 
-      ; Read next token
-      mov    cx, WORD [r8-0x3] ; Read next token
-      mov    edx, ecx           ; Copy to edx
-      and    dx, 0xf            ; Extract length
-      je     .copy_literal_final ; Jump if no length
-      shr    cx, 0x4            ; Extract distance
-      movzx  r11d, cx           ; Zero-extend distance
-      je     .copy_literal_final ; Jump if distance == 0
-      cmp    rax, r11           ; Compare pos with distance
-      jb     .copy_literal_final ; Jump if distance > pos
-      jmp    .copy_match        ; Jump to copy match
-  	
   .finish_final:
-      ;; pop    rbx                ; Restore rbx
-  .finish:
-      cmp    rax, rsi           ; Compare pos with orig_size
-      setne  al                 ; Set AL if not equal
-      movzx  eax, al            ; Zero-extend to eax
-      neg    rax                ; Negate result
-      ret ; Return
+      cmp    rax, rcx           ; Compare pos with orig_size
+      pop    rbx                ; Restore rbx register
+      pop    r14                ; Restore r14 register
+      setne  al                 ; Set AL to 1 if pos != orig_size
+      movzx  eax, al            ; Zero-extend AL to EAX
+      neg    eax                ; Negate result: -1 if incomplete, 0 if complete
+      ret
 
   decrypt:
   	push rsi
@@ -2514,12 +2655,12 @@ CLOSED: [2025-09-29 Mon 11:58]
 #+end_src
 
 #+begin_src asm :tangle payload/stage2.s
-  global _start
+  	global _start
 
 
   _start:		 ;r15 aslr
-  .stage2:   ;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
-  .mmap_fd:
+  	.stage2:   ;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
+  	.mmap_fd:
   	pop r14			;size_s2_elf [rsp] vaddr_s2_elf, fd_s1, size_s1, vaddr s1
   	pop r13			;vaddr_s2_elf [rsp] fd_s1, size_s1, vaddr s1
   	push 0x2		;MAP_PRIVATE
@@ -2535,12 +2676,12 @@ CLOSED: [2025-09-29 Mon 11:58]
   	push 0x9
   	pop rax
   	syscall
-  .close_fd:
+  	.close_fd:
   	pop rdi			;;fd_s1 [rsp] size_s1, vaddr s1
   	push 0x3
     	pop rax
     	syscall
-  .unmmap_s1:
+  	.unmmap_s1:
   	pop rsi			;size_s1 [rsp]  vaddr_s1
   	pop rdi			;vaddr_s1 [rsp]
   	push 0xb
@@ -2550,17 +2691,17 @@ CLOSED: [2025-09-29 Mon 11:58]
   	push r13
   	push r14		; [rsp] size_s2_elf, vaddr_s2_elf	
   	jmp end_of_stage_2
-  .return_ehdr_ptr:;[rsp] ehdr_ptr size_s2, size_s2_elf, vaddr s2
+  	.return_ehdr_ptr:;[rsp] ehdr_ptr size_s2, size_s2_elf, vaddr s2
   	pop rdi		; ehdr_ptr [rsp] size_s2_elf, vaddr_s2_elf
   	push rdi	; ;[rsp] ehdr_ptr size_s2, vaddr s2
   	push 0x2013a ; ;[rsp] elf_size ehdr_ptr size_s2, vaddr s2
   	pop rsi		; ;[rsp] ehdr_ptr size_s2, vaddr s2
   	pop rbx 	;ehdr_ptr [rsp] size_s2, vaddr s2
 
-  .get_base:
+  	.get_base:
   	sub    rsp, 0x10                 ; Allocate stack space
-      
-      ; Get program header information
+  	
+  				; Get program header information
   	movzx  esi, WORD [rdi+0x38] ; esi = e_phnum
   	add    rdi, QWORD [rdi+0x20] ; rdi = e_phoff
   	lea    rdx, [rsp]          ; rdx = stack space for result min
@@ -2603,7 +2744,7 @@ CLOSED: [2025-09-29 Mon 11:58]
   	test r14, r14
   	jne .woody_payload
   	pop r14
-  .create_stage3:
+  	.create_stage3:
   	push 0x22		;MAP_PRIVATE | MAP_ANONYMOUS
   	pop r10			; flags
   	xor r9, r9		; offset
@@ -2618,17 +2759,17 @@ CLOSED: [2025-09-29 Mon 11:58]
   	pop rax
   	push r11
   	syscall
-  	pop r11
   	cmp rax, 0
+  	pop r11
   	jb _exit
-  	push 0x5		     ; size of stage3
+  	push 0x4		     ; size of stage3
   	pop rcx			     ; N times
   	push rcx			     ; N times
   	push rax		;[rsp]vaddr s3, size_s2, vaddr s2
   	xchg    rdi, rax             ; rdi = destination mmap
   	call .bytecode_stage3
   	syscall			;call munmap s2
-  	xor edi, edi		;reset this register
+  	pop rdi ;reset this register
   	ret			;jmp to entrypoint Interp or not.
   	.bytecode_stage3:
   	pop rsi		      ;src s3, [rsp]vaddr_s3, size_s3, size_s2, vaddr s2
@@ -2663,7 +2804,7 @@ CLOSED: [2025-09-29 Mon 11:58]
   	ret 			;.
   	ret 			;.
   	ret 			;\n No need null becouse we use write and don't care null ended. ;) a byte less.
-  .woody_write:
+  	.woody_write:
           pop    rsi		;....WOODY....\n ptr.		;[rsp]vaddr s3 size_s2, vaddr s2
   	push 0xe		;ptr_size
   	pop rdx
@@ -2675,37 +2816,38 @@ CLOSED: [2025-09-29 Mon 11:58]
           syscall
   	pop r11;[rsp]vaddr, size s3 size_s2, vaddr s2
 
-  .jmp_entry_for_stage3:
+  	.jmp_entry_for_stage3:
   	pop r14		;vaddr s3 [rsp]size_s2, vaddr s2
   	test r11, r11
   	cmovne r13, r11		;if r11 != 0  set r12 = r11
 
-  .jmp_stage3:
+  	.jmp_stage3:
   	pop rsi			;size_s2 [rsp]  vaddr_s2
   	pop rdi			;vaddr_s1 [rsp]
   	push 0xb
   	pop rax
   	push r13		;[rsp]vaddr entrypoint that go jmp from stage3
-  	push r14		;[rsp] vaddr stage3, vaddr entrypoint
+  	push 0		;[rsp] reset rdx,vaddr entrypoint that go jmp from stage3
+  	push r14		;[rsp] vaddr stage3, reset rdx, vaddr entrypoint
   	ret			; jmp -> vaddr s3, [rsp] vaddr entrypoint
 
 
   _exit:	
-      push 127
-      pop rdi
-      push 60
-      pop rax
-      syscall
-    _open:
+  	push 127
+  	pop rdi
+  	push 60
+  	pop rax
+  	syscall
+  _open:
     	push 0x2
     	pop rax
     	syscall
     	ret
-    _read:
+  _read:
     	xor eax, eax		;syscall 0
     	syscall
     	ret
-    _close:
+  _close:
     	push 0x3
     	pop rax
     	syscall
@@ -2718,18 +2860,18 @@ CLOSED: [2025-09-29 Mon 11:58]
     	;; r12 base interp 
     	;; Modified reg rdi, rsi, r/ecx
   set_auxv:
-            xor ecx, ecx		; counter for detect end argv, envp.
+          xor ecx, ecx		; counter for detect end argv, envp.
 
-  .reaching_auxv:
-            add rdi, 8
-            mov rsi, qword [rdi]
-            test rsi, rsi		; register check value
-            jnz .reaching_auxv
-            inc ecx
-            cmp ecx, 2
-            jne .reaching_auxv
+  	.reaching_auxv:
+          add rdi, 8
+          mov rsi, qword [rdi]
+          test rsi, rsi		; register check value
+          jnz .reaching_auxv
+          inc ecx
+          cmp ecx, 2
+          jne .reaching_auxv
 
-  .auxv_loop:
+  	.auxv_loop:
           add rdi, 8		;First case NULL, next field of auxv,rest value -> field.
           mov rsi, qword [rdi]	
           test rsi, rsi
@@ -2746,333 +2888,438 @@ CLOSED: [2025-09-29 Mon 11:58]
           je .set_entry
           jmp .auxv_loop
 
-  .set_phdr:
+  	.set_phdr:
           mov    rax,QWORD  [r14+0x20]	; r14 ehdr ptr; rax == phdr_offset
       	add    rax,r14			; r14 == 0x40 + ehdr ptr -> phdr ptr.
       	mov qword [rdi], rax
       	jmp .auxv_loop
 
-  .set_phnum:
+  	.set_phnum:
       	movzx  eax,WORD  [r14+0x38] ; rbx ehdr ptr
-            mov qword [rdi], rax
-            jmp .auxv_loop
+          mov qword [rdi], rax
+          jmp .auxv_loop
 
-  .set_base:
-            mov qword [rdi], r12	; r12 base interp
-            jmp .auxv_loop
+  	.set_base:
+          mov qword [rdi], r12	; r12 base interp
+          jmp .auxv_loop
 
-  .set_entry:
+  	.set_entry:
       	mov qword [rdi], r13
       	jmp .auxv_loop
-  .end:
+  	.end:
     	ret
 
   calculate_elf_memory_range:
-          	xor eax, eax
-          	mov QWORD [rdx], -1		;rdx == Max
-          	mov QWORD [rcx], rax		;rcx == Min
-          	movsxd rax,esi		; phnum signed extension
-          	imul rax, rax,0x38      ; phnum * sizeof(elf64_phdr)
-          	add rdi, rax            ; ptr + offset end array
-          	.loop_check:
-          	test esi, esi           ; phnum == 0
-          	je .alignment           ; jmp alignment
-          	dec esi                 ; decrement esi
-          	cmp DWORD [rdi-0x38], 1 ; PT_LOAD of previos phdr
-          	jne .continue_loop
-          	mov rax, QWORD [rdi-0x28] ; p_vaddr prev phdr
-          	cmp rax, QWORD [rdx] 	; p_vaddr < *min_addr
+          xor eax, eax
+          mov QWORD [rdx], -1		;rdx == Max
+          mov QWORD [rcx], rax		;rcx == Min
+          movsxd rax,esi		; phnum signed extension
+          imul rax, rax,0x38      ; phnum * sizeof(elf64_phdr)
+          add rdi, rax            ; ptr + offset end array
+          .loop_check:
+          test esi, esi           ; phnum == 0
+          je .alignment           ; jmp alignment
+          dec esi                 ; decrement esi
+          cmp DWORD [rdi-0x38], 1 ; PT_LOAD of previos phdr
+          jne .continue_loop
+          mov rax, QWORD [rdi-0x28] ; p_vaddr prev phdr
+          cmp rax, QWORD [rdx] 	; p_vaddr < *min_addr
     	jae .max_vaddr
-          	mov QWORD [rdx], rax     ; min_addr = p_vaddr
-          	.max_vaddr:
-          	add rax, QWORD [rdi-0x10] ; rax = p_mmesz
-          	cmp rax, QWORD [rcx]
+          mov QWORD [rdx], rax     ; min_addr = p_vaddr
+          .max_vaddr:
+          add rax, QWORD [rdi-0x10] ; rax = p_mmesz
+          cmp rax, QWORD [rcx]
     	jle .continue_loop
     	mov QWORD [rcx], rax
-          	.continue_loop:
-          	sub rdi, 0x38  		;reduce one phdr size.
-          	jmp .loop_check
-          	.alignment:
-          	and QWORD [rdx], 0xfffffffffffff000
-          	add QWORD [rcx], 0xfff
-          	and QWORD [rcx], 0xfffffffffffff000
+          .continue_loop:
+          sub rdi, 0x38  		;reduce one phdr size.
+          jmp .loop_check
+          .alignment:
+          and QWORD [rdx], 0xfffffffffffff000
+          add QWORD [rcx], 0xfff
+          and QWORD [rcx], 0xfffffffffffff000
     	ret
-          	
+          
+  	;;[rdx+0x20] ; p_filesz
+  	;;[rdx+0x28] ; p_memsz
+    	;; rdi ehdr, rsi aslr_offset, rdx base, ecx fd
+  ; Function: load_elf_segment
+  ; Parameters (likely according to System V AMD64 ABI):
+  ;   rdi: base
+  ;   rsi: elf_ptr
+  ;   rdx: phdr
+  ;   rcx: min_vaddr
+  ;   r8d: fd
+  ; Purpose: Load an ELF segment into memory, handling both file-backed and anonymous mappings,
+  ;          including initializing the .bss section.
+
   load_elf_segment:
-        ; Check if segment type is PT_LOAD (1)
-        cmp    DWORD [rdx], 0x1      ; Compare p_type with PT_LOAD
-        jne    .not_load_segment         ; .purpose: Exit if not PT_LOAD segment
-        
-        ; Save caller-saved registers
-        push   r15
-        push   r14
-        push   r13
-        push   r12
-        push   rbp
-        push   rbx
-        push   r9
-        
-        ; Extract segment information
-        mov    r13, QWORD [rdx+0x10] ; r13 = p_vaddr
-        mov    rbx, QWORD [rdx+0x8]  ; rbx = p_offset
-        and    r13, 0xfffffffffffff000   ; Align vaddr to page boundary
-        mov    r9, rbx                   ; Copy offset to r9
-        mov    rax, r13                  ; Copy aligned vaddr
-        add    rbx, QWORD [rdx+0x28] ; rbx = p_offset + p_memsz
-        sub    rax, rcx                  ; rax = aligned_vaddr - base_addr
-        add    rbx, 0xfff                ; Add page size for rounding
-        mov    ecx, DWORD [rdx+0x4]  ; ecx = p_flags
-        and    r9, 0xfffffffffffff000    ; Align offset to page boundary
-        and    rbx, 0xfffffffffffff000   ; Align end to page boundary
-        lea    r12, [rdi+rax*1]          ; r12 = base_addr + aligned_offset
-        sub    rbx, r9                   ; rbx = aligned_size
-        
-        ; Check segment flags for write permission
-        push 0x1
-        pop    rax                  ; Read
-        test   cl, 0x2                   ; Test PF_W flag
-        jz    .executable         ; 
-        or eax, 0x2
-  .executable:
-        test   cl, 0x1                   ; Test PF_W flag
-        jz .check_fd_anonymous
-        or eax, 0x4
-        
-  .check_fd_anonymous:
-        cmp    r8d, 0xffffffff           ; Check if fd == -1
-        push 0x32
-        pop r10                 ; r10 = MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS (default)
-        push 0x12
-        pop    rbp                ; rbp = MAP_PRIVATE | MAP_FIXED
-        cmovne  r10, rbp                 ; r10 = MAP_PRIVATE | MAP_FIXED if fd != -1
-        push 0x3			     ; Read | Write
-        pop rbp
-        cmove rax, rbp
+      ; Check if the segment type (phdr->p_type) is PT_LOAD (which is 1)
+      cmp    DWORD [rdx], 0x1
+      jne    .not_load_segment   ; If not PT_LOAD, exit early with return 0
+
+      ; Save callee-saved registers onto the stack as per ABI
+      push   r15
+      push   r14
+      push   r13
+      mov    r13, rsi            ; Save elf_ptr into r13
+      push   r12
+      push   rbp
+      push   rbx
+      mov    rbx, rdx            ; Save phdr pointer into rbx
+      sub    rsp, 0x18           ; Allocate 24 bytes of shadow space on the stack
+
+      ; Extract fields from the ELF Program Header (phdr)
+      mov    rax, QWORD [rdx+0x8]   ; rax = phdr->p_vaddr (Virtual address)
+      mov    r14, QWORD [rdx+0x10]   ; r14 = phdr->p_offset (File offset)
+      mov    rsi, QWORD [rdx+0x20]  ; rsi = phdr->p_memsz (Memory size)
+      mov    edx, DWORD [rdx+0x4]   ; edx = phdr->p_flags (Segment flags)
+      mov    r9, rax                    ; Copy p_vaddr to r9
+      ; Align p_offset and p_vaddr down to the nearest page boundary (0x1000)
+      and    r14, 0xfffffffffffff000    ; r14 = page_offset (aligned)
+      lea    r12, [rax+rsi*1+0xfff]     ; Calculate unaligned end of memory region
+      and    r12, 0xfffffffffffff000    ; r12 = map_end (aligned)
+      and    r9, 0xfffffffffffff000     ; r9 = page_vaddr (aligned)
+      sub    r12, r9                    ; r12 = map_size (aligned size needed)
+
+      ; Determine initial protection flags for mmap based on p_flags
+      mov    eax, edx            ; Copy flags
+      and    eax, 0x2            ; Check PF_W (Write) flag
+      cmp    eax, 0x1            ; Compare (this seems like a mistake, should be cmp eax, 0x2)
+      sbb    eax, eax            ; Set eax to -1 if PF_W is set, 0 otherwise
+      and    eax, 0xfffffffe     ; Mask to keep only relevant bits for PROT_WRITE
+      add    eax, 0x3            ; Add PROT_READ (1) and adjust for PROT_WRITE (2->3)
+      ; Check if fd is -1 (MAP_ANONYMOUS case)
+      cmp    r8d, 0xffffffff
+      je     .fd_is_minus_one
+      ; fd != -1: Prepare flags for regular file-backed mapping
+      and    edx, 0x1            ; Check PF_X (Execute) flag
+      shl    edx, 0x2            ; Shift PF_X into position for PROT_EXEC (0x4)
+      or     edx, eax            ; Combine flags: (PROT_READ | PROT_WRITE) | (PROT_EXEC if set)
+      mov    eax, 0x12           ; MAP_FIXED | MAP_PRIVATE
+      jmp    .setup_mmap_params
+
+  .fd_is_minus_one:
+      ; fd == -1: Handle anonymous mapping case (likely for restoring data segments)
+      mov    rax, QWORD [rbx+0x28]  ; rax = phdr->p_filesz (File size)
+      cmp    rsi, rax                   ; Compare p_memsz with p_filesz
+      jae    .memsz_ge_filesz           ; If p_memsz >= p_filesz, jump
+      sub    rax, rsi                   ; Otherwise, calculate difference
+      add    r12, rax                   ; Increase map_size by the difference
+  .memsz_ge_filesz:
+      mov    eax, 0x32           ; MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS
+      mov    edx, 0x3            ; PROT_READ | PROT_WRITE
 
   .setup_mmap_params:
-        mov    rbp, rdx                  ; Save segment header pointer
-        mov    r14, rsi                  ; Save file size
-        mov    rsi, rbx                  ; rsi = segment size
-        mov    rdi, r12                  ; rdi = mapping address
-        mov    r15, r8                 ; Save file descriptor
-        mov    edx, eax                  ; Combine mapping type
-  	push 0x9
+      ; Prepare arguments for the first mmap call
+      mov    rsi, r14            ; rsi = page_offset (aligned file offset)
+      mov    QWORD [rsp+0x8], r9   ; Store page_vaddr on stack
+      sub    rsi, rcx            ; Calculate relative offset: page_offset - min_vaddr
+      mov    r10d, eax            ; ecx = mmap flags
+      mov    DWORD [rsp], r8d     ; Store fd on stack
+      lea    r15, [rdi+rsi*1]    ; r15 = base + (page_offset - min_vaddr) = mapping address
+      mov    rsi, r12            ; rsi = map_size (size to map)
+      mov    rdi, r15            ; rdi = calculated mapping address
+  	push byte 0x9
   	pop rax
   	syscall
-        test rax,rax
-        js .mmap_failed
-        cmp    r8d, -1 ; Check if fd is invalid
-        jne    .after_mmap               ; .purpose: Continue after mmap
-        mov    rcx, QWORD [rbp+0x20] ; rcx = p_filesz ; N times
-        mov    rsi, QWORD [rbp+0x8]  ; rsi = p_offset
-  	push rax
-  	pop rdi
-        add    rsi, r14                  ; rsi = file_offset + elf_ptr = source
-        rep movsb			 ;;;;; Copy segment data
-  	push rbx		 ;segment size
-  	pop rsi
-  	push rax		;mapping address
-  	pop rdi
-  	mov    eax, DWORD [rbp+0x4]  ; eax = p_flags
-        push   0x1
-        pop    rdx                   ; Start with PROT_READ = 1
-        test   al, 0x2               ; Test PF_W
-        jz     .no_write
-        or     rdx, 0x2              ; Add PROT_WRITE
-  .no_write:
-        test   al, 0x1               ; Test PF_X  
-        jz     .no_exec
-        or     rdx, 0x4              ; Add PROT_EXEC
-  .no_exec:
-        ; rdi = address, rsi = size, rdx = prot
-        push   0xA
-        pop    rax                   ; mprotect syscall
-        syscall
-        
-  .mmap_failed:
-  .end:
-        pop    rdx                       ; Restore registers
-        pop    rbx
-        pop    rbp
-        pop    r12
-        pop    r13
-        pop    r14
-        pop    r15
-        ret
+      mov    rbp, rax            ; Save mmap result (mapped address) in rbp
+      mov    eax, 0xffffffff     ; Prepare failure value (-1)
+      cmp    rbp, 0xffffffffffffffff ; Check if mmap returned MAP_FAILED (-1)
+      je     .cleanup_and_exit   ; If failed, jump to cleanup
 
-  .after_mmap:
-        xor    eax, eax                  ; Return 0 (success)
-        jmp .end
+      ; Check if fd is -1 again to decide copying strategy
+      cmp    DWORD [rsp], 0xffffffff ; Check stored fd value
+      jne    .handle_file_backed ; If fd != -1, handle file-backed mapping
+
+      ; fd == -1: Copy data from elf_ptr buffer to mapped memory
+      mov    rcx, QWORD [rbx+0x20]  ; rcx = phdr->p_memsz
+      add    rcx, QWORD [rbx+0x8]   ; rcx = p_memsz + p_vaddr (end vaddr)
+      sub    rcx, QWORD [rsp+0x8]   ; rcx = (p_memsz + p_vaddr) - page_vaddr = offset within mapping
+      mov    rsi, r13            ; rsi = elf_ptr (source data)
+      rep movsb                   ; Copy data byte-by-byte
+      ; Set final memory protection for the mapped region
+      mov    rsi, r12            ; rsi = map_size
+      mov    rdi, r15            ; rdi = mapping address
+      mov    edx, DWORD  [rbx+0x4]   ; edx = phdr->p_flags
+      mov    eax, edx            ; Copy flags
+      and    eax, 0x2            ; Check PF_W
+      cmp    eax, 0x1            ; Compare (again, seems like a mistake)
+      sbb    eax, eax            ; Set eax based on PF_W
+      and    edx, 0x1            ; Check PF_X
+      and    eax, 0xfffffffe     ; Mask eax
+      shl    edx, 0x2            ; Shift PF_X for PROT_EXEC
+      add    eax, 0x3            ; Add PROT_READ and PROT_WRITE base
+      or     edx, eax            ; Combine final protection flags
+  	push byte 0xa
+  	pop rax
+  	syscall
+      sar    eax, 0x1f           ; Arithmetic shift to sign extend result into full register
+      jmp    .cleanup_and_exit   ; Jump to cleanup
+
+  .handle_file_backed:
+      ; fd != -1: Handle initialization of .bss-like area if p_memsz > p_filesz
+      cmp    rcx, QWORD [rbx+0x28]  ; Compare p_vaddr with phdr->p_filesz
+      jb     .initialize_bss     ; If p_vaddr < p_filesz, initialize .bss
+      xor    eax, eax            ; Return success (0)
+      jmp    .cleanup_and_exit   ; Jump to cleanup
+
+  .initialize_bss:
+      ; Calculate addresses and sizes for .bss initialization
+      mov    rax, r14            ; rax = page_offset (aligned)
+      sub    rax, QWORD [rbx+0x10]  ; rax = page_offset - phdr->p_offset
+      add    rax, rcx            ; rax = (page_offset - p_offset) + p_vaddr
+      lea    r8, [rax+0xfff]     ; r8 = end address + page size - 1
+      lea    r15, [rbp+rax*1+0x0]; r15 = mapped_addr + offset (start of .bss area)
+      and    r8, 0xfffffffffffff000     ; Align r8 to page boundary
+      mov    rdi, r8             ; rdi = aligned end address
+      mov    r13, r8             ; Save r8 in r13
+      sub    rdi, rax            ; rdi = aligned_end - calculated_offset = size of .bss
+      mov    QWORD [rsp], rdi       ; Store .bss size on stack
+      ; Check if segment is writable (PF_W flag)
+      test   BYTE  [rbx+0x4], 0x2    ; Test PF_W flag
+      jne    .map_anon_for_bss   ; If writable, map anonymous pages for .bss
+      ; If not writable, just zero out the existing mapped area
+      mov    edx, 0x3            ; PROT_READ | PROT_WRITE
+      mov    rsi, r12            ; rsi = map_size
+      mov    rdi, rbp            ; rdi = mapped address
+      ; mprotect to make area temporarily writable
+      ; Note: Placeholder call address.
+  	push byte 0xa
+  	pop rax
+  	syscall
+  	test rax, rax
+  	jnz .cleanup_and_exit
+  .map_anon_for_bss:
+      mov    rcx, QWORD [rsp]       ; rcx = .bss size
+      xor    eax, eax            ; Prepare zero value
+      mov    rdi, r15            ; rdi = start address of .bss
+      rep stosb                   ; Fill .bss with zeros
+      ; Set final memory protection based on phdr->p_flags
+      mov    eax, DWORD [rbx+0x4]   ; eax = phdr->p_flags
+      test   al, 0x2             ; Test PF_W flag
+      jne    .check_exec_flag    ; If writable, check execute flag
+      and    eax, 0x1            ; Otherwise, isolate PF_X flag
+      mov    rsi, r12            ; rsi = map_size
+      mov    rdi, rbp            ; rdi = mapped address
+      cmp    eax, 0x1            ; Compare PF_X flag
+      sbb    edx, edx            ; Set edx based on PF_X
+      and    edx, 0xfffffffc     ; Mask edx for PROT_EXEC
+      add    edx, 0x5            ; Add PROT_READ | PROT_EXEC (1 | 4)
+  	push byte 0xa
+  	pop rax
+  	syscall
+  	test rax, rax
+  	jnz .cleanup_and_exit
+
+  .check_exec_flag:
+      ; Calculate the end of the file-backed mapping area
+      mov    rax, QWORD [rbx+0x28]  ; rax = phdr->p_filesz
+      lea    rsi, [r14+rax*1+0xfff]     ; rsi = p_offset + p_filesz + 0xfff
+      and    rsi, 0xfffffffffffff000    ; Align rsi to page boundary
+      sub    rsi, QWORD [rbx+0x10]  ; rsi = (aligned_end_offset) - p_offset
+      cmp    r13, rsi            ; Compare calculated .bss start with file mapping end
+      je     .success            ; If they are equal, no gap, success
+      ; There's a gap, map anonymous pages to fill it
+      sub    rsi, r13            ; rsi = size of the gap
+      xor    r9d, r9d            ; r9d = 0 (offset for anonymous mapping)
+      lea    rdi, [rbp+r13*1+0x0]; rdi = address after .bss start
+      mov    r10, 0x32           ; MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS
+      mov    r8d, 0xffffffff     ; fd = -1
+      mov    edx, 0x3            ; PROT_READ | PROT_WRITE
+  	push byte 9
+  	pop rax
+  	syscall
+      inc    rax                 ; Increment result
+      setne  al                  ; Set al if result was not 0 (success)
+      movzx  eax, al             ; Zero-extend al to eax
+      neg    eax                 ; Negate eax (0 becomes 0, non-zero becomes -1)
+      ; Fall through to cleanup
+
+  .cleanup_and_exit:
+      ; Restore stack pointer and callee-saved registers
+      add    rsp, 0x18           ; Deallocate shadow space
+      pop    rbx
+      pop    rbp
+      pop    r12
+      pop    r13
+      pop    r14
+      pop    r15
+      ret                        ; Return with result in eax
+
   .not_load_segment:
-    	xor eax, eax
-    	ret
+      xor    eax, eax            ; Return 0 for non-PT_LOAD segments
+      ret
 
-    	;; rdi ehdr, rsi aslr_offset, rdx base, ecx fd
+  .success:
+      xor    eax, eax            ; Return 0 for success
+      jmp    .cleanup_and_exit
+
   load_elf_generic:
-        ; Save all caller-saved registers
-        push   r15
-        mov    r9, rsi                   ; Save parameters
-        mov    r8, rdx
-        push   r14
-        push   r13
-        push   r12
-        push   rbp
-        mov    rbp, rdi                  ; Save elf_header
-        push   rbx
-        sub    rsp, 0x28                 ; Allocate stack space
-        
-        ; Get program header information
-        mov    r12, QWORD [rdi+0x20] ; r12 = e_phoff
-        movzx  esi, WORD [rdi+0x38] ; esi = e_phnum
-        mov    DWORD [rsp+0xc], ecx  ; Save parameter fd
-        lea    rdx, [rsp+0x10]          ; rdx = stack space for result min
-        lea    rcx, [rsp+0x18]          ; rcx = stack space for result max
-        add    rdi, r12                  ; rdi = elf_header + phoff
+  				; Save all caller-saved registers
+  	push   r15
+  	mov    r9, rsi                   ; Save parameters
+  	mov    r8, rdx
+  	push   r14
+  	push   r13
+  	push   r12
+  	push   rbp
+  	mov    rbp, rdi                  ; Save elf_header
+  	push   rbx
+  	sub    rsp, 0x28                 ; Allocate stack space
+  	
+  				; Get program header information
+  	mov    r12, QWORD [rdi+0x20] ; r12 = e_phoff
+  	movzx  esi, WORD [rdi+0x38] ; esi = e_phnum
+  	mov    DWORD [rsp+0xc], ecx  ; Save parameter fd
+  	lea    rdx, [rsp+0x10]          ; rdx = stack space for result min
+  	lea    rcx, [rsp+0x18]          ; rcx = stack space for result max
+  	add    rdi, r12                  ; rdi = elf_header + phoff
     	push rdi
     	pop r12			;rdi, r12 = PHDRs
-        call   calculate_elf_memory_range; .purpose: Call helper function
-        
-        ; Process program headers
-        mov    r14, QWORD [rsp+0x10] ; r14 = result min
-        test r8, r8
-        push 0x22			;ANON | PRIVATE
-        pop r10
-        jz .no_base_addr
-        add r8, r9
-        or r10d, 0x10		;FIXED
-  .no_base_addr:
-        mov    rdi, r8           ; rdi = base_addr + offset
-        xor    edx, edx                  ; Clear edx
-        mov    r13, QWORD [rsp+0x18] ; r13 = result -> May change r13 to rsi and still working  for avoid the mov; it used for clean up but could just use exit and avoid this.
-        xor    r9d, r9d                  ; Clear r9d
-        push -1
-        pop    r8
-        mov    ecx, 0x22                 ; mmap flags
-        sub    r13, r14                  ; Calculate size change this with rsi
-        mov    rsi, r13                  ; rsi = size Could  delete this line.?
+  	call   calculate_elf_memory_range; .purpose: Call helper function
+  	
+  				; Process program headers
+  	mov    r14, QWORD [rsp+0x10] ; r14 = result min
+  	test r8, r8
+  	push 0x22			;ANON | PRIVATE
+  	pop r10
+  	jz .no_base_addr
+  	add r8, r9
+  	or r10d, 0x10		;FIXED
+  	.no_base_addr:
+  	mov    rdi, r8           ; rdi = base_addr + offset
+  	xor    edx, edx                  ; Clear edx
+  	mov    r13, QWORD [rsp+0x18] ; r13 = result -> May change r13 to rsi and still working  for avoid the mov; it used for clean up but could just use exit and avoid this.
+  	xor    r9d, r9d                  ; Clear r9d
+  	push -1
+  	pop    r8
+  	mov    ecx, 0x22                 ; mmap flags
+  	sub    r13, r14                  ; Calculate size change this with rsi
+  	mov    rsi, r13                  ; rsi = size Could  delete this line.?
   	push 0x9
   	pop rax
   	syscall
-        cmp    rax, rax   ; Check for error
-        js     .generic_error            ; .purpose: Handle mmap error
-        
-        ; Initialize loop for processing segments
-        mov    rbx, rax                  ; Save mapping address
-        xor    r15d, r15d                ; Clear counter
-        jmp    .process_segment          ; .purpose: Start processing segments
+  	cmp    rax, rax   ; Check for error
+  	js     .generic_error            ; .purpose: Handle mmap error
+  	
+  				; Initialize loop for processing segments
+  	mov    rbx, rax                  ; Save mapping address
+  	xor    r15d, r15d                ; Clear counter
+  	jmp    .process_segment          ; .purpose: Start processing segments
 
-  .process_next_segment:
-        add    r12, 0x38                 ; Advance to next phdr (size=56)
-        inc    r15d                      ; Increment counter
+  	.process_next_segment:
+  	add    r12, 0x38                 ; Advance to next phdr (size=56)
+  	inc    r15d                      ; Increment counter
 
-  .process_segment:
-        movzx  eax, WORD [rbp+0x38]  ; eax = e_phnum
-        cmp    eax, r15d                 ; Compare with counter
-        jle    .all_segments_done        ; .purpose: Exit if all processed
-        
-        ; Load segment
-        movsxd r8, DWORD [rsp+0xc]  ; r8d = parameter fd
-        mov    rcx, r14                  ; rcx = base address
-        mov    rdx, r12                  ; rdx = current phdr
-        mov    rsi, rbp                  ; rsi = elf header
-        mov    rdi, rbx                  ; rdi = mapping address
-        call   load_elf_segment     ; .purpose: Load individual segment
-        inc    eax                       ; Increment result in case return -1
-        jne    .process_next_segment     ; .purpose: Continue if not Zero
-        
-        ; Final cleanup
-        mov    rsi, r13                  ; rsi = size
-        mov    rdi, rbx                  ; rdi = mapping address
+  	.process_segment:
+  	movzx  eax, WORD [rbp+0x38]  ; eax = e_phnum
+  	cmp    eax, r15d                 ; Compare with counter
+  	jle    .all_segments_done        ; .purpose: Exit if all processed
+  	
+  				; Load segment
+  	movsxd r8, DWORD [rsp+0xc]  ; r8d = parameter fd
+  	mov    rcx, r14                  ; rcx = base address
+  	mov    rdx, r12                  ; rdx = current phdr
+  	mov    rsi, rbp                  ; rsi = elf header
+  	mov    rdi, rbx                  ; rdi = mapping address
+  	call   load_elf_segment     ; .purpose: Load individual segment
+  	inc    eax                       ; Increment result in case return -1
+  	jne    .process_next_segment     ; .purpose: Continue if not Zero
+  	
+  				; Final cleanup
+  	mov    rsi, r13                  ; rsi = size
+  	mov    rdi, rbx                  ; rdi = mapping address
     	push 0xb		
     	pop rax
     	syscall
 
 
-  .generic_error:
-        mov    rax, 0xffffffffffffffff   ; Return error
-        jmp    .generic_cleanup          ; .purpose: Cleanup and return
+  	.generic_error:
+  	mov    rax, 0xffffffffffffffff   ; Return error
+  	jmp    .generic_cleanup          ; .purpose: Cleanup and return
 
-  .all_segments_done:
-        mov    rax, rbx                  ; rax = mapping address
-        sub    rax, r14                  ; Adjust address
-        add    rax, QWORD [rbp+0x18] ; rax = adjusted + entry point
+  	.all_segments_done:
+  	mov    rax, rbx                  ; rax = mapping address
+  	sub    rax, r14                  ; Adjust address
+  	add    rax, QWORD [rbp+0x18] ; rax = adjusted + entry point
 
-  .generic_cleanup:
-        add    rsp, 0x28                 ; Deallocate stack space
+  	.generic_cleanup:
+  	add    rsp, 0x28                 ; Deallocate stack space
   	push rbx
   	pop rdi
-        pop    rbx                       ; Restore registers
-        pop    rbp
-        pop    r12
-        pop    r13
-        pop    r14
-        pop    r15
-        ret
+  	pop    rbx                       ; Restore registers
+  	pop    rbp
+  	pop    r12
+  	pop    r13
+  	pop    r14
+  	pop    r15
+  	ret
 
   get_at_interp_x64:
-        push   rbp
-        xor    edx, edx                ; ndx_ph = 0 (initialize program header index)
-        push   rbx
-        sub    rsp, 0x408              ; Allocate 1032 bytes on stack for buffer (1024 + 8)
-        mov    rax, QWORD [rdi + 0x20] ; rax = e_phoff (program header offset)
-        movzx  ecx, WORD [rdi + 0x38]  ; ecx = e_phnum (program header number)
+  	push   rbp
+  	xor    edx, edx                ; ndx_ph = 0 (initialize program header index)
+  	push   rbx
+  	sub    rsp, 0x408              ; Allocate 1032 bytes on stack for buffer (1024 + 8)
+  	mov    rax, QWORD [rdi + 0x20] ; rax = e_phoff (program header offset)
+  	movzx  ecx, WORD [rdi + 0x38]  ; ecx = e_phnum (program header number)
     	add    rax, rdi                ; rax = ptr + e_phoff (pointer to first phdr)
-  .loop_start:
-        cmp    rdx, rcx                ; Compare ndx_ph with e_phnum
-        jb     .find_interp_segment    ; .purpose: Check if current phdr is PT_INTERP
-        xor    ebx, ebx                ; ebx = 0 (no interpreter found)
-        xor    edi, edi                ; edi = 0 (interpreter base)
-        jmp     .cleanup_and_return     ; .purpose: Exit if no PT_INTERP found
+  	.loop_start:
+  	cmp    rdx, rcx                ; Compare ndx_ph with e_phnum
+  	jb     .find_interp_segment    ; .purpose: Check if current phdr is PT_INTERP
+  	xor    ebx, ebx                ; ebx = 0 (no interpreter found)
+  	xor    edi, edi                ; edi = 0 (interpreter base)
+  	jmp     .cleanup_and_return     ; .purpose: Exit if no PT_INTERP found
 
-  .find_interp_segment:
-        imul   rsi, rdx, 0x38          ; rsi = ndx_ph * sizeof(Elf64_Phdr) (offset to current phdr)
-        cmp    DWORD [rax + rsi*1], 0x3 ; Compare p_type with PT_INTERP (3)
-        je     .interp_found           ; .purpose: Found PT_INTERP segment
-        inc    rdx                     ; ndx_ph++ (increment to check next phdr)
-        jmp    .loop_start             ; .purpose: Continue searching for PT_INTERP
+  	.find_interp_segment:
+  	imul   rsi, rdx, 0x38          ; rsi = ndx_ph * sizeof(Elf64_Phdr) (offset to current phdr)
+  	cmp    DWORD [rax + rsi*1], 0x3 ; Compare p_type with PT_INTERP (3)
+  	je     .interp_found           ; .purpose: Found PT_INTERP segment
+  	inc    rdx                     ; ndx_ph++ (increment to check next phdr)
+  	jmp    .loop_start             ; .purpose: Continue searching for PT_INTERP
 
-  .interp_found:
-        imul   rdx, rdx, 0x38          ; rdx = ndx_ph * sizeof(Elf64_Phdr) (offset to found phdr)
-        xor    esi, esi                ; esi = 0 (clear for open() flags)
-        add    rdi, QWORD [rax + rdx*1 + 0x8] ; rdi = ptr + phdr[ndx_ph].p_offset (interp string address)
-        xor    eax, eax                ; eax = 0 (clear for open() system call)
-        call   _open              ; .purpose: Call open() to open interpreter file
-        mov    ebp, eax                ; interp_fd = result of open()
-        test   eax, eax
-        js     .error_cleanup          ; .purpose: Handle error if open() failed
-        mov    edx, 0x400              ; edx = 1024 (buffer size for read)
-        mov    rsi, rsp                ; rsi = &interp_elfh[0] (buffer on stack)
-        mov    edi, eax                ; edi = interp_fd (file descriptor)
-        call   _read              ; .purpose: Call read() to read interpreter ELF header
-        cmp    rax, 0x3ff              ; Compare bytes read with 1023 (check if < 1024)
-        jg     .process_interpreter    ; .purpose: Process if we read at least 1024 bytes
-        mov    edi, ebp                ; edi = interp_fd
-        call   _close             ; .purpose: Close file on read error
-        jmp    .error_cleanup          ; .purpose: Return error
+  	.interp_found:
+  	imul   rdx, rdx, 0x38          ; rdx = ndx_ph * sizeof(Elf64_Phdr) (offset to found phdr)
+  	xor    esi, esi                ; esi = 0 (clear for open() flags)
+  	add    rdi, QWORD [rax + rdx*1 + 0x8] ; rdi = ptr + phdr[ndx_ph].p_offset (interp string address)
+  	xor    eax, eax                ; eax = 0 (clear for open() system call)
+  	call   _open              ; .purpose: Call open() to open interpreter file
+  	mov    ebp, eax                ; interp_fd = result of open()
+  	test   eax, eax
+  	js     .error_cleanup          ; .purpose: Handle error if open() failed
+  	mov    edx, 0x400              ; edx = 1024 (buffer size for read)
+  	mov    rsi, rsp                ; rsi = &interp_elfh[0] (buffer on stack)
+  	mov    edi, eax                ; edi = interp_fd (file descriptor)
+  	call   _read              ; .purpose: Call read() to read interpreter ELF header
+  	cmp    rax, 0x3ff              ; Compare bytes read with 1023 (check if < 1024)
+  	jg     .process_interpreter    ; .purpose: Process if we read at least 1024 bytes
+  	mov    edi, ebp                ; edi = interp_fd
+  	call   _close             ; .purpose: Close file on read error
+  	jmp    .error_cleanup          ; .purpose: Return error
 
-  .process_interpreter:
-        mov    rdi, rsp                ; rdi = &interp_elfh[0] (buffer address)
-        mov    ecx, ebp                ; ecx = interp_fd
-        xor    edx, edx                ; edx = 0 (target_vaddr = 0)
-        xor    esi, esi                ; esi = 0 (aslr_offset = 0)
-        call   load_elf_generic  ; .purpose: Call load_elf_generic for interpreter
-        push rdi		     ;Base of elf.
-        mov    edi, ebp                ; edi = interp_fd
-        mov    rbx, rax                ; rbx = result from load_elf_generic
-        call   _close
-        pop rdi			; Base of elf
-        cmp  rbx, -1
-        jne .cleanup_and_return
+  	.process_interpreter:
+  	mov    rdi, rsp                ; rdi = &interp_elfh[0] (buffer address)
+  	mov    ecx, ebp                ; ecx = interp_fd
+  	xor    edx, edx                ; edx = 0 (target_vaddr = 0)
+  	xor    esi, esi                ; esi = 0 (aslr_offset = 0)
+  	call   load_elf_generic  ; .purpose: Call load_elf_generic for interpreter
+  	push rdi		     ;Base of elf.
+  	mov    edi, ebp                ; edi = interp_fd
+  	mov    rbx, rax                ; rbx = result from load_elf_generic
+  	call   _close
+  	pop rdi			; Base of elf
+  	cmp  rbx, -1
+  	jne .cleanup_and_return
 
-  .error_cleanup:
-        mov    rbx, 0xffffffffffffffff ; rbx = -1 (error return value)
+  	.error_cleanup:
+  	mov    rbx, 0xffffffffffffffff ; rbx = -1 (error return value)
 
-  .cleanup_and_return:
-        add    rsp, 0x408              ; Deallocate 1032 bytes from stack
-        mov    rax, rbx                ; rax = return value
-        pop    rbx
-        pop    rbp
-        ret
+  	.cleanup_and_return:
+  	add    rsp, 0x408              ; Deallocate 1032 bytes from stack
+  	mov    rax, rbx                ; rax = return value
+  	pop    rbx
+  	pop    rbp
+  	ret
 
   end_of_stage_2:
           call _start.return_ehdr_ptr
@@ -3170,30 +3417,76 @@ open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the 
       // Align offset and size to page boundaries
       uint64_t page_offset = phdr->p_offset & ~(PAGE_SIZE - 1);
       uint64_t page_vaddr = phdr->p_vaddr & ~(PAGE_SIZE - 1);
-      uint64_t map_end = (phdr->p_offset + phdr->p_memsz + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+      uint64_t map_end = (phdr->p_offset + phdr->p_filesz + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
       size_t map_size = map_end - page_offset;
       
       // Map at the correct address with MAP_FIXED
       int prot = PROT_READ;
-      if (phdr->p_flags & PF_W || fd == -1) prot |= PROT_WRITE;
-      if (phdr->p_flags & PF_X && fd != -1) prot |= PROT_EXEC;
       int flags = MAP_FIXED | MAP_PRIVATE;
+      if (phdr->p_flags & PF_W)
+        prot |= PROT_WRITE;
+      if (phdr->p_flags & PF_X)
+        prot |= PROT_EXEC;
+
       if (fd == -1)
+        {
         flags |= MAP_ANONYMOUS;
+        prot = PROT_READ | PROT_WRITE;
+        if (phdr->p_filesz < phdr->p_memsz)
+  	map_size += phdr->p_memsz - phdr->p_filesz;
+        }
       void *map_addr = (char *)base + (page_vaddr - min_vaddr);
       void *result = mmap(map_addr, map_size, prot, 
   			flags, fd, page_offset);
       if (result == MAP_FAILED)
-        return -1;
+        return (-1);
       if (fd == -1) {
           // Copy data from ELF buffer to mapped memory
-          memcpy((char *)result, (char *)elf_ptr + phdr->p_offset, phdr->p_filesz);
+          memcpy((char *)result, (char *)elf_ptr, phdr->p_offset - page_offset + phdr->p_filesz);
   	prot = PROT_READ;
   	if (phdr->p_flags & PF_W) prot |= PROT_WRITE;
   	if (phdr->p_flags & PF_X) prot |= PROT_EXEC;
   	if (mprotect(map_addr, map_size, prot) < 0)
-  	  return -1;
+  	  return (-1);
+  	return (0);
       }
+      if (phdr->p_memsz > phdr->p_filesz)
+        {
+  	// La dirección virtual donde comienza .bss dentro del segmento
+  	void * vaddr_bss_start = result + (page_vaddr - phdr->p_vaddr + phdr->p_filesz);
+  	void * vaddr_bss_start_in_segment_align = result + ((page_vaddr - phdr->p_vaddr + phdr->p_filesz + PAGE_SIZE - 1) & ~(PAGE_SIZE -1));
+
+  	uint64_t writed_bss_size = vaddr_bss_start_in_segment_align - vaddr_bss_start;
+  	if (!(phdr->p_flags & PF_W))
+  	  {
+  	    if (mprotect(result, map_size, PROT_READ | PROT_WRITE))
+  	      return (-1);
+  	  }
+
+  	memset(vaddr_bss_start, 0, writed_bss_size);
+  	if (!(phdr->p_flags & PF_W))
+  	  {
+  	    int prot = PROT_READ;
+  	    if (phdr->p_flags & PF_W)
+  	      prot |= PROT_WRITE;
+  	    if (phdr->p_flags & PF_X)
+  	      prot |= PROT_EXEC;
+  	    if (mprotect(result, map_size, prot))
+  	      return (-1);
+  	  }
+
+  	void *vaddr_bss_end = result + page_vaddr - phdr->p_vaddr + phdr->p_memsz;
+  	void *vaddr_bss_end_in_segment_align = result + ((page_vaddr - phdr->p_vaddr + phdr->p_memsz + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1));
+  	if (vaddr_bss_start_in_segment_align != vaddr_bss_end_in_segment_align)
+  	  {
+  	    uint64_t total_bss_map_size = vaddr_bss_end_in_segment_align - vaddr_bss_start_in_segment_align;
+
+  	    void *bss_result = mmap(vaddr_bss_start_in_segment_align, total_bss_map_size, PROT_READ | PROT_WRITE, 
+  				MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  	    if (bss_result != MAP_FAILED)
+  	      return (-1);
+  	  }
+        }
       return 0;
   }
 
@@ -3221,10 +3514,8 @@ open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the 
       
       // Load each segment
       for (int i = 0; i < elf->e_phnum; i++) {
-          if (load_elf_segment(base_addr, ptr, &elf_ph[i], min_vaddr, fd) < 0) {
-              munmap(base_addr, total_size);
+          if (load_elf_segment(base_addr, ptr, &elf_ph[i], min_vaddr, fd) < 0)
               return (uint64_t)-1;
-          }
       }
       
       uint64_t entrypoint = (uint64_t)base_addr + (elf->e_entry - min_vaddr);
@@ -3338,3 +3629,7 @@ open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the 
 
 *** DONE Packed_file.
 CLOSED: [2025-09-08 Mon 07:03]
+** TODO Fix Linker is crashing.
+*** May is Dyn is all Zeroed?.
+** NEXT Update Dyn entry when aslr or always for less branching.
+** PLAN Add a new var for try to don't need to search much in the previous code.
