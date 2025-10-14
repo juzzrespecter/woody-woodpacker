@@ -254,6 +254,9 @@ Add to a compress file syscall, pop rdx, ret -
   #ifndef COMPRESS_LZ77_MIN_MATCH_LEN
   # define COMPRESS_LZ77_MIN_MATCH_LEN 3
   #endif
+  #ifndef COMPRESS_LZ77_OFFSET_MAX_LIMIT
+  # define COMPRESS_LZ77_OFFSET_MAX_LIMIT 0xFFF
+  #endif
 
 
   /**
@@ -263,6 +266,7 @@ Add to a compress file syscall, pop rdx, ret -
    ,* @param data_len Length of input data
    ,* @return t_list* Head of the list containing t_lz77 tokens, or NULL on error
    ,*/
+
   t_list *lz77_compress_to_list(const unsigned char *data, size_t data_len) {
       if (!data || data_len == 0) return NULL;
 
@@ -278,12 +282,12 @@ Add to a compress file syscall, pop rdx, ret -
                                 i - COMPRESS_LZ77_SLIDING_WINDOW_SIZE : 0;
 
           // Search for the longest match in sliding window
-          for (size_t offset = 1; offset <= (i - window_start); offset++) {
+          for (size_t offset = 1; offset <= (i - window_start) && offset <= COMPRESS_LZ77_OFFSET_MAX_LIMIT; offset++) {
               size_t match_length = 0;
               size_t max_possible = (data_len - i > COMPRESS_LZ77_MAX_MATCH_LEN) ?
                                     COMPRESS_LZ77_MAX_MATCH_LEN : (data_len - i);
 
-              while (match_length < max_possible &&
+              while (match_length < max_possible && 
                      data[i - offset + match_length] == data[i + match_length]) {
                   match_length++;
               }
@@ -1466,15 +1470,15 @@ Add to a compress file syscall, pop rdx, ret -
   	  ph_ndx++;
   	  continue;
   	}
-        cur_offset_top = elf_get_program_header_offset(&phdr, class) + elf_get_program_header_filesz(&phdr, class);
+        cur_offset_top = elf_get_program_header_offset(&phdr, class) + elf_get_program_header_memsz(&phdr, class);
         top_offset = elf_get_closest_higher_p_offset(ehdr, class, phnum, cur_offset_top);
         if (top_offset == (uint64_t) -1)
   	top_offset = elf_get_elfh_shoff(ehdr);
         avalaible_offset = top_offset - cur_offset_top;
         if (avalaible_offset >= gap_size)
   	{
-  	  ,*ret_offset = avalaible_offset;
-  	  ,*ret_vaddr = cur_vaddr_top - 1;
+  	  ,*ret_offset = cur_offset_top;
+  	  ,*ret_vaddr = cur_vaddr_top;
   	  return (true);
   	}
         ph_ndx++;
@@ -1509,7 +1513,7 @@ Add to a compress file syscall, pop rdx, ret -
         memcpy(*new_elf_buffer, elf_mmap, elf_size);
         memcpy(*new_elf_buffer + avalaible_offset, stage3_buffer, stage3_fd_size);
         free(stage3_buffer);
-        ndx_ph = elf_get_program_ndx_from_addr((void *)&ehdr, class, phnum, avalaible_vaddr);
+        ndx_ph = elf_get_program_ndx_from_addr((void *)&ehdr, class, phnum, avalaible_vaddr - 1);//Cause if i use avalaible addr is out by one byte of the vaddr of the phdr i want to get
         if (ndx_ph >= phnum)
   	  return (5);
         ehdr_struct_size = elf_get_struct_size_elf_header(elf_mmap);
@@ -1531,7 +1535,7 @@ Add to a compress file syscall, pop rdx, ret -
       return (5);
     // Modify need data
 
-    avalaible_vaddr = 0;// TODO del when is tested that work fine.
+    /* avalaible_vaddr = 0;// TODO del when is tested that work fine. */
     size_t offset_mod_stage2[] = {0x38, 0x9D};
     uint32_t tmp_val_stage2[] = {elf_size, avalaible_vaddr};
     uint64_t i = 0;
@@ -2034,39 +2038,102 @@ Add to a compress file syscall, pop rdx, ret -
   /* { */
   /*   t_elf_h ehdr = (t_elf_h) {.elf32 = ptr}; */
   /*   t_elf_ph phdr = (t_elf_ph) {.elf32 = ptr + elf_get_elfh_phof(&ehdr)}; */
+  /*   uint64_t ndx_phdr = 0; */
+  /*   uint64_t phnum = ehdr->e_phnum; */
+  /*   while (ndx_phdr < phnum && phdr->p_type != PT_DINAMIC) */
+  /*       ndx_phdr++; */
+  /*   if (ndx_phdr == phnum) */
+  /*     return (0); */
   /*   uint64_t dyn_offset = elf_get_program_header_offset(phdr, class); */
   /*   uint64_t dyn_size = elf_get_section_header_size(shdr, class); */
   /*   uint64_t dyn_entsize = elf_get_struct_size_elf_dyn(class); */
               
-  /*   /\* t_elf_dyn dyn_cp = {.elf32=malloc(dyn_entsize)}; *\/ */
-  /*   /\* if  (!dyn_cp.elf32) *\/ */
-  /*     /\* return (2); *\/ */
-  /*   // Read the dynamic section data */
   /*   void *dynamic_data = (void *)((char *)ehdr->elf32 + dyn_offset); */
   /*   uint64_t entry_count = dyn_size / dyn_entsize; */
-  /*   printf("entry_count %lu\n", entry_count); */
-  /*   printf("dyn_entsize %lu\n", dyn_entsize); */
+  /*   /\* printf("entry_count %lu\n", entry_count); *\/ */
+  /*   /\* printf("dyn_entsize %lu\n", dyn_entsize); *\/ */
   /*   // Update entries that point to shifted addresses */
   /*   uint64_t ndx_dyn = 0; */
   /*   uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class); */
   /*   uint64_t offset; */
-
-
+    /* while (ndx_dyn < entry_count) */
+    /*   { */
+    /*     t_elf_dyn dyn = elf_get_dyn(dynamic_data, class, ndx_dyn); */
+    /*     uint64_t d_tag = elf_get_dyn_tag(&dyn, class); */
+                  
+    /*     // Check if this entry contains a virtual address that needs updating */
+    /*     switch(d_tag) { */
+    /*     case DT_INIT: */
+    /*     case DT_FINI: */
+    /*     case DT_INIT_ARRAY: */
+    /*     case DT_FINI_ARRAY: */
+    /*     case DT_HASH: */
+    /*     case DT_GNU_HASH: */
+    /*     case DT_STRTAB: */
+    /*     case DT_SYMTAB: */
+    /*     case DT_PLTGOT: */
+    /*     case DT_JMPREL: */
+    /*     case DT_RELA: */
+    /*     case DT_VERNEED: */
+    /*     case DT_REL: */
+    /*     case DT_VERSYM: */
+    /* 	uint64_t d_val = elf_get_dyn_val(&dyn, class); */
+    /* 	elf_set_dyn_val(&dyn_cp, d_val + aslr, class); */
+    /*     default: */
+    /* 	ndx_dyn++; */
+    /*     } */
+    /*   } */
+  /*     return 0; */
+  /* } */
+  /* int write_dyn(void *ptr, uint64_t aslr) */
+  /* { */
+  /*   if (!aslr) */
+  /*     return (0); */
+  /*   Elf64_Ehdr *ehdr = (Elf64_Ehdr *)ptr; */
+  /*   Elf64_Phdr *phdrs = (Elf64_Phdr *)((char *)ptr + ehdr->e_phoff); */
+  /*   Elf64_Phdr *dyn_phdr = NULL; */
+  /*   int i = 0; */
+  /*   while (i < ehdr->e_phnum) { */
+  /*     if (phdrs[i].p_type == PT_DYNAMIC) { */
+  /*       dyn_phdr = &phdrs[i]; */
+  /*       break; */
+  /*     } */
+  /*     i++; */
+  /*   } */
+  /*   if (!dyn_phdr) */
+  /*     return (0); // No se encontró el segmento dinámico */
+      
+  /*   // Obtener la sección dinámica */
+  /*   Elf64_Dyn *dynamic_section = (Elf64_Dyn *)((char *)ptr + dyn_phdr->p_offset); */
+  /*   uint64_t entry_count = dyn_phdr->p_filesz / sizeof(Elf64_Dyn); */
+  /*   int ndx_dyn = 0; */
   /*   while (ndx_dyn < entry_count) */
   /*     { */
-  /*       t_elf_dyn dyn = elf_get_dyn(dynamic_data, class, ndx_dyn); */
-  /*       uint64_t d_tag = elf_get_dyn_tag(&dyn, class); */
+  /*       Elf64_Dyn *dyn = &dynamic_section[i]; */
+  /*       uint64_t d_tag = dyn->d_tag; */
                   
   /*       // Check if this entry contains a virtual address that needs updating */
-  /*       if (elf_is_addres_type_entry(d_tag)) */
-  /* 	{ */
-  /* 	  uint64_t d_val = elf_get_dyn_val(&dyn, class); */
-  /* 	  elf_set_dyn_val(&dyn_cp, d_val + aslr, class); */
-  /* 	} */
-  /*       *writed += dyn_entsize; */
-  /*       ndx_dyn++; */
-  /*     } */
-  /*     return 0; */
+  /*       switch(d_tag) { */
+  /*       case DT_INIT: */
+  /*       case DT_FINI: */
+  /*       case DT_INIT_ARRAY: */
+  /*       case DT_FINI_ARRAY: */
+  /*       case DT_HASH: */
+  /*       case DT_GNU_HASH: */
+  /*       case DT_STRTAB: */
+  /*       case DT_SYMTAB: */
+  /*       case DT_PLTGOT: */
+  /*       case DT_JMPREL: */
+  /*       case DT_RELA: */
+  /*       case DT_VERNEED: */
+  /*       case DT_REL: */
+  /*       case DT_VERSYM: */
+  /* 	dyn->d_un.d_val += aslr; */
+  /*       default: */
+  /* 	ndx_dyn++; */
+  /*       } */
+  /*     }  */
+  /*   return (0); */
   /* } */
 
   int generated_packed_file(void *elf_mmap, size_t file_size, void *generated_bytecode, size_t payload_size, int packed)
@@ -2420,12 +2487,13 @@ CLOSED: [2025-09-29 Mon 11:58]
       - Mmap with the fd
     - jmp to stage3
   - Stage 3 contains:
-    - "syscall, xor edx, edx, ret" -> unmap stage2, rdx = 0 and  jmp to entrypoint elf/interp.
+    - "syscall, pop rdx, ret" -> unmap stage2, rdx = 0 and  jmp to entrypoint elf/interp.
      
       
 
 
-***** TODO clean stages.
+***** DONE clean stages.
+CLOSED: [2025-10-14 Tue 07:16]
 ***** DONE jmp to the elf file | interp.
 CLOSED: [2025-09-29 Mon 11:58]
 
@@ -2694,15 +2762,15 @@ CLOSED: [2025-09-29 Mon 11:58]
   	.return_ehdr_ptr:;[rsp] ehdr_ptr size_s2, size_s2_elf, vaddr s2
   	pop rdi		; ehdr_ptr [rsp] size_s2_elf, vaddr_s2_elf
   	push rdi	; ;[rsp] ehdr_ptr size_s2, vaddr s2
-  	push 0x2013a ; ;[rsp] elf_size ehdr_ptr size_s2, vaddr s2
-  	pop rsi		; ;[rsp] ehdr_ptr size_s2, vaddr s2
+  	push 0x2013a ; ;[rsp] elf_size ehdr_ptr size_s2, vaddr s2 ; Unused
+  	pop rsi		; ;[rsp] ehdr_ptr, vaddr s2; Overwrited
   	pop rbx 	;ehdr_ptr [rsp] size_s2, vaddr s2
 
   	.get_base:
   	sub    rsp, 0x10                 ; Allocate stack space
   	
   				; Get program header information
-  	movzx  esi, WORD [rdi+0x38] ; esi = e_phnum
+  	movzx  esi, WORD [rdi+0x38] ; esi = e_phnum; Overwrite elf_size
   	add    rdi, QWORD [rdi+0x20] ; rdi = e_phoff
   	lea    rdx, [rsp]          ; rdx = stack space for result min
   	lea    rcx, [rsp+0x8]          ; rcx = stack space for result max
@@ -2716,7 +2784,7 @@ CLOSED: [2025-09-29 Mon 11:58]
   	pop rsi			;rsi aslr_offset
   	push -1
   	pop rcx			;rcx fd
-  	call load_elf_generic	;TODO Something here isn't loading correctly the data in 2nd phdr...
+  	call load_elf_generic	
   	cmp rax, -1		;rax entrypoint
   	je _exit
   	add rsp, 0x10		;restore rsp
@@ -2734,16 +2802,20 @@ CLOSED: [2025-09-29 Mon 11:58]
   	push rdi
   	pop r12			;base interp
   	;; This should 
-  	lea rdi, [rsp + 0x10]
+  	lea rdi, [rsp + 0x10]	;[rsp] size_s2, vaddr s2
   	;; push rsp		;mmap elf
   	;; pop rdi
   	call set_auxv
-  	push 0x402013a		;vaddr stage3
+  	push 0x402013a		;vaddr s3
   	pop r14
-  	push r14
+  	test r14, r14		;if vaddr s3
+  	lea rsi, [r14 + r15]	;vaddr s3 + aslr
+  	cmovne r14, rsi		;vaddr s3 = vaddr s3 + aslr
+  	push r14		;[rsp] vaddr_s3[+ aslr], size_s2, vaddr s2
   	test r14, r14
   	jne .woody_payload
-  	pop r14
+  	pop r14		;vaddr_s3 [rsp]size_s2, vaddr s2
+
   	.create_stage3:
   	push 0x22		;MAP_PRIVATE | MAP_ANONYMOUS
   	pop r10			; flags
@@ -2760,12 +2832,12 @@ CLOSED: [2025-09-29 Mon 11:58]
   	push r11
   	syscall
   	cmp rax, 0
-  	pop r11
+  	pop r11			;;entrypoint interp
   	jb _exit
   	push 0x4		     ; size of stage3
   	pop rcx			     ; N times
   	push rcx			     ; N times
-  	push rax		;[rsp]vaddr s3, size_s2, vaddr s2
+  	push rax		;[rsp]vaddr s3, size s3, size_s2, vaddr s2
   	xchg    rdi, rax             ; rdi = destination mmap
   	call .bytecode_stage3
   	syscall			;call munmap s2
@@ -2784,9 +2856,10 @@ CLOSED: [2025-09-29 Mon 11:58]
   	push 0xa		;mprotect
   	pop rax
   	push rdi		;[rsp]vaddr_s3 size_s2, vaddr s2
-  	push r11
+  	push r11		;[rsp]interp_vaddr, vaddr_s3, size, vaddr s2
   	syscall
-  	pop r11
+  	pop r11			;interp_vaddr[rsp] vaddr_s3, size, vaddr s2
+
   	
   	.woody_payload:
   	call .woody_write		; Woody Payload.
@@ -2814,7 +2887,7 @@ CLOSED: [2025-09-29 Mon 11:58]
   	pop rax
   	push r11
           syscall
-  	pop r11;[rsp]vaddr, size s3 size_s2, vaddr s2
+  	pop r11;entrypoint interp [rsp]vaddr, size s3 size_s2, vaddr s2
 
   	.jmp_entry_for_stage3:
   	pop r14		;vaddr s3 [rsp]size_s2, vaddr s2
@@ -2823,8 +2896,8 @@ CLOSED: [2025-09-29 Mon 11:58]
 
   	.jmp_stage3:
   	pop rsi			;size_s2 [rsp]  vaddr_s2
-  	pop rdi			;vaddr_s1 [rsp]
-  	push 0xb
+  	pop rdi			;vaddr_s2 [rsp]
+  	push 0xb		;mummap
   	pop rax
   	push r13		;[rsp]vaddr entrypoint that go jmp from stage3
   	push 0		;[rsp] reset rdx,vaddr entrypoint that go jmp from stage3
@@ -3115,99 +3188,293 @@ CLOSED: [2025-09-29 Mon 11:58]
   ; uint64_t load_elf_generic(void *ptr, uint64_t aslr_offset, uint64_t target_vaddr, int fd)
   ; rdi = ptr, rsi = aslr_offset, rdx = target_vaddr, ecx = fd
 
+  ;; load_elf_generic:
+  ;;     push   r15
+  ;;     mov    r8, rsi              ; r8 = aslr_offset
+  ;;     mov    r10, rdx             ; r10 = target_vaddr
+  ;;     push   r14
+  ;;     mov    r14d, ecx            ; r14d = fd
+  ;;     push   r13
+  ;;     push   r12
+  ;;     push   rbp
+  ;;     mov    rbp, rdi             ; rbp = ptr
+  ;;     push   rbx
+  ;;     sub    rsp, 0x18            ; Allocate stack space
+
+  ;;     ; Load ELF program header pointer and count
+  ;;     mov    r12, QWORD  [rdi+0x20]  ; r12 = ptr->e_phoff (program header offset)
+  ;;     movzx  esi, WORD  [rdi+0x38]   ; esi = ptr->e_phnum (number of program headers)
+  ;;     lea    rcx, [rsp+0x8]       ; rcx = pointer to stack space for result
+  ;;     mov    rdx, rsp             ; rdx = pointer to stack space for result
+  ;;     add    r12, rdi             ; r12 = ptr + e_phoff (actual program header address)
+  ;;     mov    rdi, r12             ; rdi = program header address
+  ;;     call   calculate_elf_memory_range  ; Call helper function
+
+  ;;     ; Get results from stack
+  ;;     mov    r13, QWORD  [rsp]       ; r13 = minimum virtual address
+  ;;     mov    rsi, QWORD  [rsp+0x8]   ; rsi = maximum virtual address
+  ;;     mov    ecx, 0x22                  ; ecx = flags for mmap
+
+  ;;     ; Check if target_vaddr is zero
+  ;;     sub    rsi, r13             ; rsi = size (max - min)
+  ;;     test   r10, r10             ; Test target_vaddr
+  ;;     je     .use_min_addr        ; If zero, use calculated min address
+
+  ;;     ; Add ASLR offset to target address
+  ;;     add    r10, r8              ; r10 = target_vaddr + aslr_offset
+  ;;     mov    ecx, 0x32            ; ecx = different flags for mmap
+
+  ;; .use_min_addr:
+  ;;     xor    r9d, r9d             ; r9d = 0 PROT_NONE
+  ;;     mov    r8d, 0xffffffff      ; r8d = -1 (MAP_ANONYMOUS flag)
+  ;;     xor    edx, edx             ; edx = 0 (offset)
+  ;;     mov    rdi, r10             ; rdi = target address
+  ;; 	mov r10, rcx		; flags mmap
+  ;; 	push 0x9
+  ;; 	pop rax
+  ;; 	syscall
+
+  ;;     xor    r15d, r15d           ; r15d = 0 (counter)
+  ;;     mov    rbx, rax             ; rbx = result of mmap
+  ;;     cmp    rax, 0xffffffffffffffff  ; Check for mmap error
+  ;;     jne    .check_phdr_count    ; If no error, continue
+
+  ;;     ; Handle mmap error
+  ;;     mov    rax, 0xffffffffffffffff  ; Return error
+  ;;     jmp    .cleanup_and_return  ; Jump to cleanup
+
+  ;; .load_segment_loop:
+  ;;     ; Prepare arguments for load_elf_segment call
+  ;;     mov    r8d, r14d            ; r8d = fd
+  ;;     mov    rcx, r13             ; rcx = base address (min_vaddr)
+  ;;     mov    rdx, r12             ; rdx = current program header
+  ;;     mov    rsi, rbp             ; rsi = elf_ptr
+  ;;     mov    rdi, rbx             ; rdi = mapping address
+  ;;     call   load_elf_segment     ; Call load_elf_segment
+      
+  ;;     inc    eax                  ; Increment result
+  ;;     je     .mmap_error          ; If error, jump to error handler
+      
+  ;;     add    r12, 0x38            ; Advance to next program header (56 bytes)
+  ;;     inc    r15d                 ; Increment counter
+
+  ;; .check_phdr_count:
+  ;;     movzx  eax, WORD  [rbp+0x38]  ; eax = e_phnum
+  ;;     cmp    eax, r15d            ; Compare with counter
+  ;;     jg     .load_segment_loop   ; If more headers, continue loop
+
+  ;;     ; Success path
+  ;;     mov    rax, rbx             ; rax = mapping address
+  ;;     sub    rax, r13             ; rax = mapping_address - min_vaddr
+  ;;     add    rax, QWORD  [rbp+0x18]  ; rax = adjusted + entry point
+
+  ;; .cleanup_and_return:
+  ;;     add    rsp, 0x18            ; Deallocate stack space
+  ;;     pop    rbx                  ; Restore registers
+  ;;     pop    rbp
+  ;;     pop    r12
+  ;;     pop    r13
+  ;;     pop    r14
+  ;;     pop    r15
+  ;;     ret                        ; Return
+
+  ;; .mmap_error:
+  ;;     mov    rax, 0xffffffffffffffff  ; Return error
+  ;;     jmp    .cleanup_and_return  ; Jump to cleanup
+  ; uint64_t load_elf_generic(void *ptr, uint64_t aslr_offset, uint64_t target_vaddr, int fd)
+  ; rdi = ptr, rsi = aslr_offset, rdx = target_vaddr, ecx = fd
   load_elf_generic:
+      ; Save callee-saved registers
       push   r15
-      mov    r8, rsi              ; r8 = aslr_offset
-      mov    r10, rdx             ; r10 = target_vaddr
+      mov    r15, rsi              ; r15 = aslr_offset
       push   r14
-      mov    r14d, ecx            ; r14d = fd
       push   r13
       push   r12
+      mov    r12, rdi              ; r12 = ptr
       push   rbp
-      mov    rbp, rdi             ; rbp = ptr
+      mov    rbp, rdx              ; rbp = target_vaddr
       push   rbx
-      sub    rsp, 0x18            ; Allocate stack space
+      sub    rsp, 0x28             ; Allocate stack space
+      
+      ; Load ELF program header information
+      mov    r13, QWORD  [rdi+0x20]  ; r13 = e_phoff
+      movzx  esi, WORD  [rdi+0x38]   ; esi = e_phnum
+      mov    DWORD  [rsp+0x8], ecx   ; Save fd on stack
+      lea    rdx, [rsp+0x10]       ; rdx = pointer to stack for min_vaddr result
+      lea    rcx, [rsp+0x18]       ; rcx = pointer to stack for max_vaddr result
+      add    r13, rdi              ; r13 = ptr + e_phoff (actual program header address)
+      mov    rdi, r13              ; rdi = program header address
+      call   calculate_elf_memory_range  ; Call helper function to get memory range
+      
+      ; Load results from stack
+      mov    r14, QWORD  [rsp+0x10]  ; r14 = min_vaddr
+      mov    rsi, QWORD  [rsp+0x18]  ; rsi = max_vaddr
 
-      ; Load ELF program header pointer and count
-      mov    r12, QWORD  [rdi+0x20]  ; r12 = ptr->e_phoff (program header offset)
-      movzx  esi, WORD  [rdi+0x38]   ; esi = ptr->e_phnum (number of program headers)
-      lea    rcx, [rsp+0x8]       ; rcx = pointer to stack space for result
-      mov    rdx, rsp             ; rdx = pointer to stack space for result
-      add    r12, rdi             ; r12 = ptr + e_phoff (actual program header address)
-      mov    rdi, r12             ; rdi = program header address
-      call   calculate_elf_memory_range  ; Call helper function
-
-      ; Get results from stack
-      mov    r13, QWORD  [rsp]       ; r13 = minimum virtual address
-      mov    rsi, QWORD  [rsp+0x8]   ; rsi = maximum virtual address
-      mov    ecx, 0x22                  ; ecx = flags for mmap
-
-      ; Check if target_vaddr is zero
-      sub    rsi, r13             ; rsi = size (max - min)
-      test   r10, r10             ; Test target_vaddr
-      je     .use_min_addr        ; If zero, use calculated min address
-
-      ; Add ASLR offset to target address
-      add    r10, r8              ; r10 = target_vaddr + aslr_offset
-      mov    ecx, 0x32            ; ecx = different flags for mmap
-
+  ; Calculate memory size and check target_vaddr
+      sub    rsi, r14              ; rsi = max_vaddr - min_vaddr (total size)
+      mov r10d, DWORD [rsp + 0x8]
+      cmp   r10d, -1              ; Test target_vaddr
+      mov    r10, 0x22             ; ecx = MAP_PRIVATE | MAP_FIXED
+      jne     .use_min_addr         ; If zero, use calculated min_vaddr
+      add    rbp, r15              ; rbp = target_vaddr + aslr_offset
+      mov    r10, 0x32             ; ecx = MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS
+      
   .use_min_addr:
-      xor    r9d, r9d             ; r9d = 0 PROT_NONE
-      mov    r8d, 0xffffffff      ; r8d = -1 (MAP_ANONYMOUS flag)
-      xor    edx, edx             ; edx = 0 (offset)
-      mov    rdi, r10             ; rdi = target address
-  	mov r10, rcx		; flags mmap
-  	push 0x9
+      ; Setup mmap parameters
+      xor    r9d, r9d              ; r9d = 0 (file offset)
+      mov    r8d, 0xffffffff        ; r8d = -1 (MAP_ANONYMOUS)
+      xor    edx, edx              ; edx = 0 (PROT_NONE initially)
+      mov    rdi, rbp              ; rdi = target address
+  	push 0x9		 ;mmap nbr
   	pop rax
   	syscall
-
-      xor    r15d, r15d           ; r15d = 0 (counter)
-      mov    rbx, rax             ; rbx = result of mmap
+      
+      ; Initialize loop variables
+      xor    r9d, r9d              ; r9d = 0 (counter)
+      mov    rbx, rax              ; rbx = result of mmap
       cmp    rax, 0xffffffffffffffff  ; Check for mmap error
-      jne    .check_phdr_count    ; If no error, continue
-
+      jne    .process_segments     ; If no error, process segments
+      
       ; Handle mmap error
       mov    rax, 0xffffffffffffffff  ; Return error
-      jmp    .cleanup_and_return  ; Jump to cleanup
+      jmp    .cleanup_and_return   ; Jump to cleanup
 
   .load_segment_loop:
-      ; Prepare arguments for load_elf_segment call
-      mov    r8d, r14d            ; r8d = fd
-      mov    rcx, r13             ; rcx = base address (min_vaddr)
-      mov    rdx, r12             ; rdx = current program header
-      mov    rsi, rbp             ; rsi = elf_ptr
-      mov    rdi, rbx             ; rdi = mapping address
-      call   load_elf_segment     ; Call load_elf_segment
+      ; Prepare arguments for load_elf_segment
+      mov    r8d, DWORD  [rsp+0x8]  ; r8d = fd
+      mov    rcx, r14              ; rcx = min_vaddr
+      mov    rdx, r13              ; rdx = current program header
+      mov    rsi, r12              ; rsi = ptr
+      mov    rdi, rbx              ; rdi = mapping address
+      mov    DWORD  [rsp+0xc], r9d  ; Save counter on stack
+      call   load_elf_segment      ; Call load_elf_segment
       
-      inc    eax                  ; Increment result
-      je     .mmap_error          ; If error, jump to error handler
+      ; Check for error
+      inc    eax                   ; Increment result
+      je     .mmap_error           ; If error, jump to error handler
       
-      add    r12, 0x38            ; Advance to next program header (56 bytes)
-      inc    r15d                 ; Increment counter
+      ; Move to next program header and increment counter
+      mov    r9d, DWORD  [rsp+0xc]  ; Load counter
+      add    r13, 0x38             ; Advance to next program header
+      inc    r9d                   ; Increment counter
 
-  .check_phdr_count:
-      movzx  eax, WORD  [rbp+0x38]  ; eax = e_phnum
-      cmp    eax, r15d            ; Compare with counter
-      jg     .load_segment_loop   ; If more headers, continue loop
+  .process_segments:
+      ; Check if all segments are processed
+      movzx  eax, WORD  [r12+0x38]  ; eax = e_phnum
+      cmp    eax, r9d              ; Compare with counter
+      jg     .load_segment_loop    ; If more segments, continue loop
+      
+      ; Check if we need to apply ASLR
+      test   rbp, rbp              ; Test target_vaddr
+      je     .skip_aslr_apply      ; If zero, skip ASLR application
+      test   r15, r15              ; Test aslr_offset
+      je     .skip_aslr_apply      ; If zero, skip ASLR application
+      
+      ; Apply ASLR to dynamic sections
+      mov    rsi, r15              ; rsi = aslr_offset
+      mov    rdi, rbx              ; rdi = mapping address
+      call   write_dyn             ; Call write_dyn to adjust dynamic addresses
 
-      ; Success path
-      mov    rax, rbx             ; rax = mapping address
-      sub    rax, r13             ; rax = mapping_address - min_vaddr
-      add    rax, QWORD  [rbp+0x18]  ; rax = adjusted + entry point
+  .skip_aslr_apply:
+      ; Calculate return value
+      mov    rax, rbx              ; rax = mapping address
+      sub    rax, r14              ; rax = mapping_address - min_vaddr
+      add    rax, QWORD  [r12+0x18]  ; rax = adjusted + entry point
 
   .cleanup_and_return:
-      add    rsp, 0x18            ; Deallocate stack space
-      pop    rbx                  ; Restore registers
-      pop    rbp
-      pop    r12
-      pop    r13
-      pop    r14
-      pop    r15
-      ret                        ; Return
+      ; Restore stack and registers
+      add    rsp, 0x28             ; Deallocate stack space
+  	push rbx
+  	pop rdi
+      pop    rbx                   ; Restore rbx
+      pop    rbp                   ; Restore rbp
+      pop    r12                   ; Restore r12
+      pop    r13                   ; Restore r13
+      pop    r14                   ; Restore r14
+      pop    r15                   ; Restore r15
+      ret                         ; Return
 
   .mmap_error:
+      ; Handle mmap error
       mov    rax, 0xffffffffffffffff  ; Return error
-      jmp    .cleanup_and_return  ; Jump to cleanup
+      jmp    .cleanup_and_return   ; Jump to cleanup
+  ; uint64_t write_dyn(void *ptr, uint64_t aslr_offset)
+  ; rdi = ptr mmap, rsi = aslr_offset
+  write_dyn:
+      ; Check if aslr_offset is zero
+      test   rsi, rsi              ; Test aslr_offset
+      je     .end_success          ; If zero, return success (rax=0 from xor)
+      
+      ; Load ELF header and program header information
+      mov    rdx, QWORD  [rdi+0x20]  ; rdx = e_phoff (program header offset)
+      movzx  ecx, WORD  [rdi+0x38]   ; ecx = e_phnum (number of program headers)
+      xor    eax, eax              ; eax = 0 (counter)
+      add    rdx, rdi              ; rdx = ptr + e_phoff (actual program header address)
+      
+  .loop_phdr:
+      ; Check if we've processed all program headers
+      cmp    eax, ecx              ; Compare counter with phnum
+      jge    .end_success          ; If >=, return success
+      
+      ; Check current program header type
+      cmp    DWORD  [rdx], 0x2  ; Compare p_type with PT_DYNAMIC (2)
+      je     .found_dynamic        ; If PT_DYNAMIC, process it
+      
+      ; Move to next program header
+      inc    eax                   ; Increment counter
+      add    rdx, 0x38             ; Advance 56 bytes to next phdr (size of Elf64_Phdr)
+      jmp    .loop_phdr            ; Continue loop
+
+  .found_dynamic:
+      ; Process PT_DYNAMIC segment
+      mov    rcx, QWORD  [rdx+0x20]  ; rcx = p_memsz (size of dynamic section)
+      cdqe                         ; Sign extend eax to rax (for shifting)
+      mov    r8d, 0x68230f8        ; r8d = bitmask for address-type dynamic tags
+      shl    rax, 0x4              ; rax = counter * 16 (for calculating final address)
+      add    rax, QWORD  [rdx+0x8]  ; rax = p_vaddr + (counter * 16)
+      xor    edx, edx              ; edx = 0 (inner loop counter)
+      add    rdi, rax              ; rdi = ptr + p_vaddr + (counter * 16) (dynamic section start)
+      shr    rcx, 0x4              ; rcx = p_memsz / 16 (number of dynamic entries)
+      
+  .inner_loop:
+      ; Check if inner loop is done
+      cmp    edx, ecx              ; Compare inner counter with entry count
+      je     .end_success          ; If done, return success
+      
+      ; Load current dynamic entry
+      mov    rax, QWORD  [rdi]  ; rax = d_tag (dynamic tag)
+      
+      ; Check if it's a small tag that needs address adjustment
+      cmp    rax, 0x1a             ; Compare with DT_JMPREL (26)
+      jg     .check_large_tags     ; If > 26, check large tags
+      cmp    rax, 0x2              ; Compare with DT_NEEDED (2)
+      jle    .next_inner           ; If <= 2, skip (not an address)
+      bt     r8, rax               ; Check if bit corresponding to tag is set
+      jb     .adjust_address       ; If bit is set, adjust address
+      jmp    .next_inner           ; Otherwise, continue to next entry
+
+  .check_large_tags:
+      ; Check specific large tags that need address adjustment
+      cmp    rax, 0x6ffffff0       ; Compare with DT_LOPROC special tag
+      je     .adjust_address       ; If equal, adjust address
+      cmp    rax, 0x6ffffffe       ; Compare with DT_VERNEED special tag
+      je     .adjust_address       ; If equal, adjust address
+      cmp    rax, 0x6ffffef5       ; Compare with DT_ADDRRNGHI special tag
+      jne    .next_inner           ; If not equal, continue to next entry
+      
+  .adjust_address:
+      ; Add aslr_offset to dynamic entry value
+      add    QWORD  [rdi+0x8], rsi  ; d_val += aslr_offset
+
+  .next_inner:
+      ; Continue inner loop
+      inc    edx                   ; Increment inner counter
+      jmp    .inner_loop           ; Continue inner loop
+
+  .end_success:
+      xor    eax, eax              ; Return 0 (success)
+      ret                          ; Return
+
 
   get_at_interp_x64:
   	push   rbp
@@ -3413,9 +3680,8 @@ open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the 
       if (phdr->p_memsz > phdr->p_filesz)
         {
   	// La dirección virtual donde comienza .bss dentro del segmento
-  	void * offset_bss_start = (page_vaddr - phdr->p_vaddr + phdr->p_filesz);
-  	void * offset_bss_start_align = (offset_bss_start_align + PAGE_SIZE - 1) & ~(PAGE_SIZE -1);
-  	void * vaddr_bss_start_in_segment_align = result + ((offset_bss_start + PAGE_SIZE - 1) & ~(PAGE_SIZE -1));
+  	uint64_t offset_bss_start = page_vaddr - phdr->p_vaddr + phdr->p_filesz;
+  	uint64_t offset_bss_start_align = ((uint64_t)(offset_bss_start_align + PAGE_SIZE - 1)) & ~(PAGE_SIZE -1);
 
   	/* if (!(phdr->p_flags & PF_W)) */
   	  /* { */
@@ -3435,10 +3701,11 @@ open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the 
   	      /* return (-1); */
   	  /* } */
 
-  	void *offset_bss_end = phdr->p_offset - page_offset + phdr->p_memsz;
-  	void *vaddr_bss_end = result + phdr->p_offset - page_offset + phdr->p_memsz;
-  	if (offset_bss_end > offset_bss_end)
+  	uint64_t offset_bss_end = phdr->p_offset - page_offset + phdr->p_memsz;
+  	if (offset_bss_end > offset_bss_start_align)
   	  {
+  	void * vaddr_bss_start_in_segment_align = result + offset_bss_start_align;
+  	void *vaddr_bss_end = result + offset_bss_end;
   	    uint64_t total_bss_map_size = (vaddr_bss_end - vaddr_bss_start_in_segment_align + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
   	    void *bss_result = mmap(vaddr_bss_start_in_segment_align, total_bss_map_size, prot, 
@@ -3449,6 +3716,10 @@ open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the 
         }
       return 0;
   }
+
+  int write_dyn(void *ptr, uint64_t aslr);
+
+
 
   // Generic ELF unpacking function that works for both main ELF and interpreter
   uint64_t load_elf_generic(void *ptr, uint64_t aslr_offset, uint64_t target_vaddr, int fd)
@@ -3481,11 +3752,63 @@ open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the 
           if (load_elf_segment(base_addr, ptr, &elf_ph[i], min_vaddr, fd) < 0)
               return (uint64_t)-1;
       }
+      if (target_vaddr && aslr_offset)
+  	write_dyn(base_addr, aslr_offset);
       
       uint64_t entrypoint = (uint64_t)base_addr + (elf->e_entry - min_vaddr);
       return entrypoint;
   }
 
+  int write_dyn(void *ptr, uint64_t aslr)
+  {
+    if (!aslr)
+      return (0);
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr *)ptr;
+    Elf64_Phdr *phdrs = (Elf64_Phdr *)((char *)ptr + ehdr->e_phoff);
+    Elf64_Phdr *dyn_phdr = NULL;
+    int i = 0;
+    while (i < ehdr->e_phnum) {
+      if (phdrs[i].p_type == PT_DYNAMIC) {
+        dyn_phdr = &phdrs[i];
+        break;
+      }
+      i++;
+    }
+    if (!dyn_phdr)
+      return (0); // No se encontró el segmento dinámico
+      
+    // Obtener la sección dinámica
+    Elf64_Dyn *dynamic_section = (Elf64_Dyn *)((char *)ptr + dyn_phdr->p_offset);
+    uint64_t entry_count = dyn_phdr->p_filesz / sizeof(Elf64_Dyn);
+    int ndx_dyn = 0;
+    while (ndx_dyn < entry_count)
+      {
+        Elf64_Dyn *dyn = &dynamic_section[i];
+        uint64_t d_tag = dyn->d_tag;
+                  
+        // Check if this entry contains a virtual address that needs updating
+        switch(d_tag) {
+        case DT_INIT:
+        case DT_FINI:
+        case DT_INIT_ARRAY:
+        case DT_FINI_ARRAY:
+        case DT_HASH:
+        case DT_GNU_HASH:
+        case DT_STRTAB:
+        case DT_SYMTAB:
+        case DT_PLTGOT:
+        case DT_JMPREL:
+        case DT_RELA:
+        case DT_VERNEED:
+        case DT_REL:
+        case DT_VERSYM:
+  	dyn->d_un.d_val += aslr;
+        default:
+  	ndx_dyn++;
+        }
+      } 
+    return (0);
+  }
 
   uint64_t get_at_phdr_x64(void *ptr)
   {
@@ -3593,85 +3916,15 @@ open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the 
 
 *** DONE Packed_file.
 CLOSED: [2025-09-08 Mon 07:03]
-** TODO Fix Linker is crashing.
+** DONE Fix Linker is crashing.
+CLOSED: [2025-10-14 Tue 07:17]
 *** May is Dyn is all Zeroed?.
-** NEXT Update Dyn entry when aslr or always for less branching.
+** DONE Update Dyn entry when aslr or always for less branching.
+CLOSED: [2025-10-14 Tue 13:26]
+** DONE Fix ASLR segfault
+CLOSED: [2025-10-14 Tue 14:59]
+*** DONE Stage1 
+CLOSED: [2025-10-14 Tue 13:30]
+*** DONE Stage2
+CLOSED: [2025-10-14 Tue 14:59]
 ** PLAN Add a new var for try to don't need to search much in the previous code.
-; int load_elf_segment(void *base, void *elf_ptr, Elf64_Phdr *phdr, uint64_t min_vaddr, int fd)
-; rdi = base, rsi = elf_ptr, rdx = phdr, rcx = min_vaddr, r8d = fd
-
-load_elf_segment:
-    ; Check if segment type is PT_LOAD (1)
-    cmp    DWORD PTR [rdx], 0x1      ; Compare p_type with PT_LOAD (1)
-    jne    .not_load_segment         ; If not PT_LOAD, exit with 0
-
-    ; Save caller-saved registers
-    push   r15
-    mov    r9, rcx                  ; r9 = min_vaddr
-    push   r14
-    push   r13
-    push   r12
-    push   rbp
-    push   rbx
-    sub    rsp, 0x18                ; Allocate stack space
-
-    ; Extract segment information
-    mov    ebp, DWORD PTR [rdx+0x4]   ; ebp = p_flags
-    mov    r13, QWORD PTR [rdx+0x8]  ; r13 = p_offset
-    mov    r12, QWORD PTR [rdx+0x10] ; r12 = p_vaddr
-    mov    eax, ebp                 ; eax = p_flags
-    mov    r15, r13                 ; r15 = p_offset (copy)
-    
-    ; Align vaddr and offset to page boundary
-    and    eax, 0x2                 ; Test PF_W flag (bit 1)
-    and    r15, 0xfffffffffffff000   ; Align p_offset to page boundary
-    and    r12, 0xfffffffffffff000   ; Align p_vaddr to page boundary
-    cmp    eax, 0x1                 ; Compare PF_W flag with 1
-    sbb    eax, eax                 ; Set eax to 0xffffffff if PF_W is set, 0 otherwise
-    add    r13, QWORD PTR [rdx+0x20] ; r13 = p_offset + p_memsz
-    and    eax, 0xfffffffe          ; Mask eax (0xfffffffe if PF_W, 0 otherwise)
-    add    eax, 0x3                 ; eax = 3 (MAP_FIXED | MAP_PRIVATE) or 1 (MAP_FIXED)
-    
-    ; Check if fd == -1
-    cmp    r8d, 0xffffffff           ; Check if fd == -1
-    je     .fd_is_negative_one       ; Jump if fd == -1
-    
-    ; fd != -1 case
-    and    ebp, 0x1                 ; Test PF_X flag (bit 0)
-    mov    ecx, 0x12                ; ecx = 0x12 (MAP_PRIVATE)
-    shl    ebp, 0x2                 ; Shift PF_X flag left by 2 (becomes PROT_EXEC if set)
-    or     ebp, eax                 ; Combine flags
-    jmp    .setup_mmap_params        ; Jump to setup mmap parameters
-
-.fd_is_negative_one:
-    ; fd == -1 case
-    mov    ecx, 0x32                ; ecx = 0x32 (MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS)
-    mov    ebp, 0x3                 ; ebp = 0x3 (PROT_READ | PROT_WRITE)
-
-.setup_mmap_params:
-    ; Setup mmap parameters
-    mov    rax, r12                 ; rax = aligned p_vaddr
-    sub    r13, r15                 ; r13 = (p_offset + p_memsz) - aligned p_offset
-    mov    QWORD PTR [rsp], rsi     ; Save elf_ptr on stack
-    mov    rbx, rdx                 ; rbx = phdr
-    sub    rax, r9                  ; rax = aligned p_vaddr - min_vaddr
-    mov    edx, ebp                 ; edx = combined flags/protection
-    mov    r9, r15                  ; r9 = aligned p_offset
-    mov    rsi, r13                 ; rsi = size
-    lea    r14, [rdi+rax*1]         ; r14 = base + (aligned p_vaddr - min_vaddr)
-    mov    DWORD PTR [rsp+0xc], r8d ; Save fd on stack
-    mov    rdi, r14                 ; rdi = mapping address
-    call   mmap                     ; Call mmap syscall
-    mov    rdx, rax                 ; rdx = result of mmap
-    mov    eax, 0xffffffff          ; Set eax to -1
-    cmp    rdx, 0xffffffffffffffff  ; Check if mmap failed
-    je     .mmap_failed             ; Jump if mmap failed
-    
-    ; Check fd value
-    cmp    DWORD PTR [rsp+0xc], 0xffffffff ; Check if fd == -1
-    jne    .fd_not_negative_one     ; Jump if fd != -1
-    
-    ; fd == -1: Copy data from ELF buffer to mapped memory
-    mov    rsi, QWORD PTR [rsp]     ; rsi = elf_ptr
-    mov    rcx, QWORD PTR [rbx+0x20] ; rcx = p_memsz
-    ret                            ; Return
