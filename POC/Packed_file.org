@@ -3464,8 +3464,14 @@ s2 x 86 {mmap fd, close fd, munmmap vaddr, len, }
   	int 0x80
   	test eax, eax
     	jnz _exit
+  .aslr:
+  .vaddr_s1:
+  .len_s1:
+
+
   .init_open_s1:
   	call .open
+  ._proc_self_exe:
   	times 13 ret
   .open:
   	pop ebx
@@ -3475,6 +3481,7 @@ s2 x 86 {mmap fd, close fd, munmmap vaddr, len, }
   	int 0x80
   	test eax, eax
   	js _exit
+
   	
   .jmp_stage_2:
   	;; push (vaddr) s2
@@ -3485,6 +3492,7 @@ s2 x 86 {mmap fd, close fd, munmmap vaddr, len, }
   	push 1
   	pop eax
   	int 0x80
+
   lz77_decompress:
       ; Function entry - validate input parameters
       ; rdi = in, rsi = in_size, rdx = out
@@ -3566,8 +3574,8 @@ s2 x 86 {mmap fd, close fd, munmmap vaddr, len, }
   	ret
 
   decrypt:
-  	push rsi
-  	pop rax
+  	push esi
+  	pop eax
   	ret
 
   end_of_stage1:
