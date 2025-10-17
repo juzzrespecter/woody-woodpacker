@@ -13,7 +13,7 @@ mmap_address = elf_address + random_address
 
 * SElinux
 Don't allow to got a mmap with Write and exec. First write then mprotect Read|EXEC
-* CLeaning mmap
+* Cleaning mmap
 Add to a compress file syscall, pop rdx, ret -
 *  Coding
 #+begin_src c :tangle srcs/elf/POC/check_packer.c
@@ -1602,21 +1602,21 @@ Add to a compress file syscall, pop rdx, ret -
         free(stage2_elf_compress_encrypt_header);
         return (5); 
       }
-    //Modify the entrypoint for math the aslr, size of stage1
-    size_t offset_mod[] = {0x9, 0x18, 0x4f, 0x69, 0x84};
+    size_t offset_mod[] = {0x8, 0x1d, 0x5e, 0x7f, 0x9e};
+    
     uint32_t prefix_size = elf_get_struct_size_elf_header((char *)ehdr.elf32) + elf_get_elfh_phentsize(&ehdr) * (2 + elf_is_gnu_stack_phdr((void *)&ehdr, class, phnum));
     uint32_t size_decrypt_buffer = stage2_elf_compress_encrypt_header_size;// Need to get somehow.
-    uint32_t tmp_val[] = {elf_get_highest_loadable_vaddr_avalaible((void *)&ehdr, class, phnum) + prefix_size + 5,
-  			stage1_fd_size + prefix_size + stage2_elf_compress_encrypt_header_size,// s1 size
-  			stage2_elf_buffer_size,// stage2_elf_buffer_size?
-  			size_decrypt_buffer,
-  			stage2_elf_compress_header_size};
+    t_type tmp_val[] = {(t_type){.b8=-(elf_get_highest_loadable_vaddr_avalaible((void *)&ehdr, class, phnum) + prefix_size + 5)},
+  		      (t_type){.b8=stage1_fd_size + prefix_size + stage2_elf_compress_encrypt_header_size},// s1 size
+  		      (t_type){.b8=stage2_elf_buffer_size},// stage2_elf_buffer_size?
+  		      (t_type){.b8=size_decrypt_buffer},
+  		      (t_type){.b8=stage2_elf_compress_header_size}};
 
     i = 0;
     while (i < sizeof(offset_mod) / sizeof(*offset_mod))
       {
-        /* printf("index = %ld, val = %x\n", i, tmp_val[i]); */
-        memcpy(stage1_buffer + offset_mod[i], &tmp_val[i], sizeof(*tmp_val));
+        printf("index = %ld, val = %lx, offset = %lx\n", i, tmp_val[i].b8, offset_mod[i]);
+        memcpy(stage1_buffer + offset_mod[i], &tmp_val[i].b8, (size_t)ft_ternary(ELFCLASS64 == class, (void *)sizeof(uint64_t), (void *)sizeof(uint32_t)));
         i++;
       }
     // Join the first stage with compress and encrypt stage2 + elf file
@@ -2501,213 +2501,201 @@ CLOSED: [2025-09-29 Mon 11:58]
 #+begin_src asm :tangle payload/x64/stage1.s
   global _start
 
-  ; === STAGE 1 ENTRY POINT ===
   _start:
-      call get_current_address        ; Position-independent code: get current RIP
-  get_current_address:
-      pop rax                         ; RAX = address of this instruction (0x05)
-      push rax                        ; Save address on stack [rsp] = return_address (get_current_address)
-      sub rax, 0xfffffffffffff000     ; Calculate ASLR base (align to page boundary)
-      xchg rax, r15                   ; R15 = ASLR base, RAX = get_current_address
-      pop rax                         ; Restore get_current_address [rsp] = return_address
-      and rax, 0xfffffffffffff000     ; Align to page boundary (get page start)
-      push rax                        ; [rsp] = page_start, [rsp+8] = return_address
-      push 0x500                      ; [rsp] = 0x500 (size), [rsp+8] = page_start, [rsp+16] = return_address
-      call open_proc_self_exe         ; Open /proc/self/exe
-  ; Padding
-      times 15 ret
+  .stage1:
+  .aslr_offset:
+    	call   $+5
+  	pop rax
+  	mov rsi, 0xfefffffffffff000	;
+    	lea r15, [rax + rsi]		; r15 aslr
+  .vaddr_stage1:
+  	and rax, 0xfffffffffffff000
+  	push rax			;[rsp] = (vaddr) s1
+  	mov rsi,  0xfefffffffffff000	; (len) s1
+  	push rsi			;[rsp] = (len, vaddr) s1
+  	call .open
+  .proc_self_exec:
+  	ret			;/
+  	ret			;p
+  	ret			;r
+  	ret			;o
+  	ret			;c
+  	ret			;/
+  	ret			;s
+  	ret			;e
+  	ret			;l
+  	ret			;f
+  	ret			;/
+  	ret			;x
+  	ret			;e
+  	ret			;e
+  	ret			;\0
+  .open:
+  	xor esi, esi
+  	pop rdi
+  	push 0x2
+  	pop rax
+  	syscall
+  	push rax		;[rsp] 
+  	test rax, rax
+  	js _exit
+  .mmap_stage_2:
+    	xor    r9d,r9d		;offset
+    	push -1			;
+    	pop    r8		;fd
+    	push 0x22		;anonymous | private
+    	pop r10			; MAP
+    	push 0x3		; RW
+    	pop rdx			; prot
+    	xor    edi,edi 		;Vaddr
+  	mov rsi, 0xfefffffffffff000	; (len) s2
+  	push rsi		;[rsp] (len) s2 (fd, len, vaddr) s1
+  	push 0x9
+  	pop rax
+  	syscall
+    	cmp rax, -4095		;Mmap error.
+    	jae _exit
+    	push rax
+  	pop r13		;r13 vaddr stage 2, r15 aslr_offset.
+  	jmp end_of_stage1
+  .return_crypt_compress_addr:
+  	pop rsi		;src;;[rsp] size_s2_elf, fd, size_stage1, vaddr stage1
+  	mov rdx, 	0xfefffffffffff000	;rdx [rsp] size_s2_elf, fd, size_stage1, vaddr stage1
+  	sub rsp, rdx
+  	push rsp		;dest
+  	pop rdi
+  	push rdx	;[rsp] size_buffer_decrypt, decrypt_buffer, size_s2_elf, fd, size_s1, vaddr_s1
+  	call decrypt
+  	test rax, rax
+  	jz _exit
+  	push r13
+  	pop rdx		; mmap dest
+  	push rax	; vaddr of decrypted_s2_elf
+  	pop rdi		; src
+  	mov rsi, 0xfefffffffffff000
+  	push rsi	;[rsp] size_elf_size_c_h, size_buffer_decrypt, decrypt_buffer, size_s2_elf, fd, size_s1, vaddr_s1
+  	call lz77_decompress
+  	pop rsi			;size_s2_elf_c_h [rsp]size_buffer_decrypt, decrypt_buffer,size_s2_elf,  fd, size_s1, vaddr_s1
+  	pop rdx			;size_buffer_decrypt [rsp] decrypt_buffer, size_s2_elf, fd, size_s1, vaddr_s1
+  	;; push rsi		;[rsp] size_s2_elf_c_h, fd, size_s1, vaddr_s1
+  	;; push rsi		;[rsp] size_s2_elf_c_h, size_s2_elf_c_h, fd, size_s1, vaddr_s1
 
-  ; === OPEN /PROC/SELF/EXE ===
-  open_proc_self_exe:
-      xor esi, esi                    ; O_RDONLY
-      pop rdi                         ; RDI = (/proc/self/exe string address) [rsp] = 0x500, [rsp+8] = return_address
-      push 0x2                        ; SYS_OPEN
+  	add rsp, rdx ;Restore stack [rsp] decrypt_buffer, size_s2_elf, fd, size_s1, vaddr_s1
+  	test rax, rax
+  	jnz _exit
+
+  .mprotect_stage_2:
+  	push r13
+  	pop rdi			;vaddr
+  	push 0x5 
+  	pop rdx			;prot R-X
+  	pop rsi			;size_s2_elf [rsp] fd_s1, size_s1, vaddr_s1
+  	push r13		;[rsp] vaddr_s2_elf, fd_s1, size_s1, vaddr_s1
+  	push rsi		;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr_s1
+  	push 0xA
+  	pop rax			;syscall mprotect 10
+    	syscall
+  	test rax, rax
+    	jnz _exit
+  	.jmp_stage_2:
+  	pop rsi;size_s2_elf [rsp]vaddr_s2_elf, fd_s1, size_s1, vaddr s1
+  	push rsi;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
+  	push r13;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
+  	ret;		 ;(pop rip [rsp] -> vaddr_s2_elf)[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
+
+  _exit:	
+      push 127
+      pop rdi
+      push 60
       pop rax
-      syscall                         ; open("/proc/self/exe", O_RDONLY)
-      push rax                        ; [rsp] = fd, [rsp+8] = 0x500, [rsp+16] = return_address
-      test rax, rax                   ; Check for error
-      js _exit                        ; Jump to exit if error
-      xor r9d, r9d                    ; Clear R9
-      push -1                         ; Invalid file descriptor (-1)
-      pop r8                          ; R8 = -1 (MAP_ANONYMOUS)
-      push 0x22                       ; MAP_PRIVATE | MAP_ANONYMOUS
-      pop r10                         ; R10 = MAP_PRIVATE | MAP_ANONYMOUS
-      push 0x3                        ; PROT_READ
-      pop rdx                         ; RDX = PROT_READ
-      xor edi, edi                    ; Address = 0
-      push 0x5000                     ; Size = 0x5000
-      pop rsi                         ; RSI = 0x5000
-      push rsi                        ; [rsp] = 0x5000, [rsp+8] = fd, [rsp+16] = 0x500, [rsp+24] = return_address
-      push 0x9                        ; SYS_MMAP
-      pop rax
-      syscall                         ; mmap(NULL, 0x5000, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)
-      test rax, rax                   ; Check for error
-      js _exit                        ; Jump to exit if error
-      push rax                        ; [rsp] = mapped_address, [rsp+8] = 0x5000, [rsp+16] = fd, [rsp+24] = 0x500, [rsp+32] = return_address
-      pop r13                         ; R13 = mapped_address
-      jmp end_stage1
-
-  ; === PREPARE MMAP WITH FD ===
-  prepare_mmap_fd:
-      pop rsi                         ; RSI = 0x5000 [rsp] = fd, [rsp+8] = 0x500, [rsp+16] = return_address
-      push 0x500                      ; [rsp] = 0x500, [rsp+8] = fd, [rsp+16] = 0x500, [rsp+24] = return_address
-      pop rdx                         ; RDX = 0x500
-      sub rsp, rdx                    ; Allocate stack space [rsp] = buffer_space..., [rsp+0x500] = fd, [rsp+0x508] = 0x500, [rsp+0x510] = return_address
-      push rsp                        ; [rsp] = buffer_pointer, [rsp+8] = buffer_space..., [rsp+0x508] = fd, [rsp+0x510] = 0x500, [rsp+0x518] = return_address
-      pop rdi                         ; RDI = buffer_pointer
-      push rdx                        ; [rsp] = 0x500, [rsp+8] = buffer_pointer, [rsp+0x508] = buffer_space..., [rsp+0x510] = fd, [rsp+0x518] = 0x500, [rsp+0x520] = return_address
-      call decrypt                  ; Read file into buffer
-      test rax, rax                   ; Check result
-      jz _exit                        ; Jump to exit if error
-      push r13                        ; [rsp] = mapped_address, [rsp+8] = 0x500, [rsp+16] = buffer_pointer, [rsp+0x518] = buffer_space..., [rsp+0x520] = fd, [rsp+0x528] = 0x500, [rsp+0x530] = return_address
-      pop rdx                         ; RDX = mapped_address
-      push rax                        ; [rsp] = decompressed_size, [rsp+8] = mapped_address, [rsp+16] = 0x500, [rsp+24] = buffer_pointer, [rsp+0x520] = buffer_space..., [rsp+0x528] = fd, [rsp+0x530] = 0x500, [rsp+0x538] = return_address
-      pop rdi                         ; RDI = decompressed_size
-      push 0xe84                      ; [rsp] = 0xe84, [rsp+8] = decompressed_size, [rsp+16] = mapped_address, [rsp+24] = 0x500, [rsp+32] = buffer_pointer, [rsp+0x528] = buffer_space..., [rsp+0x530] = fd, [rsp+0x538] = 0x500, [rsp+0x540] = return_address
-      pop rsi                         ; RSI = 0xe84
-      push rsi                        ; [rsp] = 0xe84, [rsp+8] = 0xe84, [rsp+16] = decompressed_size, [rsp+24] = mapped_address, [rsp+32] = 0x500, [rsp+40] = buffer_pointer, [rsp+0x528] = buffer_space..., [rsp+0x530] = fd, [rsp+0x538] = 0x500, [rsp+0x540] = return_address
-      call lz77_decompress             ; Decompress data
-      pop rsi                         ; RSI = 0xe84 [rsp] = 0xe84, [rsp+8] = decompressed_size, [rsp+16] = mapped_address, [rsp+24] = 0x500, [rsp+32] = buffer_pointer, [rsp+0x528] = buffer_space..., [rsp+0x530] = fd, [rsp+0x538] = 0x500, [rsp+0x540] = return_address
-      pop rdx                         ; RDX = 0xe84 [rsp] = decompressed_size, [rsp+8] = mapped_address, [rsp+16] = 0x500, [rsp+24] = buffer_pointer, [rsp+0x520] = buffer_space..., [rsp+0x528] = fd, [rsp+0x530] = 0x500, [rsp+0x538] = return_address
-      add rsp, rdx                    ; Restore stack pointer [rsp] = mapped_address, [rsp+8] = 0x500, [rsp+16] = buffer_pointer, [rsp+0x510] = buffer_space..., [rsp+0x518] = fd, [rsp+0x520] = 0x500, [rsp+0x528] = return_address
-      test rax, rax                   ; Check result
-      jnz _exit                       ; Jump to exit if error
-      push r13                        ; [rsp] = mapped_address, [rsp+8] = mapped_address, [rsp+16] = 0x500, [rsp+24] = buffer_pointer, [rsp+0x518] = buffer_space..., [rsp+0x520] = fd, [rsp+0x528] = 0x500, [rsp+0x530] = return_address
-      pop rdi                         ; RDI = mapped_address
-      push 0x5                        ; [rsp] = 0x5, [rsp+8] = mapped_address, [rsp+16] = 0x500, [rsp+24] = buffer_pointer, [rsp+0x518] = buffer_space..., [rsp+0x520] = fd, [rsp+0x528] = 0x500, [rsp+0x530] = return_address
-      pop rdx                         ; RDX = 0x5 (PROT_READ | PROT_EXEC)
-      pop rsi                         ; RSI = mapped_address [rsp] = mapped_address, [rsp+8] = 0x500, [rsp+16] = buffer_pointer, [rsp+0x510] = buffer_space..., [rsp+0x518] = fd, [rsp+0x520] = 0x500, [rsp+0x528] = return_address
-      push r13                        ; [rsp] = mapped_address, [rsp+8] = mapped_address, [rsp+16] = 0x500, [rsp+24] = buffer_pointer, [rsp+0x518] = buffer_space..., [rsp+0x520] = fd, [rsp+0x528] = 0x500, [rsp+0x530] = return_address
-      push rsi                        ; [rsp] = mapped_address, [rsp+8] = mapped_address, [rsp+16] = mapped_address, [rsp+24] = 0x500, [rsp+32] = buffer_pointer, [rsp+0x520] = buffer_space..., [rsp+0x528] = fd, [rsp+0x530] = 0x500, [rsp+0x538] = return_address
-      push 0xa                        ; [rsp] = 0xa, [rsp+8] = mapped_address, [rsp+16] = mapped_address, [rsp+24] = mapped_address, [rsp+32] = 0x500, [rsp+40] = buffer_pointer, [rsp+0x520] = buffer_space..., [rsp+0x528] = fd, [rsp+0x530] = 0x500, [rsp+0x538] = return_address
-      pop rax                         ; RAX = 0xa (SYS_MPROTECT)
-      syscall                         ; mprotect(mapped_address, 0x500, PROT_READ | PROT_EXEC)
-      test rax, rax                   ; Check result
-      jnz _exit                       ; Jump to exit if error
-      pop rsi                         ; RSI = mapped_address [rsp] = mapped_address, [rsp+8] = 0x500, [rsp+16] = buffer_pointer, [rsp+0x510] = buffer_space..., [rsp+0x518] = fd, [rsp+0x520] = 0x500, [rsp+0x528] = return_address
-      push rsi                        ; [rsp] = mapped_address, [rsp+8] = mapped_address, [rsp+16] = 0x500, [rsp+24] = buffer_pointer, [rsp+0x518] = buffer_space..., [rsp+0x520] = fd, [rsp+0x528] = 0x500, [rsp+0x530] = return_address
-      push r13                        ; [rsp] = mapped_address, [rsp+8] = mapped_address, [rsp+16] = mapped_address, [rsp+24] = 0x500, [rsp+32] = buffer_pointer, [rsp+0x520] = buffer_space..., [rsp+0x528] = fd, [rsp+0x530] = 0x500, [rsp+0x538] = return_address
-      ret                             ; Return to mapped code
-
-  ; === EXIT FUNCTION ===
-  _exit:
-      push 0x7f                       ; Exit status 127
-      pop rdi                         ; RDI = 127
-      push 0x3c                       ; SYS_EXIT
-      pop rax                         ; RAX = 60
-      syscall                         ; exit(127)
-  ; === LZ77 DECOMPRESS FUNCTION ===
-  ; Parameters:
-  ;   RDI: Input buffer (compressed data)
-  ;   RSI: Output buffer size (uncompressed size from header)
-  ;   RDX: Output buffer pointer
-  ; Returns:
-  ;   RAX: 0 on success, -1 on failure
+      syscall
   lz77_decompress:
-      cmp esi, 0x7                    ; Compare output size with 7
-      mov r9, rdx                     ; R9 = output buffer
-      setna al                        ; Set AL if ESI <= 7
-      test rdx, rdx                   ; Test output buffer
-      setz dl                         ; Set DL if output buffer is zero
-      or al, dl                       ; Combine flags
-      jnz .decompress_error       ; Jump if error (size <= 7 or buffer is NULL)
-      
-      test rdi, rdi                   ; Test input buffer
-      jz  .decompress_error        ; Jump if error (input buffer is NULL)
-      
-      mov rcx, rsi                    ; RCX = expected uncompressed size
-      mov rsi, [rdi]                  ; RSI = actual uncompressed size from input buffer
-      test rsi, rsi                   ; Test actual size
-      push 0x0                        ; Push 0
-      pop rax                         ; RAX = 0
-      jz  .decompress_error         ; Jump if actual size is zero
-      
-      lea r8, [rdi+0xb]               ; R8 = input data pointer (skip size field) + 3 
-      add rdi, rcx                    ; RDI = end of input buffer
+      ; Function entry - validate input parameters
+      ; rdi = in, rsi = in_size, rdx = out
+  	cmp rsi,byte +0x7
+  	mov r9,rdx
+  	setna al
+  	test rdx,rdx
+  	setz dl
+  	or al,dl
+  	jnz .end
+  	test rdi,rdi
+  	jz .end
+  	mov rcx,rsi
+  .init_loop:
+  	mov rsi,[rdi]
+  	test rsi,rsi
+  	push byte +0x0
+  	pop rax
+  	jz .end
+  	lea r8,[rdi+0x8]
+  	add rdi,rcx
+  .advance_token:
+  	add r8,byte +0x3
+  	cmp r8,rdi
+  	jna .get_data_token
+  	jmp .end
 
-  .token_loop:
-      cmp rax, rsi                    ; Compare decompressed bytes with expected size
-      jnc .decompress_done        ; Jump if we've decompressed enough bytes
-      
-      mov cx, WORD [r8-0x3]                ; CX = 16-bit token from input
-      mov edx, ecx                    ; EDX = token value
-      and dx, 0xf                     ; DX = lower 4 bits (length - 2)
-      jnz .length_non_zero            ; Jump if length > 2
-      
-      ; Handle literal byte
-  .literal_byte:
-      mov dl, BYTE [r8-0x1]                ; DL = literal byte
-      mov BYTE [r9+rax], dl                ; Store literal byte in output
-      inc rax                         ; Increment output position
-      add r8, 0x3                     ; Advance input by 3 bytes (token size)
-      cmp r8, rdi                     ; Check if we've reached end of input
-      jna .token_loop                 ; Continue if not at end
-      jmp .decompress_error            ; Jump to error if at end
+  .get_data_token:
+  	cmp rax,rsi
+  	jnc .end
+  	mov cx,[r8-0x3]
+  	mov edx,ecx
+  	and dx,byte +0xf
+  	jnz .check_len_distance
+  .literal:
+  	mov dl,[r8-0x1]
+  	mov [r9+rax],dl
+  	inc rax
+  	jmp .advance_token
+  .check_len_distance:
+  	shr cx,byte 0x4
+  	movzx r11d,cx
+  	jz .literal
+  	cmp rax,r11
+  	jc .literal
+  .match:
+  	push rbx
+  	add edx,byte +0x2
+  	mov rcx,rsi
+  	lea rbx,[r9+rax]
+  	mov r10,rax
+  	sub rcx,rax
+  	movsx rdx,dx
+  	cmp rcx,rdx
+  	cmovna rdx,rcx
+  	sub r10,r11
+  	xor ecx,ecx
+  	add r10,r9
+  .match_write:
+  	mov r11b,[r10+rcx]
+  	mov [rbx+rcx],r11b
+  	inc rcx
+  	cmp rdx,rcx
+  	jnz .match_write
+  .restore_match:
+  	pop rbx
+  	add rax,rdx
+  	cmp rax,rsi
+  	jnc .advance_token
+  	mov dl,[r8-0x1]
+  	mov [r9+rax],dl
+  	inc rax
+  	jmp .advance_token
+  .end:
+  	cmp rax,rsi
+  	setnz al
+  	movzx eax,al
+  	neg rax
+  	ret
 
-  .length_non_zero:
-      shr cx, 0x4                     ; CX = upper 12 bits (distance)
-      movzx r11d, cx                  ; R11D = distance
-      jz .literal_byte                ; Jump to literal if distance is zero
-      
-      cmp rax, r11                    ; Compare current position with distance
-      jc .literal_byte                ; Jump to literal if distance > current position
-      
-      push rbx                        ; Save RBX
-      add edx, 0x2                    ; EDX = actual length (length + 2)
-      mov rcx, rsi                    ; RCX = expected size
-      lea rbx, [r9+rax]               ; RBX = output pointer + current position
-      mov r10, rax                    ; R10 = current position
-      sub rcx, rax                    ; RCX = remaining space in output buffer
-      movsx rdx, dx                   ; RDX = sign-extended length
-      cmp rcx, rdx                    ; Compare remaining space with length
-      cmovna rdx, rcx                 ; If not enough space, limit length
-      sub r10, r11                    ; R10 = source position (current - distance)
-      xor ecx, ecx                    ; RCX = 0 (copy counter)
-      add r10, r9                     ; R10 = source pointer
-      
-  .copy_loop:
-      mov r11b, BYTE [r10+rcx]             ; R11B = source byte
-      mov BYTE [rbx+rcx], r11b             ; Store byte in destination
-      inc rcx                         ; Increment copy counter
-      cmp rdx, rcx                    ; Compare length with counter
-      jnz .copy_loop                  ; Continue copying if not done
-      
-      pop rbx                         ; Restore RBX
-      add rax, rdx                    ; Add copied bytes to position counter
-      cmp rax, rsi                    ; Compare with expected size
-      jnc .token_advance              ; Jump if we've reached expected size
-      
-      ; Handle trailing literal
-      mov dl, BYTE [r8-0x1]                ; DL = trailing literal byte
-      mov BYTE [r9+rax], dl                ; Store literal byte
-      inc rax                         ; Increment position counter
-
-  .token_advance:
-      add r8, 0x3                     ; Advance input by token size
-      cmp r8, rdi                     ; Check if we've reached end of input
-      ja .decompress_error            ; Jump to error if past end
-      jmp .token_loop; Jump if length is zero
-  .decompress_done:
-      cmp rax, rsi                    ; Compare final position with expected size
-      setnz al                        ; Set AL if they don't match
-      movzx eax, al                   ; Zero-extend AL to EAX
-      neg rax                         ; Negate result (0 for success, -1 for failure)
-      ret                             ; Return
-
-  .decompress_error:
-      mov eax, 0xffffffff            ; Return -1 for error
-      ret                             ; Return
-
-
-  ; === DECRYPT FUNCTION ===
   decrypt:
-      push rsi                        ; [rsp] = some_value, [rsp+8] = mapped_address, [rsp+16] = mapped_address, [rsp+24] = 0x500, [rsp+32] = buffer_pointer, [rsp+0x520] = buffer_space..., [rsp+0x528] = fd, [rsp+0x530] = 0x500, [rsp+0x538] = return_address
-      pop rax                         ; RAX = some_value
-      ret                             ; Return
+  	push rsi
+  	pop rax
+  	ret
 
-  ; === END OF STAGE 1 ===
-  end_stage1:
-      call prepare_mmap_fd
+  end_of_stage1:
+  	call _start.return_crypt_compress_addr
 #+end_src
 
 #+begin_src asm :tangle payload/stage2.s
