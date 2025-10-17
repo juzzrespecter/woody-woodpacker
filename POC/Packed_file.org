@@ -3417,12 +3417,14 @@ s2 x 86 {mmap fd, close fd, munmmap vaddr, len, }
     	xor    ebp, ebp 	;offset
     	push -1			;
     	pop    edi		;fd
-    	mov esi, 0x22		; Anonymous | Private
-    	mov edx, 0x3		; prot
+  	push 0x22
+  	pop esi
+  	push 0x3		;RW-
+  	pop edx
   	mov ecx, 0xfeffffff	; (len) s2
   	push ecx		;[esp] (len) s2
     	xor    ebx,ebx 		;Vaddr
-  	mov eax, 192		;mmap syscall
+  	mov eax, 192
   	int 0x80
     	cmp eax, -4095		;Mmap error.
     	jae _exit
@@ -3442,31 +3444,46 @@ s2 x 86 {mmap fd, close fd, munmmap vaddr, len, }
   	jz _exit
   	pop edx		; (vaddr) s2 ; [esp] (len, buffer) decrypt, (len, vaddr) s2
   	mov edi, eax 	; (vaddr) c_s2
-  	mov esi, 0xfeffffff	;
+  	mov esi, 0xfeffffff	;Modified.
   	push edx
   	call lz77_decompress
   	pop ebx	; (vaddr)s2
   	pop edx			;(len) decrypt [esp] (buffer) decrypt, (len, vaddr) s2
-  	add esp, rdx ;Restore stack [esp] (len, vaddr) s2
+  	add esp, edx ;Restore stack [esp] (len, vaddr) s2
   	test eax, eax
   	jnz _exit
 
   .mprotect_stage_2:
-  	mov edx, 0x5 
+  	push 0x5		;Flags R-X
+  	pop edx
   	pop ecx			;(len) s2 [esp]
   	push ebx		;[rsp] (vaddr) s2
   	push ecx		;[rsp]  (len, vaddr) s2
-  	mov eax, 125
+  	push 125
+  	pop eax
   	int 0x80
   	test eax, eax
     	jnz _exit
-  	.jmp_stage_2:
-  	push r13;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
+  .init_open_s1:
+  	call .open
+  	times 13 ret
+  .open:
+  	pop ebx
+  	xor ecx, ecx		;RD_ONLY
+  	push 5
+  	pop eax
+  	int 0x80
+  	test eax, eax
+  	js _exit
+  	
+  .jmp_stage_2:
+  	;; push (vaddr) s2
   	ret;		 ;(pop rip [rsp] -> vaddr_s2_elf)[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
 
   _exit:	
   	xor ebx, ebx		;
-  	xor eax, eax		;syscall 0
+  	push 1
+  	pop eax
   	int 0x80
   lz77_decompress:
       ; Function entry - validate input parameters
