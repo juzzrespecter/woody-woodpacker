@@ -1537,12 +1537,20 @@ Add to a compress file syscall, pop rdx, ret -
     // Modify need data
 
     /* avalaible_vaddr = 0;// TODO del when is tested that work fine. */
-    size_t offset_mod_stage2[] = {0x38, 0x9D};
-    uint32_t tmp_val_stage2[] = {elf_size, avalaible_vaddr};
+    /* uint32_t tmp_val_stage2[] = {elf_size, avalaible_vaddr}; */
+    /* uint64_t i = 0; */
+    /* while (i < sizeof(offset_mod_stage2) / sizeof(*offset_mod_stage2)) */
+    /*   { */
+    /*     memcpy(stage2_buffer + offset_mod_stage2[i], &tmp_val_stage2[i], sizeof(*tmp_val_stage2)); */
+    /*     i++; */
+    /*   } */
+
+    size_t offset_mod_stage2[] = {0x57, 0xc0};
+    t_type tmp_val_stage2[] = {(t_type){.b8=elf_size},(t_type) {.b8=avalaible_vaddr}};
     uint64_t i = 0;
     while (i < sizeof(offset_mod_stage2) / sizeof(*offset_mod_stage2))
       {
-        memcpy(stage2_buffer + offset_mod_stage2[i], &tmp_val_stage2[i], sizeof(*tmp_val_stage2));
+        memcpy(stage2_buffer + offset_mod_stage2[i], &tmp_val_stage2[i].b8, (size_t)ft_ternary(ELFCLASS64 == class, (void *)sizeof(uint64_t), (void *)sizeof(uint32_t)));
         i++;
       }
 
@@ -2246,7 +2254,8 @@ CLOSED: [2025-09-08 Mon 07:33]
 check ELF file and executable -> compress_file -> create payload (pass packed_entrypoint, compress size,  vaddr executable with free space to stage3 (clean stage2 + jmp og_entrypoint)) -> packed_file -> append compress file and size.
 *** DONE Encrypt file
 CLOSED: [2025-09-08 Mon 07:33]
-*** TODO Append compress size and file.
+*** DONE Append compress size and file.
+CLOSED: [2025-10-17 Fri 06:42]
 *** TODO Payload
 **** REVIEW Helpful things
 Get bytecode
@@ -2260,7 +2269,8 @@ Test bytecode
 
 
 **** DONE Unpack elf
-**** TODO AUXV
+**** DONE AUXV
+CLOSED: [2025-10-17 Fri 06:42]
 ***** Readlink not gonna do
 The dynamic linker needs the executable path for the AT_EXECFN entry in the auxiliary vector: 
     This entry must contain the full path to the executable
@@ -2515,21 +2525,7 @@ CLOSED: [2025-09-29 Mon 11:58]
   	push rsi			;[rsp] = (len, vaddr) s1
   	call .open
   .proc_self_exec:
-  	ret			;/
-  	ret			;p
-  	ret			;r
-  	ret			;o
-  	ret			;c
-  	ret			;/
-  	ret			;s
-  	ret			;e
-  	ret			;l
-  	ret			;f
-  	ret			;/
-  	ret			;x
-  	ret			;e
-  	ret			;e
-  	ret			;\0
+  	times 15 ret ; "/proc/self/exe" 
   .open:
   	xor esi, esi
   	pop rdi
@@ -2573,14 +2569,9 @@ CLOSED: [2025-09-29 Mon 11:58]
   	push rax	; vaddr of decrypted_s2_elf
   	pop rdi		; src
   	mov rsi, 0xfefffffffffff000
-  	push rsi	;[rsp] size_elf_size_c_h, size_buffer_decrypt, decrypt_buffer, size_s2_elf, fd, size_s1, vaddr_s1
   	call lz77_decompress
-  	pop rsi			;size_s2_elf_c_h [rsp]size_buffer_decrypt, decrypt_buffer,size_s2_elf,  fd, size_s1, vaddr_s1
-  	pop rdx			;size_buffer_decrypt [rsp] decrypt_buffer, size_s2_elf, fd, size_s1, vaddr_s1
-  	;; push rsi		;[rsp] size_s2_elf_c_h, fd, size_s1, vaddr_s1
-  	;; push rsi		;[rsp] size_s2_elf_c_h, size_s2_elf_c_h, fd, size_s1, vaddr_s1
-
-  	add rsp, rdx ;Restore stack [rsp] decrypt_buffer, size_s2_elf, fd, size_s1, vaddr_s1
+  	pop rdx			;size_buffer_decrypt [rsp] 
+  	add rsp, rdx ;Restore stack [rsp] size_s2_elf, fd, size_s1, vaddr_s1
   	test rax, rax
   	jnz _exit
 
@@ -2598,14 +2589,11 @@ CLOSED: [2025-09-29 Mon 11:58]
   	test rax, rax
     	jnz _exit
   	.jmp_stage_2:
-  	pop rsi;size_s2_elf [rsp]vaddr_s2_elf, fd_s1, size_s1, vaddr s1
-  	push rsi;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
   	push r13;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
   	ret;		 ;(pop rip [rsp] -> vaddr_s2_elf)[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
 
   _exit:	
-      push 127
-      pop rdi
+  	xor edi, edi
       push 60
       pop rax
       syscall
@@ -2698,7 +2686,7 @@ CLOSED: [2025-09-29 Mon 11:58]
   	call _start.return_crypt_compress_addr
 #+end_src
 
-#+begin_src asm :tangle payload/stage2.s
+#+begin_src asm :tangle payload/x64/stage2.s
   	global _start
 
 
@@ -2720,26 +2708,30 @@ CLOSED: [2025-09-29 Mon 11:58]
   	push 0x9
   	pop rax
   	syscall
+  	cmp rax, -4095		;Mmap error.
+      	jae _exit
   	.close_fd:
   	pop rdi			;;fd_s1 [rsp] size_s1, vaddr s1
   	push 0x3
     	pop rax
     	syscall
+  	test rax, rax
+  	jnz _exit
   	.unmmap_s1:
   	pop rsi			;size_s1 [rsp]  vaddr_s1
   	pop rdi			;vaddr_s1 [rsp]
   	push 0xb		;munmap syscall
   	pop rax
   	syscall
-
+  	test rax, rax
+  	jnz _exit
   	push r13
   	push r14		; [rsp] size_s2_elf, vaddr_s2_elf	
   	jmp end_of_stage_2
   	.return_ehdr_ptr:;[rsp] ehdr_ptr size_s2, size_s2_elf, vaddr s2
   	pop rdi		; ehdr_ptr [rsp] size_s2_elf, vaddr_s2_elf
   	push rdi	; ;[rsp] ehdr_ptr size_s2, vaddr s2
-  	push 0x2013a ; ;[rsp] elf_size ehdr_ptr size_s2, vaddr s2 ; Unused
-  	pop rsi		; ;[rsp] ehdr_ptr, vaddr s2; Overwrited
+  	mov rsi, 0xfeffffffffffffff		; ;[rsp] ehdr_ptr, vaddr s2; Overwrited
   	pop rbx 	;ehdr_ptr [rsp] size_s2, vaddr s2
 
   	.get_base:
@@ -2755,8 +2747,7 @@ CLOSED: [2025-09-29 Mon 11:58]
   	push rbx
   	pop rdi			;pop  ehdr;[rsp] size_s2, vaddr s2
 
-  	;; push rdi		;Don't need bk -> start to use mmap.
-  	push r15
+  	push r15		;aslr
   	pop rsi			;rsi aslr_offset
   	push -1
   	pop rcx			;rcx fd
@@ -2782,8 +2773,7 @@ CLOSED: [2025-09-29 Mon 11:58]
   	;; push rsp		;mmap elf
   	;; pop rdi
   	call set_auxv
-  	push 0x402013a		;vaddr s3
-  	pop r14
+  	mov r14, 0xfeffffffffffffff
   	test r14, r14		;if vaddr s3
   	lea rsi, [r14 + r15]	;vaddr s3 + aslr
   	cmovne r14, rsi		;vaddr s3 = vaddr s3 + aslr
@@ -2839,20 +2829,7 @@ CLOSED: [2025-09-29 Mon 11:58]
   	
   	.woody_payload:
   	call .woody_write		; Woody Payload.
-  	ret 			;.
-  	ret 			;.
-  	ret 			;.
-  	ret 			;.
-  	ret 			;W
-  	ret 			;O
-  	ret 			;O
-  	ret 			;D
-  	ret 			;Y
-  	ret 			;.
-  	ret 			;.
-  	ret 			;.
-  	ret 			;.
-  	ret 			;\n No need null becouse we use write and don't care null ended. ;) a byte less.
+  	times 14 ret			;'....WOODY....\n'
   	.woody_write:
           pop    rsi		;....WOODY....\n ptr.		;[rsp]vaddr s3 size_s2, vaddr s2
   	push 0xe		;ptr_size
@@ -3065,8 +3042,8 @@ CLOSED: [2025-09-29 Mon 11:58]
   	syscall
       mov    rdx, rax                 ; rdx = result of mmap
       mov    eax, 0xffffffff          ; Set eax to -1
-      cmp    rdx, 0xffffffffffffffff  ; Check if mmap failed
-      je     .mmap_failed             ; Jump if mmap failed
+      cmp rdx, -4095
+      jae     .mmap_failed             ; Jump if mmap failed
       
       ; Check fd value
       cmp    DWORD  [rsp+0xc], 0xffffffff ; Check if fd == -1
@@ -3134,8 +3111,10 @@ CLOSED: [2025-09-29 Mon 11:58]
   	push 0x9
   	pop rax
   	syscall
-      inc    rax                      ; Increment rax if rax = -1 + 1 -> 0
-      sete  al                      ; Set al if rax == 0 || setz
+
+
+      cmp rax, -4095
+      setae  al                      ; Set al if rax == 0 || setz
       movzx  eax, al                 ; Zero extend al to eax
       neg    eax                      ; Negate eax
       jmp    .end                     ; Jump to end
@@ -3161,102 +3140,7 @@ CLOSED: [2025-09-29 Mon 11:58]
   .not_load_segment:
       xor    eax, eax                 ; Return 0 (not a load segment)
       ret                            ; Return
-  ; uint64_t load_elf_generic(void *ptr, uint64_t aslr_offset, uint64_t target_vaddr, int fd)
-  ; rdi = ptr, rsi = aslr_offset, rdx = target_vaddr, ecx = fd
 
-  ;; load_elf_generic:
-  ;;     push   r15
-  ;;     mov    r8, rsi              ; r8 = aslr_offset
-  ;;     mov    r10, rdx             ; r10 = target_vaddr
-  ;;     push   r14
-  ;;     mov    r14d, ecx            ; r14d = fd
-  ;;     push   r13
-  ;;     push   r12
-  ;;     push   rbp
-  ;;     mov    rbp, rdi             ; rbp = ptr
-  ;;     push   rbx
-  ;;     sub    rsp, 0x18            ; Allocate stack space
-
-  ;;     ; Load ELF program header pointer and count
-  ;;     mov    r12, QWORD  [rdi+0x20]  ; r12 = ptr->e_phoff (program header offset)
-  ;;     movzx  esi, WORD  [rdi+0x38]   ; esi = ptr->e_phnum (number of program headers)
-  ;;     lea    rcx, [rsp+0x8]       ; rcx = pointer to stack space for result
-  ;;     mov    rdx, rsp             ; rdx = pointer to stack space for result
-  ;;     add    r12, rdi             ; r12 = ptr + e_phoff (actual program header address)
-  ;;     mov    rdi, r12             ; rdi = program header address
-  ;;     call   calculate_elf_memory_range  ; Call helper function
-
-  ;;     ; Get results from stack
-  ;;     mov    r13, QWORD  [rsp]       ; r13 = minimum virtual address
-  ;;     mov    rsi, QWORD  [rsp+0x8]   ; rsi = maximum virtual address
-  ;;     mov    ecx, 0x22                  ; ecx = flags for mmap
-
-  ;;     ; Check if target_vaddr is zero
-  ;;     sub    rsi, r13             ; rsi = size (max - min)
-  ;;     test   r10, r10             ; Test target_vaddr
-  ;;     je     .use_min_addr        ; If zero, use calculated min address
-
-  ;;     ; Add ASLR offset to target address
-  ;;     add    r10, r8              ; r10 = target_vaddr + aslr_offset
-  ;;     mov    ecx, 0x32            ; ecx = different flags for mmap
-
-  ;; .use_min_addr:
-  ;;     xor    r9d, r9d             ; r9d = 0 PROT_NONE
-  ;;     mov    r8d, 0xffffffff      ; r8d = -1 (MAP_ANONYMOUS flag)
-  ;;     xor    edx, edx             ; edx = 0 (offset)
-  ;;     mov    rdi, r10             ; rdi = target address
-  ;; 	mov r10, rcx		; flags mmap
-  ;; 	push 0x9
-  ;; 	pop rax
-  ;; 	syscall
-
-  ;;     xor    r15d, r15d           ; r15d = 0 (counter)
-  ;;     mov    rbx, rax             ; rbx = result of mmap
-  ;;     cmp    rax, 0xffffffffffffffff  ; Check for mmap error
-  ;;     jne    .check_phdr_count    ; If no error, continue
-
-  ;;     ; Handle mmap error
-  ;;     mov    rax, 0xffffffffffffffff  ; Return error
-  ;;     jmp    .cleanup_and_return  ; Jump to cleanup
-
-  ;; .load_segment_loop:
-  ;;     ; Prepare arguments for load_elf_segment call
-  ;;     mov    r8d, r14d            ; r8d = fd
-  ;;     mov    rcx, r13             ; rcx = base address (min_vaddr)
-  ;;     mov    rdx, r12             ; rdx = current program header
-  ;;     mov    rsi, rbp             ; rsi = elf_ptr
-  ;;     mov    rdi, rbx             ; rdi = mapping address
-  ;;     call   load_elf_segment     ; Call load_elf_segment
-      
-  ;;     inc    eax                  ; Increment result
-  ;;     je     .mmap_error          ; If error, jump to error handler
-      
-  ;;     add    r12, 0x38            ; Advance to next program header (56 bytes)
-  ;;     inc    r15d                 ; Increment counter
-
-  ;; .check_phdr_count:
-  ;;     movzx  eax, WORD  [rbp+0x38]  ; eax = e_phnum
-  ;;     cmp    eax, r15d            ; Compare with counter
-  ;;     jg     .load_segment_loop   ; If more headers, continue loop
-
-  ;;     ; Success path
-  ;;     mov    rax, rbx             ; rax = mapping address
-  ;;     sub    rax, r13             ; rax = mapping_address - min_vaddr
-  ;;     add    rax, QWORD  [rbp+0x18]  ; rax = adjusted + entry point
-
-  ;; .cleanup_and_return:
-  ;;     add    rsp, 0x18            ; Deallocate stack space
-  ;;     pop    rbx                  ; Restore registers
-  ;;     pop    rbp
-  ;;     pop    r12
-  ;;     pop    r13
-  ;;     pop    r14
-  ;;     pop    r15
-  ;;     ret                        ; Return
-
-  ;; .mmap_error:
-  ;;     mov    rax, 0xffffffffffffffff  ; Return error
-  ;;     jmp    .cleanup_and_return  ; Jump to cleanup
   ; uint64_t load_elf_generic(void *ptr, uint64_t aslr_offset, uint64_t target_vaddr, int fd)
   ; rdi = ptr, rsi = aslr_offset, rdx = target_vaddr, ecx = fd
   load_elf_generic:
@@ -3520,6 +3404,159 @@ CLOSED: [2025-09-29 Mon 11:58]
   end_of_stage_2:
           call _start.return_ehdr_ptr
 #+end_src
+***** Road map x32
+s1 x 86 {mmap s2, decrypt, decompress, mprotect s2 R-X, calculate aslr, s1 vaddr, get s1 size, open '/proc/self/exe\0', jmp s2}
+s1 x 86 jmp s2 [rsp] (fd, len, vaddr) s1, aslr, (len, vaddr s2)
+s2 x 86 {mmap fd, close fd, munmmap vaddr, len, }
+
+#+begin_src asm :tangle payload/x32/stage1.s
+  global _start
+
+  _start:
+  .mmap_stage_2:
+    	xor    ebp, ebp 	;offset
+    	push -1			;
+    	pop    edi		;fd
+    	mov esi, 0x22		; Anonymous | Private
+    	mov edx, 0x3		; prot
+  	mov ecx, 0xfeffffff	; (len) s2
+  	push ecx		;[esp] (len) s2
+    	xor    ebx,ebx 		;Vaddr
+  	mov eax, 192		;mmap syscall
+  	int 0x80
+    	cmp eax, -4095		;Mmap error.
+    	jae _exit
+  	pop ecx			; (len) s2 [esp]
+  	push eax		; [esp] (vaddr) s2
+  	push ecx		; [esp] (len, vaddr) s2
+  	jmp end_of_stage1
+  .return_crypt_compress_addr:
+  	pop esi		;ehdr
+  	mov edx, 	0xfeffffff	; (len) cc_s2
+  	sub rsp, rdx
+  	mov edi, esp
+  	push edx	;[esp] (len, buffer) decrypt, (len, vaddr) s2
+  	push eax	;[esp] (vaddr) s2, (len, buffer) decrypt, (len, vaddr) s2
+  	call decrypt
+  	test eax, eax
+  	jz _exit
+  	pop edx		; (vaddr) s2 ; [esp] (len, buffer) decrypt, (len, vaddr) s2
+  	mov edi, eax 	; (vaddr) c_s2
+  	mov esi, 0xfeffffff	;
+  	push edx
+  	call lz77_decompress
+  	pop ebx	; (vaddr)s2
+  	pop edx			;(len) decrypt [esp] (buffer) decrypt, (len, vaddr) s2
+  	add esp, rdx ;Restore stack [esp] (len, vaddr) s2
+  	test eax, eax
+  	jnz _exit
+
+  .mprotect_stage_2:
+  	mov edx, 0x5 
+  	pop ecx			;(len) s2 [esp]
+  	push ebx		;[rsp] (vaddr) s2
+  	push ecx		;[rsp]  (len, vaddr) s2
+  	mov eax, 125
+  	int 0x80
+  	test eax, eax
+    	jnz _exit
+  	.jmp_stage_2:
+  	push r13;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
+  	ret;		 ;(pop rip [rsp] -> vaddr_s2_elf)[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
+
+  _exit:	
+  	xor ebx, ebx		;
+  	xor eax, eax		;syscall 0
+  	int 0x80
+  lz77_decompress:
+      ; Function entry - validate input parameters
+      ; rdi = in, rsi = in_size, rdx = out
+  	cmp rsi,byte +0x7
+  	mov r9,rdx
+  	setna al
+  	test rdx,rdx
+  	setz dl
+  	or al,dl
+  	jnz .end
+  	test rdi,rdi
+  	jz .end
+  	mov rcx,rsi
+  .init_loop:
+  	mov rsi,[rdi]
+  	test rsi,rsi
+  	push byte +0x0
+  	pop rax
+  	jz .end
+  	lea r8,[rdi+0x8]
+  	add rdi,rcx
+  .advance_token:
+  	add r8,byte +0x3
+  	cmp r8,rdi
+  	jna .get_data_token
+  	jmp .end
+
+  .get_data_token:
+  	cmp rax,rsi
+  	jnc .end
+  	mov cx,[r8-0x3]
+  	mov edx,ecx
+  	and dx,byte +0xf
+  	jnz .check_len_distance
+  .literal:
+  	mov dl,[r8-0x1]
+  	mov [r9+rax],dl
+  	inc rax
+  	jmp .advance_token
+  .check_len_distance:
+  	shr cx,byte 0x4
+  	movzx r11d,cx
+  	jz .literal
+  	cmp rax,r11
+  	jc .literal
+  .match:
+  	push rbx
+  	add edx,byte +0x2
+  	mov rcx,rsi
+  	lea rbx,[r9+rax]
+  	mov r10,rax
+  	sub rcx,rax
+  	movsx rdx,dx
+  	cmp rcx,rdx
+  	cmovna rdx,rcx
+  	sub r10,r11
+  	xor ecx,ecx
+  	add r10,r9
+  .match_write:
+  	mov r11b,[r10+rcx]
+  	mov [rbx+rcx],r11b
+  	inc rcx
+  	cmp rdx,rcx
+  	jnz .match_write
+  .restore_match:
+  	pop rbx
+  	add rax,rdx
+  	cmp rax,rsi
+  	jnc .advance_token
+  	mov dl,[r8-0x1]
+  	mov [r9+rax],dl
+  	inc rax
+  	jmp .advance_token
+  .end:
+  	cmp rax,rsi
+  	setnz al
+  	movzx eax,al
+  	neg rax
+  	ret
+
+  decrypt:
+  	push rsi
+  	pop rax
+  	ret
+
+  end_of_stage1:
+  	call _start.return_crypt_compress_addr
+#+end_src
+
 ***** DONE run auxv
 CLOSED: [2025-09-14 Sun 14:08]
 ***** DONE Get updated values for auxv.
