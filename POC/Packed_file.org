@@ -2252,6 +2252,8 @@ CLOSED: [2025-09-29 Mon 11:58]
 
   #define PAGE_SIZE 0x1000
 
+  //TODO syscall wrapper as x86.
+
   // Generic function to calculate memory range for ELF segments
   void calculate_elf_memory_range(Elf64_Phdr *phdr, int phnum, uint64_t *min_vaddr, uint64_t *max_vaddr)
   {
@@ -2295,13 +2297,11 @@ CLOSED: [2025-09-29 Mon 11:58]
       uint64_t map_end = phdr->p_offset + phdr->p_filesz;
       if (fd == -1)
         {
-        flags |= MAP_ANONYMOUS;
-        prot = PROT_READ | PROT_WRITE;
-        /* if (phdr->p_memsz > phdr->p_filesz) */
-  	/* map_end += phdr->p_memsz - phdr->p_filesz; */
+  	if (phdr->p_memsz > phdr->p_filesz)
+  	  map_end += phdr->p_memsz - phdr->p_filesz;
+  	flags |= MAP_ANONYMOUS;
+  	prot = PROT_READ | PROT_WRITE;
         }
-      /* if (phdr->p_filesz < phdr->p_memsz) */
-        /* map_end = (map_end + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1); */
 
       size_t map_size = map_end - page_offset;
       void *map_addr = (char *)base + (page_vaddr - min_vaddr);
@@ -2321,17 +2321,16 @@ CLOSED: [2025-09-29 Mon 11:58]
       }
       if (phdr->p_memsz > phdr->p_filesz)
         {
-  	// La dirección virtual donde comienza .bss dentro del segmento
-  	uint64_t offset_bss_start = page_vaddr - phdr->p_vaddr + phdr->p_filesz;
-  	uint64_t offset_bss_start_align = ((uint64_t)(offset_bss_start_align + PAGE_SIZE - 1)) & ~(PAGE_SIZE -1);
-  	uint64_t offset_bss_end = phdr->p_offset - page_offset + phdr->p_memsz;
-  	if (offset_bss_end > offset_bss_start_align)
-  	  {
-  	void * vaddr_bss_start_in_segment_align = result + offset_bss_start_align;
-  	void *vaddr_bss_end = result + offset_bss_end;
-  	    uint64_t total_bss_map_size = (vaddr_bss_end - vaddr_bss_start_in_segment_align + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
-  	    void *bss_result = mmap(vaddr_bss_start_in_segment_align, total_bss_map_size, prot, 
+  	// La dirección virtual donde comienza .bss dentro del segmento
+  	uint64_t va_bss_start = phdr->p_vaddr - page_vaddr + phdr->p_filesz;
+  	uint64_t va_bss_end = va_bss_start + (phdr->p_filesz - p_memsz);
+  	uint64_t va_bss_start_align = ((uint64_t)(offset_bss_start_align + PAGE_SIZE - 1)) & ~(PAGE_SIZE -1);
+  	if (va_bss_end > va_bss_start_align)
+  	  {
+  	    uint64_t bss_map_size = va_bss_end - va_bss_start_align;
+  	    void * vaddr_bss_start_in_segment_align = result + va_bss_start_align;
+  	    void *bss_result = mmap(vaddr_bss_start_in_segment_align, bss_map_size, prot, 
   				MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   	    if (bss_result <= -0xfff)
   	      exit (0);
@@ -2345,7 +2344,7 @@ CLOSED: [2025-09-29 Mon 11:58]
 
 
   // Generic ELF unpacking function that works for both main ELF and interpreter
-  uint64_t load_elf_generic(void *ptr, uint64_t aslr_offset, uint64_t target_vaddr, int fd)
+  uint64_t load_elf_generic(void *ptr, uint64_t aslr_offset, int fd)
   {
       Elf64_Ehdr *elf = (Elf64_Ehdr *)ptr;
       Elf64_Phdr *elf_ph = (Elf64_Phdr *)((char *)ptr + elf->e_phoff);
@@ -2358,13 +2357,14 @@ CLOSED: [2025-09-29 Mon 11:58]
       uint64_t map_flags = MAP_PRIVATE | MAP_ANONYMOUS;
       
       // Reserve entire address space with PROT_NONE
+      void *target_vaddr = 0;
       void *base_addr;
-      if (target_vaddr)
+      if (fd == -1)
         {
-  	target_vaddr += aslr_offset;
+  	target_vaddr = min_vaddr + aslr_offset;
   	map_flags |= MAP_FIXED;
         }
-      base_addr = mmap((void *)target_vaddr, total_size, 
+      base_addr = mmap(target_vaddr, total_size, 
                           PROT_NONE, map_flags, -1, 0);
       
       if (base_addr <= -0xfff)
@@ -3529,6 +3529,7 @@ CLOSED: [2025-10-19 Sun 19:48]
       /* *max_vaddr = (*max_vaddr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1); */
   }
 
+  //TODO Generic function to load n data in a elf, and use it for s3.
   // Generic function to load a single ELF segment
   // phdr = rdx
   int load_elf_segment(void *base, void *elf_ptr, Elf32_Phdr *phdr, uint32_t min_vaddr, int fd)
@@ -3561,7 +3562,7 @@ CLOSED: [2025-10-19 Sun 19:48]
       void *result = sys_mmap(map_addr, map_size, prot,
   			flags, fd, page_offset);
       if (result == MAP_FAILED)
-        return (-1);
+        exit (-1);
       if (fd == -1) {
           // Copy data from ELF buffer to mapped memory
           memcpy((char *)result, (char *)elf_ptr + page_offset, phdr->p_offset - page_offset + phdr->p_filesz);
@@ -3569,7 +3570,7 @@ CLOSED: [2025-10-19 Sun 19:48]
   	if (phdr->p_flags & PF_W) prot |= PROT_WRITE;
   	if (phdr->p_flags & PF_X) prot |= PROT_EXEC;
   	if (sys_mprotect(map_addr, map_size, prot) < 0)
-  	  return (-1);
+  	  exit (-1);
   	return (0);
       }
       if (phdr->p_memsz > phdr->p_filesz)
@@ -4058,11 +4059,11 @@ CLOSED: [2025-10-20 Mon 17:10]
   	jnz _exit
 
   	jmp end_s2
-  return_ehdr_ptr:
-  	pop edi			;[esp] aslr, (len, va) s2
-  	push edi		; [esp] ehdr, aslr, (len, vaddr)s2
-  	mov esi, 0xfeffffff	; Modify in C.
-  	.get_base:
+  return_ehdr_ptr: 		;[X] Fine Stack
+  	pop edi			;[esp] aslr, (len, va) s2 -> Fine
+  	push edi		; [esp] ehdr, aslr, (len, vaddr)s2 -> Fine
+  	mov esi, 0xfeffffff	; Modify in C. ->Fine
+  	.get_base:		;[X] Fine
   	;; For calculate elf memory range
   	;; 		        High adr -> Low || Low -> Higher
   	sub esp, 0x8		;[Min, Max] || [Max, Min]
@@ -4076,20 +4077,20 @@ CLOSED: [2025-10-20 Mon 17:10]
   	lea edx, [edi + eax]	      ; PHDR
   	push edx ;; arg1 PHDR  [esp] (phdr, phnum, , {Max, Min} ptr) args, [Max, Min] ...
 
-  	call calculate_elf_memory_range
-  	add esp, 0x14  ;
-  	pop edx			;min -> base
-  ;[esp] ehdr, aslr, (len, vaddr)s2.
-  	pop eax	       ;ehdr
-  	pop ebx	       ;aslr [esp] (len, vaddr) s2
-  	push ebx       ;[esp] aslr, (len, vaddr) s2
-  	push -1	       ;[esp] (fd) args, ..
-  	push edx       ;[esp](va, fd) args...
-  	push ebx       ;[esp](aslr, va, fd) args...
-  	push eax       ;[esp](ehdr, aslr, va, fd) args...
+  	call calculate_elf_memory_range ;Fine
+  	add esp, 0x14  ;Fine
+  	pop edx			;min -> base Fine ;[esp] ehdr, aslr, (len, vaddr)s2.
+  	pop eax	       ;ehdr Fine [esp] aslr, (len, vaddr)s2.
+  	pop ebx	       ;aslr [esp] (len, vaddr) s2; Fine
+  	push ebx       ;[esp] aslr, (len, vaddr) s2;Fine
+  	push -1	       ;[esp] (fd) args, aslr, (len, vaddr) s2;Fine
+
+  	push edx       ;[esp](va, fd) args, aslr, (len, vaddr) s2;Fine
+  	push ebx       ;[esp](aslr, va, fd) args, aslr, (len, vaddr) s2;Fine .
+  	push eax       ;[esp](ehdr, aslr, va, fd) args, aslr, (len, vaddr) s2;Fine
   	;; load elf generic (ehdr,aslr, base_vaddr, fd)
-  	call load_elf_generic
-  	cmp eax, -1
+  	call load_elf_generic	;Fine
+  	cmp eax, -1		;;[esp](ehdr, aslr, va, fd) args, aslr, (len, vaddr) s2;Fine
   	je _exit
   	add esp, 0x10
   ;[esp] aslr, (len, va) s2
@@ -4107,15 +4108,15 @@ CLOSED: [2025-10-20 Mon 17:10]
   	push edi
   ;[esp] (va) interp ,(entry, va) elf, aslr, (len, va)s2
   	push eax
-  ;[esp] (entry, va) interp ,(entry, va) elf, aslr, (len, va)s2
+  ;[esp] (entry, va) interp ,(entry, va) elf, aslr, (len, va)s2; Fine
   	lea edi, [esp + 28]
-  ;; set_auxv(entry interp, va interp, entry elf, va elf)
-  	call set_auxv
-  	pop ebx			;entry interp
-  	pop ecx
-  	pop ecx			;elf entry
-  	pop edx			;elf va
-  	pop edx			;aslr
+  ;; set_auxv([ignored]entry interp, va interp, entry elf, va elf, aslr)
+  	call set_auxv		;Fine
+  	pop ebx			;entry interp [esp] (va) interp ,(entry, va) elf, aslr, (len, va)s2; Fine
+  	pop ecx			;Discard (va) interp [esp] (entry, va) elf, aslr, (len, va)s2; Fine
+  	pop ecx			;elf entry [esp] (va) elf, aslr, (len, va) s2 ;Fine
+  	pop edx			;elf va Discard (va) elf [esp] aslr, (len, va) s2 ;Fine
+  	pop edx			;aslr [esp] (len, va) s2 ;Fine
   ;; [esp] (len, va) s2
   	mov esi, 0xfeffffff	;vaddr s3 Modified in C
   	test esi, esi
@@ -4123,7 +4124,7 @@ CLOSED: [2025-10-20 Mon 17:10]
   	cmovne esi, edi
   	push esi;[esp] va s3, (len, va) s2
   	push ecx;[esp] (elf) entry, ...
-  	push ebx;[esp] (interp, elf) entry
+  	push ebx;[esp] (interp, elf) entry; Fine
   	test esi, esi
   	jnz .woody_payload
   	;; Create s3
@@ -4176,22 +4177,22 @@ CLOSED: [2025-10-20 Mon 17:10]
   	pop ecx			;buffer
   	push 0xd		;len
           pop    edx		
-  	push 0x5		;write sysnbr
+  	push 0x4		;write sysnbr
   	pop eax
   	int 0x80
   	.end_payload:
   	.jmp_s3:
-  	pop edx 		;interp
-  	pop esi			;elf
-  	pop edi			;va s3 [esp] (len, va) s2
+  	pop edx 		;Entry interp;[esp] (e) elf, (va) s3, (len, va) s2;Fine
+  	pop esi			;Entry elf; Fine[esp] (va) s3, (len, va) s2; Fine
+  	pop edi			;(va) s3 [esp] (len, va) s2
   	;; munmap
           pop ecx 		;(len)
           pop ebx			;(va) 
           push 91			;munmap
   	pop eax			
-  	int 0x80
-  	test eax, eax
-  	jnz _exit
+  	;; int 0x80	I was choping the va that i was executing Segfault error deserved.
+  	;; test eax, eax
+  	;; jnz _exit
   	test edx, edx		;if interp
   	cmovnz esi, edx		; modify entrypoint
   	push esi	; entrypoint (interp || elf)
@@ -4204,12 +4205,13 @@ CLOSED: [2025-10-20 Mon 17:10]
     	;; edi should be rsp begin
   ;[esp] (entry, va) interp ,(entry, va) elf, aslr, (len, va)s2
 
-    	;; r15 aslr -> [esp + 0x4 * 4]
-    	;; r14 ehdr ptr in the correct mmap -> [esp + 0x4 * 3]
-    	;; r13 entrypoint [esp + 0x4 * 2]
-    	;; r12 base interp [esp + 0x4]
+    	;; r15 aslr -> [esp + 0x4 * 5]
+    	;; r14 ehdr ptr in the correct mmap -> [esp + 0x4 * 4]
+    	;; r13 entrypoint [esp + 0x4 * 3]
+    	;; r12 base interp [esp + 0x4 * 2]
+  	;; r11 entry interp [sep + 0x4 ]
     	;; Modified reg rdi, rsi, r/ecx
-  set_auxv:
+  set_auxv:			;[esp](va) ret, ((entry, va) interp ,(entry, va) elf, aslr)) args, (len, va) s2
           xor ecx, ecx		; counter for detect end argv, envp.
 
   	.reaching_auxv:
@@ -4235,8 +4237,12 @@ CLOSED: [2025-10-20 Mon 17:10]
           cmp esi, 7          ; AT_BASE
           je .set_base
           cmp esi, 9          ; AT_ENTRY
-          je .set_entry
-          jmp .auxv_loop
+          jne .auxv_loop
+  	
+  	.set_entry:
+          mov eax, dword [esp + 0x4 * 2]
+          mov dword [edi], eax 	;elf_interp
+      	jmp .auxv_loop
 
   	.set_phdr:
   	mov ebp, [esp + 0x4 * 3]     ; ehdr
@@ -4256,10 +4262,6 @@ CLOSED: [2025-10-20 Mon 17:10]
           mov dword [edi], eax 	;base_interp
           jmp .auxv_loop
 
-  	.set_entry:
-          mov eax, dword [esp + 0x4 * 2]
-          mov dword [edi], eax 	;elf_interp
-      	jmp .auxv_loop
   	.end:
     	ret
 
@@ -4316,8 +4318,7 @@ CLOSED: [2025-10-20 Mon 17:10]
   .loop_check:
       mov    ecx, DWORD  [edx] ; ecx = current *min_vaddr
       dec    ebx                 ; ebx = phnum - 1
-      cmp    ebx, 0xffffffff     ; Check if counter underflowed (ebx == -1)
-      je     .align_and_finish   ; If all headers processed, align and finish
+      js     .align_and_finish   ; If all headers processed, align and finish
       
       ; Check if current header is PT_LOAD
       cmp    DWORD  [eax-0x20], 0x1 ; Compare p_type with PT_LOAD (1)
@@ -4369,7 +4370,7 @@ CLOSED: [2025-10-20 Mon 17:10]
       mov    eax, DWORD  [ebp+0x10] ; eax = phdr
       mov    edi, DWORD  [ebp+0x18] ; edi = fd
       cmp    DWORD  [eax], 0x1      ; Compare p_type with PT_LOAD (1)
-      jne    .not_load_segment         ; If not PT_LOAD, return 0
+      jne    .end         ; If not PT_LOAD, return 0
 
   	;;  Optimizable using ebx and mantain eax as phdr
       ; Extract segment information from program header
@@ -4512,11 +4513,12 @@ CLOSED: [2025-10-20 Mon 17:10]
       cmp    eax, 0xfffff000          ; Check if result is error
       ja     _exit
 
-  .not_load_segment:
-      ; Not a load segment
-      xor    eax, eax                 ; Return 0
-
   .end:
+  	mov eax, [ebp+0x8]	;if Base == Null -> Base = mmap
+  	test eax, eax
+  	cmovz eax, DWORD [ebp-0x34]
+  	mov [ebp+0x8], eax	;
+
       add    esp, 0x34                ; Deallocate local variables
       xor    eax, eax                 ; Return 0 (success)
       pop    ebx                      ; Restore callee-saved registers
@@ -4608,7 +4610,7 @@ CLOSED: [2025-10-20 Mon 17:10]
       pop    edi
       pop    ebp                 ; Restore stack frame
       ret                       ; Return
-
+  ;;; target_vaddr is not needed.
   ; void* load_elf_generic(void *ptr, uint32_t aslr_offset, uint32_t target_vaddr, int fd)
   ; rdi = ptr, rsi = aslr_offset, rdx = target_vaddr, ecx = fd
   load_elf_generic:
@@ -4617,21 +4619,21 @@ CLOSED: [2025-10-20 Mon 17:10]
       ;; push   edi                 ; Save caller-saved registers
       push   esi
       push   ebx
-      sub    esp, 0x2c           ; Allocate local variables
+      sub    esp, 0xc           ; Allocate local variables
       
       ; Load ELF header and program header information
       mov    edx, DWORD  [ebp+0x8]  ; edx = ptr
       mov    ebx, DWORD  [ebp+0x10] ; ebx = target_vaddr
       mov    eax, DWORD  [edx+0x1c] ; eax = e_phoff
       add    eax, edx            ; eax = ptr + e_phoff (actual program header address)
-      mov    DWORD  [ebp-0x2c], eax ; Save program header address
-      lea    eax, [ebp-0x20]     ; eax = pointer to stack space for max_vaddr
+      mov    DWORD  [ebp-0xc], eax ; Save program header address
+      lea    eax, [ebp-0x10]     ; eax = pointer to stack space for max_vaddr
       push   eax                 ; Push pointer to max_vaddr
-      lea    eax, [ebp-0x24]     ; eax = pointer to stack space for min_vaddr
+      lea    eax, [ebp-0x14]     ; eax = pointer to stack space for min_vaddr
       push   eax                 ; Push pointer to min_vaddr
       movzx  eax, WORD  [edx+0x2c] ; eax = e_phnum
       push   eax                 ; Push e_phnum
-      push   DWORD  [ebp-0x2c] ; Push program header address
+      push   DWORD  [ebp-0xc] ; Push program header address
       call   calculate_elf_memory_range ; Call helper function
       add    esp, 0x10           ; Deallocate stack space don't got sense de allocate for allocate
       
@@ -4644,24 +4646,24 @@ CLOSED: [2025-10-20 Mon 17:10]
 
   .use_default_flags:
       ; Initialize mmap parameters
-      mov    DWORD  [ebp-0x1c], 0x0 ; Initialize counter to 0
   	xor edi, edi
       jmp    .check_phdr_count   ; If no error, continue
 
   .load_segment_loop:
       ; Prepare arguments for load_elf_segment call
-      mov    eax, edi            ; eax = counter
+      ;; mov    eax, edi            ; eax = counter
       ;; sub    esp, 0xc            ; Allocate stack space
       push   DWORD  [ebp+0x14] ; Push fd
-      push   DWORD  [ebp-0x24] ; Push min_vaddr
-      mov    edx, eax            ; edx = counter
+      push   DWORD  [ebp-0x14] ; Push min_vaddr
+      mov    edx, edi            ; edx = counter
       shl    edx, 0x5            ; edx = counter * 32
-      add    edx, DWORD  [ebp-0x2c] ; edx = program header address + (counter * 32)
+      add    edx, DWORD  [ebp-0xc] ; edx = program header address + (counter * 32)
       push   edx                 ; Push current program header
       push   DWORD  [ebp+0x8] ; Push elf_ptr
       push   ebx                 ; Push base address
-      call   load_elf_segment    ; Call load_elf_segment
-      add    esp, 0x14           ; 4 * 5 = 20 -> 20 / 16 = 1 20 % 16 = 4 -> 0x14
+      call   load_elf_segment    ; Call load_elf_segment; First fine
+      pop ebx		       ; Got a base in case not got one DYN.
+      add    esp, 0x10           ; 4 * 4 = 16 -> 16 / 16 = 1 16 % 16 = 0 -> 0x10
       test   eax, eax            ; Test result
       js    _exit
 
@@ -4689,8 +4691,8 @@ CLOSED: [2025-10-20 Mon 17:10]
       mov    edx, DWORD  [ebp+0x8] ; edx = ptr
       mov    eax, DWORD  [edx+0x18] ; eax = e_entry
       add    eax, ebx            ; eax = base_address + e_entry
-      sub    eax, DWORD  [ebp-0x24] ; eax = (base_address + e_entry) - min_vaddr
-      lea    esp, [ebp-0xc]      ; Deallocate local variables prev c cause edi was pop
+      sub    eax, DWORD  [ebp-0x14] ; eax = (base_address + e_entry) - min_vaddr
+      lea    esp, [ebp-0x8]      ; Deallocate local variables prev c cause edi was pop
   	mov edi, ebx	       ; Base va of load elf
       pop    ebx                 ; Restore callee-saved registers
       pop    esi
@@ -4793,13 +4795,25 @@ CLOSED: [2025-10-19 Sun 19:00]
   	ret
 #+end_src
 
-* TODO Checks elf
-No p_memsz < p_filesz
-No dyn -> out of load section.
+* TODO Checks 
+** ASM
+*** x64 & x86
+1. params @danrodri.
+2. take out target vaddr and reduce s2 len.
+3. May i Use create_elf_segment or something similar to make the s3.
+*** x86
+1. check works in case need to create a s3.
+2. check works with interp
+** C
+**** Elf Validation.
+1. No p_memsz < p_filesz
+2. No dyn -> out of load section.
+**** Improve Code:
+- Delete Unused Stuff.
+- Improve readabilite of the code {Struct, varnames, ...}
 * REVIEW Optimization File size
-no use mov use push 0x2, pop rax ->  2B, mov rax, 0x2  -> ?B
+no use mov use push 0x2, pop rax ->  2B, mov rax, 0x2  -> 6B
 no use xor rsi, rsi, use sub esi, esi. or xor esi, esi -> 2b [0x29	0xf6]
-in the payload append the string in the code using call, pop
+in the payload append the string in the code using call, pop in the register that need that param
 open param call +end string"/proc/self/exe\0"pop rdi, syscall. rdi contains the ptr to "/proc/self/exe".
 
-CLOSED: [2025-09-08 Mon 07:03]
