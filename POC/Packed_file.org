@@ -2216,11 +2216,11 @@ Tested with upx behaviour.
 
   // Generic function to load a single ELF segment
   // phdr = rdx
-  int load_elf_segment(void *base, void *elf_ptr, Elf64_Phdr *phdr, uint64_t min_vaddr, int fd)
+  int load_elf_segment(void *elf_ptr, Elf64_Phdr *phdr, uint64_t min_vaddr, int fd)
   {
       if (phdr->p_type != PT_LOAD)
           return 0;
-      
+      char *base = min_vaddr;
       // Align offset and size to page boundaries
       uint64_t page_offset = phdr->p_offset & ~(PAGE_SIZE - 1);
       uint64_t page_vaddr = phdr->p_vaddr & ~(PAGE_SIZE - 1);
@@ -2371,25 +2371,6 @@ Tested with upx behaviour.
       } 
     return (0);
   }
-
-  uint64_t get_at_phdr_x64(void *ptr)
-  {
-      Elf64_Ehdr *elf = (Elf64_Ehdr *)ptr;
-      return (uint64_t)((char *)ptr + elf->e_phoff);
-  }
-
-  uint64_t get_at_phnum_x64(void *ptr)
-  {
-      Elf64_Ehdr *elf = (Elf64_Ehdr *)ptr;
-      return elf->e_phnum;
-  }
-
-  uint64_t get_at_entry_x64(void *ptr)
-  {
-      Elf64_Ehdr *elf = (Elf64_Ehdr *)ptr;
-      return elf->e_entry;
-  }
-
   // r/eax -1 error, 0 no interp, != 0 && != -1 entrypoint to jmp.
   // rdi base.
   uint64_t get_at_interp_x64(void *ptr)
@@ -2472,6 +2453,7 @@ Tested with upx behaviour.
    error:
     return -1;
   }
+
 #+end_src
 
 #+begin_src asm :tangle payload/x64/stage1.s :mkdirp yes
@@ -3453,7 +3435,7 @@ Tested with upx behaviour.
       if (phdr->p_flags & PF_X)
         prot |= PROT_EXEC;
       prot_bk = prot;
-      int flags = MAP_PRIVATE | MAP_FIXED * (*base != NULL);
+      int flags = MAP_PRIVATE | MAP_FIXED;
       map_len = len_fs;
       if (fd == -1)
         {
@@ -3468,7 +3450,7 @@ Tested with upx behaviour.
       if (fd == -1) {
           // Copy data from ELF buffer to mapped memory
           memcpy((char *)result, (char *)elf_ptr + page_offset, len_fs);
-  	if (sys_mprotect(result, map_len, prot) != 0)
+  	if (sys_mprotect(result, map_len, prot_bk) != 0)
   	  goto error;
       }
       else if (bss_len > 0)
@@ -3486,10 +3468,9 @@ Tested with upx behaviour.
   	      goto error;
   	  }
         }
-      if (!*base)
-        ,*base = result;
+      return (0);
    error:
-      return 0;
+      return (-1);
   }
 
   unsigned int write_dyn(void *ptr, unsigned int aslr)
@@ -3502,21 +3483,32 @@ Tested with upx behaviour.
   static inline unsigned int load_elf(void *ptr, unsigned int aslr_offset, int fd)
   {
       void	*va;
-      void	*min_va;
+      uint32_t min_va;
+      uint32_t max_va;
       Elf32_Ehdr *elf = (Elf32_Ehdr *)ptr;
       Elf32_Phdr *elf_ph = (Elf32_Phdr *)((char *)ptr + elf->e_phoff);
-      min_va = calculate_elf_min_va(elf_ph, elf->e_phnum);
-      
-      va = min_va;
+      calculate_elf_memory_range(elf_ph, elf->e_phnum, &min_vaddr, &max_vaddr);
+      uint64_t total_size = max_vaddr - min_vaddr;
+
+      prot = PROT_NONE;
+      int flags = MAP_PRIVATE | MAP_ANONYMOUS;
       if (fd == -1)
-        va += aslr_offset;
+        {
+  	va = min_vaddr + aslr_offset;
+  	flags |= MAP_FIXED;
+        }
+      base_addr = mmap(target_vaddr, total_size, 
+                          PROT_NONE, map_flags, -1, 0);
+      if (base_addr <= -0xfff)
+       goto exit;
       for (int i = 0; i < elf->e_phnum; i++)
         load_elf_segment(&va, ptr, &elf_ph[i], (unsigned int)min_va, fd);
       if (fd == -1)
   	write_dyn(va, aslr_offset);
-      
       unsigned int entrypoint = (unsigned int)va + (elf->e_entry - (unsigned int)min_va);
       return (entrypoint);
+   exit:
+      return (-1);
   }
 
 
