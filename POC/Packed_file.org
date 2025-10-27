@@ -3380,7 +3380,6 @@ Tested with upx behaviour.
   }
 
   static inline void *sys_mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset) {
-      // En x86, mmap usa el syscall 91 (mmap2 sería 192)
     long result;
      __asm__ volatile (
   	"pushl %%ebp\n\t"
@@ -3395,33 +3394,14 @@ Tested with upx behaviour.
       return (void *)result;
   }
 
-
-  // Generic function to calculate memory range for ELF segments
-  static inline void * calculate_elf_min_va(Elf32_Phdr *phdr, int phnum)
-  {
-      unsigned int	min_va = -1;
-      
-      if (!phnum)
-        exit(0);
-      while (phnum--) {
-          if (phdr[phnum].p_type == PT_LOAD) {
-              if (phdr[phnum].p_vaddr < min_va)
-                  min_va = phdr[phnum].p_vaddr;
-          }
-      }
-      min_va &= ~(PAGE_SIZE - 1);
-      return ((void*)min_va);
-  }
-
-
-  static inline int load_elf_segment(void **base, void *elf_ptr, Elf32_Phdr *phdr, unsigned int min_vaddr, int fd)
+  int load_elf_segment(void **base, void *elf_ptr, Elf32_Phdr *phdr, unsigned int min_vaddr, int fd)
   {
       const unsigned int page_offset = phdr->p_offset & ~(PAGE_SIZE - 1);
       const unsigned int offset_dif = phdr->p_offset - page_offset;
       const unsigned int page_vaddr = phdr->p_vaddr & ~(PAGE_SIZE - 1);
       const unsigned int va_dif = page_vaddr - min_vaddr;
-      unsigned int map_len;
       const int bss_len = phdr->p_memsz - phdr->p_filesz; 
+      unsigned int map_len;
       int prot;
       int prot_bk;
       unsigned int len_fs = offset_dif + phdr->p_filesz;
@@ -3444,8 +3424,8 @@ Tested with upx behaviour.
   	prot = PROT_READ | PROT_WRITE;
         }
       void *map_addr = (void *)(*base + va_dif);
-      result = sys_mmap(map_addr, map_len, prot, flags, fd, page_offset);
-      if (result >= (void *)(-4095) || (*base && result != map_addr))
+      result = sys_mmap(map_addr, map_len, prot, flags, fd, page_offset >> 12);
+      if (result >= (void *)(-4095))
         goto error;
       if (fd == -1) {
           // Copy data from ELF buffer to mapped memory
@@ -3463,7 +3443,7 @@ Tested with upx behaviour.
   	  {
   	    void *va_bss = result + len_bss_start_align;
   	    void *mmap_bss = sys_mmap(va_bss, bss_map_len, prot_bk,
-  					MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS, fd, 0);
+  					MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   	    if (mmap_bss <= (void *)-0xfff || va_bss != mmap_bss)
   	      goto error;
   	  }
@@ -3482,31 +3462,45 @@ Tested with upx behaviour.
   // Generic ELF unpacking function that works for both main ELF and interpreter
   static inline unsigned int load_elf(void *ptr, unsigned int aslr_offset, int fd)
   {
-      void	*va;
+      void	*mmap_va;
+      Elf32_Ehdr *elf = (Elf32_Ehdr *)ptr;
+      Elf32_Phdr *phdr = (Elf32_Phdr *)((char *)ptr + elf->e_phoff);
+      uint32_t phnum = elf->e_phnum;
       uint32_t min_va;
       uint32_t max_va;
-      Elf32_Ehdr *elf = (Elf32_Ehdr *)ptr;
-      Elf32_Phdr *elf_ph = (Elf32_Phdr *)((char *)ptr + elf->e_phoff);
-      calculate_elf_memory_range(elf_ph, elf->e_phnum, &min_vaddr, &max_vaddr);
-      uint64_t total_size = max_vaddr - min_vaddr;
 
-      prot = PROT_NONE;
-      int flags = MAP_PRIVATE | MAP_ANONYMOUS;
-      if (fd == -1)
-        {
-  	va = min_vaddr + aslr_offset;
-  	flags |= MAP_FIXED;
+      min_va = -1;
+      max_va = 0;
+      if (!phnum)
+        goto exit;
+      while (phnum--) {
+        if (phdr[phnum].p_type == PT_LOAD) {
+  	if (phdr[phnum].p_vaddr < min_va)
+  	  min_va = phdr[phnum].p_vaddr;
+  	if (phdr[phnum].p_vaddr > max_va)
+  	  max_va = phdr[phnum].p_vaddr + phdr[phnum].p_memsz;
         }
-      base_addr = mmap(target_vaddr, total_size, 
-                          PROT_NONE, map_flags, -1, 0);
-      if (base_addr <= -0xfff)
-       goto exit;
+      }
+      min_va &= ~(PAGE_SIZE - 1);
+      if (fd != -1)// Interp
+        {
+  	uint64_t total_size = (max_va + (PAGE_SIZE - 1) - min_va) & ~(PAGE_SIZE -1);
+
+  	int flags = MAP_PRIVATE | MAP_ANONYMOUS;
+  	mmap_va = NULL;
+
+  	mmap_va = sys_mmap(mmap_va, total_size, 
+  			   PROT_NONE, flags, -1, 0);
+  	if ((uint32_t)mmap_va <= -0xfff)
+  	  goto exit;
+        }
+      else
+        mmap_va = min_va + aslr_offset;
       for (int i = 0; i < elf->e_phnum; i++)
-        load_elf_segment(&va, ptr, &elf_ph[i], (unsigned int)min_va, fd);
+        load_elf_segment(&mmap_va, ptr, &phdr[i], (unsigned int)min_va, fd);
       if (fd == -1)
-  	write_dyn(va, aslr_offset);
-      unsigned int entrypoint = (unsigned int)va + (elf->e_entry - (unsigned int)min_va);
-      return (entrypoint);
+  	write_dyn(mmap_va, aslr_offset);
+      return ((unsigned int)mmap_va + (elf->e_entry - (unsigned int)min_va));
    exit:
       return (-1);
   }
@@ -4000,80 +3994,6 @@ Tested with upx behaviour.
 
   .end:
     	ret
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  ; Parameters:
-  ;   [esp+0x8] = phdr (pointer to program headers)
-  ;   [esp+0xc] = phnum (number of program headers)
-  calculate_elf_min_va:
-  	push ebx
-      mov    ebx, 0xffffffff
-
-  .loop_start:
-      mov    eax, DWORD  [esp+0xc]
-      shl    eax, 0x5
-      mov    edx, eax
-      mov    eax, DWORD  [esp+0x8]
-      add    eax, edx
-      mov    eax, DWORD  [eax]
-      cmp    eax, 0x1
-      jne    .loop_continue
-      
-      ; PT_LOAD found, check p_vaddr
-      mov    eax, DWORD  [esp+0xc]
-      shl    eax, 0x5
-      mov    edx, eax
-      mov    eax, DWORD  [esp+0x8]
-      add    eax, edx
-      mov    eax, DWORD  [eax+0x8]
-      cmp    ebx, eax
-      jbe    .loop_continue
-      
-      ; Update min_va
-      mov    eax, DWORD  [esp+0xc]
-      shl    eax, 0x5
-      mov    edx, eax
-      mov    eax, DWORD  [esp+0x8]
-      add    eax, edx
-      mov    eax, DWORD  [eax+0x8]
-      mov    ebx, eax
-
-  .loop_continue:
-      mov    eax, DWORD  [esp+0xc]
-      lea    edx, [eax-0x1]
-      mov    DWORD  [esp+0xc], edx
-      test   eax, eax
-      jne    .loop_start
-
-  .align_min_va:
-      and    ebx, 0xfffff000
-      mov    eax, ebx
-
-  .cleanup:
-  	pop ebx
-      ret
-
   ; int load_elf_segment(void *base, void *elf_ptr, Elf32_Phdr *phdr, uint32_t min_vaddr, int fd)
   ; Parameters:
   ;   [ebp+0x8] = base (base address where ELF should be loaded)
@@ -4124,12 +4044,8 @@ Tested with upx behaviour.
   	push eax
       mov    eax, DWORD  [eax]
       cmp    eax, 0x1
-      je     .is_pt_load
-      
-      ; Not PT_LOAD segment
-  	xor eax, eax
-      jmp    .exit_function
-
+      jne     .exit_success
+  	
   .is_pt_load:
       mov    DWORD  [ebp-0x10], 0x1
       mov    eax, DWORD  [ebp+0x10]
@@ -4146,7 +4062,7 @@ Tested with upx behaviour.
       and    eax, 0x1
       test   eax, eax
       je     .setup_protection
-      or     DWORD  [ebp-0x10], 0x4
+      or     DWORD  [ebp-0x10], 0x4 ;prot
 
   .setup_protection:
   	pop eax
@@ -4219,6 +4135,22 @@ Tested with upx behaviour.
       push   eax
       mov edi,   DWORD  [ebp-0x38]
       rep movsb
+      mov    DWORD  [ebp-0x10], 0x1
+      mov    eax, DWORD  [ebp+0x10]
+      mov    eax, DWORD  [eax+0x18]
+      and    eax, 0x2
+      test   eax, eax
+      je     .check_pf_x_flag_v2
+      or     DWORD  [ebp-0x10], 0x2
+
+  .check_pf_x_flag_v2:
+  	mov eax, DWORD [ebp+0x10]
+      mov    eax, DWORD  [eax+0x18]
+      and    eax, 0x1
+      test   eax, eax
+      je     .setup_mprotect
+      or     DWORD  [ebp-0x10], 0x4 ;prot
+  .setup_mprotect:
       mov edx ,  DWORD  [ebp-0x10]
       mov ecx ,  DWORD  [ebp-0xc]
       mov ebx ,  DWORD  [ebp-0x38] 
@@ -4365,121 +4297,201 @@ Tested with upx behaviour.
       pop    edi
       pop    ebp                 ; Restore stack frame
       ret                       ; Return
+
   ; void* load_elf(void *ptr, uint32_t aslr_offset, int fd)
   ;   [ebp+0x8] = ptr ehdr
   ;   [ebp+0xc] = aslr 
   ;   [ebp+0x10] = fd
+  ; Function: load_elf
+  ; Purpose: Loads an ELF file into memory, handling segments, mapping memory, and dynamic linking.
   load_elf:
-      push   ebp
-      mov    ebp, esp
-      push   ebx
-      sub    esp, 0x20
-  .set_ehdr:
-      mov    eax, DWORD  [ebp+0x8]
-  .set_phdr:
-      mov    edx, DWORD  [eax+0x1c]
-      add    edx, eax
-      mov    DWORD  [ebp-0x14], edx
-  .get_e_phnum:
-      movzx  eax, WORD  [eax+0x2c]
-  	push eax
-  	push edx
-  ._min_va_inline_start_min_va:	;           +4    +8 
-  	push ebx		;[esp] ebx, phdr, phnum
-      mov    ebx, 0xffffffff
+  ; Prologue
+  push   ebp
+  mov    ebp, esp
+  sub    esp, 0x38
 
-  ._min_va_inline_loop_start:
-      ;; mov    eax, DWORD  [esp+0x8]
-      shl    eax, 0x5
-      add    eax, DWORD  [esp+0x4]
+  ; Save the pointer to the ELF header (first argument)
+  mov    eax, DWORD  [ebp+0x8]
+  mov    DWORD  [ebp-0x20], eax
+
+  ; Get the offset of the program header table from the ELF header
+  mov    eax, DWORD  [ebp-0x20]
+  mov    edx, DWORD  [eax+0x1c] ; e_phoff
+  mov    eax, DWORD  [ebp+0x8]
+  add    eax, edx                  ; Address of program header table
+  mov    DWORD  [ebp-0x24], eax ; Store it
+
+  ; Get the number of program headers (e_phnum) and store it
+  mov    eax, DWORD  [ebp-0x20]
+  movzx  eax, WORD  [eax+0x2c]  ; e_phnum
+  movzx  eax, ax                   ; Zero extend to 32 bits
+  mov    DWORD  [ebp-0x14], eax ; Store number of headers
+
+  ; Initialize loop control variables
+  mov    DWORD  [ebp-0xc], 0xffffffff ; Initialize min virtual address
+  mov    DWORD  [ebp-0x10], 0x0      ; Initialize max virtual address
+
+  ; Check if there are no program headers
+  cmp    DWORD  [ebp-0x14], 0x0
+  je     _exit
+
+  ; Loop body: Process program headers to find min/max virtual addresses
+  program_header_loop_body:
+      ; Get the current program header index
+      mov    eax, DWORD  [ebp-0x14]
+      shl    eax, 0x5          ; Multiply by 32
+      add    eax, DWORD  [ebp-0x24]
+      ; Get the program header type (p_type)
       mov    eax, DWORD  [eax]
+      ; Check if it's a LOAD segment (PT_LOAD = 1)
       cmp    eax, 0x1
-      jne    ._min_va_inline_loop_continue
-      
-      ; PT_LOAD found, check p_vaddr
-      mov    eax, DWORD  [esp+0x8]
-      shl    eax, 0x5
-      add    eax, DWORD  [esp+0x4]
-      mov    eax, DWORD  [eax+0x8]
-      cmp    ebx, eax
-      cmova  ebx, eax
+      jne    .program_header_loop_next
 
-  ._min_va_inline_loop_continue:
-      mov    eax, DWORD  [esp+0x8]
+      ; Get the virtual address of the segment (p_vaddr)
+      mov    eax, DWORD  [ebp-0x14]
+      shl    eax, 0x5          ; Multiply by 32
+      add    eax, DWORD  [ebp-0x24]
+      mov    edx, DWORD  [eax+0x8] ; p_vaddr
+
+      ; Update mmin virtual address if needed
+      cmp    edx, DWORD  [ebp-0xc]
+      jae    .no_update_min_addr
+      mov    DWORD  [ebp-0xc], edx
+  .no_update_min_addr:
+  	add edx, DWORD [eax+0x14] ; p_vaddr + p_memsz
+      cmp    edx, DWORD  [ebp-0x10]
+  	jle .program_header_loop_next
+       mov    DWORD  [ebp-0x10], edx
+
+  .program_header_loop_next:
+      ; Get the current program header index
+      mov    eax, DWORD  [ebp-0x14]
+      ; Decrement index
   	dec eax
-      ;; lea    edx, [eax-0x1]
-      mov    DWORD  [esp+0x8], eax ;edx
-  	jns ._min_va_inline_loop_start
-      ;; test   eax, eax
-      ;; jne    ._min_va_inline_loop_start
+      mov    DWORD  [ebp-0x14], eax
 
-  ._min_va_inline_align_min_va:
-      and    ebx, 0xfffff000
-      mov    eax, ebx
+      ; Test if we've processed all headers
+      test   eax, eax
+      jns    program_header_loop_body
 
-  ._min_va_inline_cleanup:
-  	pop ebx
+  ; Ensure min virtual address is page-aligned
+  and    DWORD  [ebp-0xc], 0xfffff000
+  mov eax, DWORD  [ebp-0xc]  ; Min virtual address
+  mov DWORD [ebp-0x34], eax  ; vmap = min
 
-  .end_min_va:
-  	add esp, 0x8
-      mov    DWORD  [ebp-0x18], eax
-      mov    DWORD  [ebp-0x20], eax
-  .init_counter_loop:
-      mov    DWORD  [ebp-0xc], 0x0 
-      cmp    DWORD  [ebp+0x10], 0xffffffff
-      jne    .loop_condition
-  .add_aslr_to_va:
-      add    eax, DWORD  [ebp+0xc]
-      mov    DWORD  [ebp-0x20], eax
-      jmp    .loop_condition
-      
-  .load_segment:
-      mov    eax, DWORD  [ebp-0x18]
-  .get_p_offset:
-      mov    edx, DWORD  [ebp-0xc]
-      shl    edx, 0x5
-      add    edx, DWORD  [ebp-0x14]
-  .set_args:
-  	;; fd
-      push   DWORD  [ebp+0x10]	
-  	;; min_va
-      push   eax
-  	;; &phdr[i]
-      push   edx
-  	;; ehdr
-      push   DWORD  [ebp+0x8]
-  	;; &va
-      lea    eax, [ebp-0x20]
-      push   eax
-      call   load_elf_segment
-      add    esp, 0x14
-  .increment_counter:
-      add    DWORD  [ebp-0xc], 0x1
-      
-  .loop_condition:
-      mov    eax, DWORD  [ebp+0x8]
-      movzx  eax, WORD  [eax+0x2c]
-      cmp    DWORD  [ebp-0xc], eax
-      jl     .load_segment
-      
-  .check_write_dyn:
-      cmp    DWORD  [ebp+0x10], 0xffffffff
-      jne    .calculate_entrypoint
+  cmp DWORD [ebp+0x10], -1
+  je skip_alignment_adjustment.skip_mmap
+
+  ; Calculate the size of the memory region needed
+  mov    eax, DWORD  [ebp-0x10]
+  sub    eax, DWORD  [ebp-0xc]
+  mov    DWORD  [ebp-0x30], eax ; Store size
+
+  ; Initialize loop counter for segment loading
+  mov    DWORD  [ebp-0x2c], 0x0
+
+  ; Set up mmap flags (MAP_PRIVATE | MAP_ANONYMOUS)
+  mov    DWORD  [ebp-0x18], 0x22
+
+  ; Initialize file offset
+  mov    DWORD  [ebp-0x34], 0x0
+
+  ; Check if the segment alignment flag is set (indicates special handling needed)
+  cmp    DWORD  [ebp+0x10], 0xffffffff
+  jne    skip_alignment_adjustment   ; If not -1, no adjustment needed
+
+  ; Adjust base address by adding the file offset to the segment's virtual address
+  mov    edx, DWORD  [ebp+0xc]  ; File offset (second arg)
+  mov    eax, DWORD  [ebp-0xc]  ; Min virtual address
+  add    eax, edx                  ; Add to max virtual address
+  mov    DWORD  [ebp-0x34], eax ; Store adjusted base address
+
+  ; Set additional mmap flag (MAP_FIXED)
+  or     DWORD  [ebp-0x18], 0x10
+
+  skip_alignment_adjustment:
+
+  ; Call mmap to allocate memory
+  	push -1		   
+  	pop edi		   ;fd
+  mov esi,   DWORD [ebp-0x18]      ; Protection flags (MAP_PRIVATE | MAP_ANONYMOUS)
+  xor   edx, edx                       ; PROT_NONE
+  mov    ecx, DWORD  [ebp-0x30] ; Size of region
+  mov    ebx, DWORD  [ebp-0x34] ; Base address
+  push ebp
+  	xor ebp, ebp
+  	mov eax, 192
+  int 0x80; mmap system call
+  pop ebp
+
+  ; Store returned address from mmap
+  	cmp DWORD [ebp-0x34], 0
+  	je .save_mmap
+  cmp    DWORD  [ebp-0x34], eax
+  	jne _exit
+  	.save_mmap:
+  mov DWORD [ebp-0x34], eax
+  .skip_mmap:
+  mov    DWORD  [ebp-0x1c], 0x0 ; Reset segment counter
+
+  ; Segment loading loop (load each segment into memory)
+  segment_loading_loop_body:
+      ; Get the current segment index
+      mov    eax, DWORD  [ebp-0x1c]
+      ; Calculate offset within program header table (index * sizeof(Elf32_Phdr))
+      shl    eax, 0x5          ; Multiply by 32 (size of Elf32_Phdr)
+      mov    edx, eax
+      ; Get the address of the program header table
+      mov    eax, DWORD  [ebp-0x24]
+      ; Add the offset to get the address of the current program header
+      add    eax, edx
+
+      ; Prepare arguments for load_elf_segment function
+      sub    esp, 0xc          ; Align stack
+      push   DWORD  [ebp+0x10] ; fd
+      push   DWORD  [ebp-0xc] ; min_va
+      push   eax               ; phdr
+      push   DWORD  [ebp+0x8] ; Pointer to ELF header
+      lea    eax, [ebp-0x34]   ; Address of mmap result
+      push   eax               ; Pass reference to mmap result
+      call   load_elf_segment ; Load the segment
+      add    esp, 0x20         ; Clean up stack
+
+      ; Increment the segment counter
+      add    DWORD  [ebp-0x1c], 0x1
+
+  ; Loop condition check for segment loading
+  segment_loading_loop_condition:
+      ; Get the number of program headers again
       mov    eax, DWORD  [ebp-0x20]
-      push   DWORD  [ebp+0xc]
-      push   eax
-      call   write_dyn
-      add    esp, 0x8
-      
-  .calculate_entrypoint:
-      mov    eax, DWORD  [ebp+0x8]
-      mov    eax, DWORD  [eax+0x18]
-      sub    eax, DWORD  [ebp-0x18]
-  	mov edi, DWORD  [ebp-0x20] ;
-      add    eax, edi
-  .end:
-  	mov ebx, DWORD [ebp - 0x4]
-  	leave			;mov esp, ebp; pop ebp 1B size
+      movzx  eax, WORD  [eax+0x2c]  ; e_phnum
+      movzx  eax, ax                   ; Zero extend to 32 bits
+
+      ; Compare with segment counter
+      cmp    DWORD  [ebp-0x1c], eax
+      jl     segment_loading_loop_body ; If counter < num_headers, continue loop
+
+  ; Check if the segment alignment flag is set again (after loop)
+  cmp    DWORD  [ebp+0x10], 0xffffffff
+  jne    skip_dynamic_linking      ; If not -1, skip dynamic linking
+
+  ; Perform dynamic linking if needed
+  mov    eax, DWORD  [ebp-0x34] ; mmap result (base address)
+  sub    esp, 0x8                  ; Align stack
+  push   DWORD  [ebp+0xc]       ; File offset
+  push   eax                       ; Base address
+  call   write_dyn
+  add    esp, 0x10                 ; Clean up stack
+
+  skip_dynamic_linking:
+
+  ; Calculate final address of the end of the loaded image
+  mov    eax, DWORD  [ebp-0x20]
+  mov    eax, DWORD  [eax+0x18] ; e_entry
+  sub    eax, DWORD  [ebp-0xc]  ; Subtract min va
+  mov    edi, DWORD  [ebp-0x34] ; mmap result (base address)
+  add    eax, edi                  ; Add base address to get final address
+      leave
       ret
 
   ; uint32_t get_at_interp_x32(void *ptr)
