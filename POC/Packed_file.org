@@ -1495,8 +1495,8 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
     size_t stage2_fd_size;
     if (load_stage_buffer(class, &stage2_buffer, (size_t *)&stage2_fd_size, "bytecode/x32/stage2.bin", "bytecode/x64/stage2.bin"))
       return (5);
-    //                               x86           x64
-    size_t offset_mod_stage2[2][2] = {{0x49, 0x86},{0x57, 0xc0}};
+    //                               x86                         x64
+    size_t offset_mod_stage2[2][2] = {{0x49 + 0x31, 0x86 + 0x31},{0x57+0x36, 0xc0+0x36}};
     const t_type tmp_val_stage2[] = {(t_type){.b8=elf_size},(t_type) {.b8=free_va}};
     uint64_t i = 0;
     bool is_64 = ELFCLASS64 == class;
@@ -1567,15 +1567,18 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
   /*size_t offset_mod[2][5] = {{0x8, 0x1d, 0x5e, 0x7f, 0x9e},{0x8, 0x1d, 0x5e, 0x7f, 0x9e}}; */
     //                         x32                           x64
-    size_t offset_mod[2][5] = {{0x83, 0x95, 0xc, 0x2f, 0x47},{0x8, 0x1f, 0x60, 0x81, 0xa0}/* {0xb, 0x1f, 0x5c, 0x7d, 0x9c} */};
+    size_t offset_mod[2][6] = {{0x83, 0x95, 0xc, 0x2f, 0x47, 0xa8},{0x8, 0x1f, 0x60, 0x81, 0xa0, 0xa0}/* {0xb, 0x1f, 0x5c, 0x7d, 0x9c} */};
     
     uint32_t prefix_size = elf_get_struct_size_elf_header((char *)ehdr.elf32) + elf_get_elfh_phentsize(&ehdr) * (2 + elf_is_gnu_stack_phdr((void *)&ehdr, class, phnum));
+    t_type payload_jmp_pad = (t_type){.b8=0x31 + is_64 * 5};
     uint32_t size_decrypt_buffer = stage2_elf_compress_encrypt_header_size;// Need to get somehow.
     t_type tmp_val[] = {(t_type){.b8= (elf_get_highest_loadable_vaddr_avalaible((void *)&ehdr, class, phnum) + prefix_size + 5 + !is_64 * 0x6b)},
   		      (t_type){.b8=stage1_fd_size + prefix_size + stage2_elf_compress_encrypt_header_size},// s1 size
   		      (t_type){.b8=stage2_elf_buffer_size},// stage2_elf_buffer_size?
   		      (t_type){.b8=size_decrypt_buffer},
-  		      (t_type){.b8=stage2_elf_compress_header_size}};
+  		      (t_type){.b8=stage2_elf_compress_header_size},
+  		      (t_type){.b8=payload_jmp_pad.b8 + is_64 * (stage2_elf_compress_header_size - payload_jmp_pad.b8)},
+    };
     //int i;
     i = 0;
     while (i < sizeof(offset_mod[is_64]) / sizeof(size_t))
