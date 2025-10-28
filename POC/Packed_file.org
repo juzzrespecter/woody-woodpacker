@@ -24,7 +24,7 @@
 - phdr -> one phdr that use all memsz of og bin, a new one for s1(stage 1), maybe a gnu_stack.
 - s1 + crypt_compress_s2 + elf_file
   - s1: get aslr, va, size s1, get fd of /proc/self/exe, mmap s2 RW-, decrypt, decompress in s2, mprotect s2, jmp s2.
-  - s2: mmap with fd, close fd, munmap s1, load elf, load interp, set auxv, jmp s3.
+  - s2: mmap with fd, close fd, munmap s1, load elf, load interp, set auxv, jmp s3, payload.
   - s3: munmap s2, reset r/edx, jmp to entrypoint(interpe or elf).  if couldn't append to one phdr R-X of the elf file s2 create one. 
 **  Not update AT_EXECFN (auxv)
 The dynamic linker needs the executable path for the AT_EXECFN entry in the auxiliary vector: 
@@ -45,6 +45,15 @@ PIE == ~Elfh_type == ET_DYN~
 NOPIE = ~Elfh_type == ET_EXEC~
 ** SElinux
 Don't allow to got a mmap with Write and exec. First write then mprotect Read|EXEC
+* Working on it 
+** TODO Easy to modify payload.
+*** TODO Change payload pos, and update s1 & s2.
+**** DONE x86
+***** DONE s1
+***** DONE s2
+**** TODO x64
+***** TODO s1
+***** DONE s
 * Packer
 #+begin_src c :tangle srcs/elf/POC/check_packer.c
   #include <string.h>

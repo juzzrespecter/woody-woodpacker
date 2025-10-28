@@ -360,6 +360,13 @@
   	.jmp_stage_2:
   	pop rsi
   	push rsi
+  	;; mov rax, 0xfefffffffeffffff
+  	;; For quick test
+  	;; push 0x36
+  	;; pop rax
+  	;; End quick test
+  	;; add rax, r13
+  	;; push rax
   	push r13;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
   	ret;		 ;(pop rip [rsp] -> vaddr_s2_elf)[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
 
@@ -459,7 +466,7 @@
 
 #+begin_src asm :tangle payload/x64/stage2.s :mkdirp yes
   global _start
-  payload:	
+  payload:
   	call .woody_write		; Woody Payload.
   	times 14 ret			;'....WOODY....\n'
   	.woody_write:
@@ -471,9 +478,10 @@
   	push 0x1		;write syscall
   	pop rax
           syscall			; I shouldn't protect this in case payload fail still working as normally.
-  jmp_pad_s3:			;;[rsp]s2, interp_vaddr, (vaddr, size) s3, vaddr s2
-  .jmp_entry_for_s3:
-  	pop r11;entrypoint interp [rsp]vaddr, size s3 size_s2, vaddr s2
+
+  jmp_entry_for_stage3:
+  	pop r11;entrypoint interp [rsp]vaddr, size_s2, vaddr s2
+  	pop r14		;vaddr s3 [rsp]size_s2, vaddr s2
   	test r11, r11
   	cmovne r13, r11		;if r11 != 0  set r12 = r11
 
@@ -486,15 +494,14 @@
   	push 0		;[rsp] reset rdx,vaddr entrypoint that go jmp from stage3
   	push r14		;[rsp] vaddr stage3, reset rdx, vaddr entrypoint
   	ret			; jmp -> vaddr s3, [rsp] vaddr entrypoint
-  	ret
-  	ret
+
 
 
   _start:		 ;r15 aslr
   	.stage2:   ;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
   	.mmap_fd:
-  	pop r14			;size_s2_elf [rsp] vaddr_s2_elf, fd_s1, size_s1, vaddr s1
-  	pop r13			;vaddr_s2_elf [rsp] fd_s1, size_s1, vaddr s1
+  	pop r14			;size_s2 [rsp] va s2f, fd_s1, size_s1, vaddr s1
+  	pop r13			;vaddr_s2 [rsp] fd_s1, size_s1, vaddr s1
   	push 0x2		;MAP_PRIVATE
   	pop r10			; flags
   	xor r9, r9		; offset
@@ -509,7 +516,7 @@
   	pop rax
   	syscall
   	cmp rax, -4095		;Mmap error.
-      	jae _exit
+      	jae _exit		;0x162
   	.close_fd:
   	pop rdi			;;fd_s1 [rsp] size_s1, vaddr s1
   	push 0x3
@@ -542,7 +549,7 @@
   	add    rdi, QWORD [rdi+0x20] ; rdi = e_phoff
   	lea    rdx, [rsp]          ; rdx = stack space for result min
   	lea    rcx, [rsp+0x8]          ; rcx = stack space for result max
-  	call   calculate_elf_memory_range; 
+  	call   calculate_elf_memory_range;0x1d7 
   	mov rdx, QWORD [rsp]		     ;base
   	push rbx
   	pop rdi			;pop  ehdr;[rsp] size_s2, vaddr s2
@@ -550,7 +557,7 @@
   	pop rsi			;rsi aslr_offset
   	push -1
   	pop rcx			;rcx fd
-  	call load_elf_generic	
+  	call load_elf_generic	;397
   	cmp rax, -1		;rax entrypoint
   	je _exit
   	add rsp, 0x10		;restore rsp
@@ -559,7 +566,7 @@
   	pop r14			;
   	push rax
   	pop r13			;r13 entrypoint to jmp
-
+  	;; 0x4f3
   	call get_at_interp_x64	;[rsp] size_s2, vaddr s2
   	cmp rax, -1
   	je _exit
@@ -569,16 +576,14 @@
   	pop r12			;base interp
   	;; This should 
   	lea rdi, [rsp + 0x10]	;[rsp] size_s2, vaddr s2
-  	;; push rsp		;mmap elf
-  	;; pop rdi
-  	call set_auxv
+  	call set_auxv		;0x17B
   	mov r14, 0xfeffffffffffffff
   	test r14, r14		;if vaddr s3
   	lea rsi, [r14 + r15]	;vaddr s3 + aslr
   	cmovne r14, rsi		;vaddr s3 = vaddr s3 + aslr
   	push r14		;[rsp] vaddr_s3[+ aslr], size_s2, vaddr s2
   	test r14, r14
-  	jne .payload
+  	jne .prep_payload	;0x12a
   	pop r14		;vaddr_s3 [rsp]size_s2, vaddr s2
 
   	.create_stage3:
@@ -625,13 +630,12 @@
   	syscall			
   	test rax, rax
   	jnz _exit
-  	.payload:
-  	pop r11
-  	push r11
-  	push QWORD [rsp+0x10] ;[rsp]va s2, interp_vaddr, vaddr_s3, size, vaddr s2
-  	ret
-  	
+  	pop r11			;interp_vaddr[rsp] vaddr_s3, size, vaddr s2
 
+  	.prep_payload:
+  	push r11	;[rsp]interp_vaddr, vaddr_s3, size, vaddr s2
+  	push QWORD [rsp + 0x18]	;vaddr s2
+  	ret
 
   _exit:	
   	push 0
@@ -2420,8 +2424,18 @@
 * How to Improve:
 - [-] Reduce bytecode.
   - [X] rep, movsb, stosb, enter, leave
-  - [ ] Delete function just used once. (set_auxv, get_at interp, write_dyn, ...)
+  - [ ] Erase function just used once. (set_auxv, get_at interp, write_dyn, ...)
   - [ ] Refactor the code for don't need to got the setup for syscalls (mmap/2, mproctect) more than once.
   - [ ] Try use loop beside test/cmp jcc .loop_start_pos.
-- [ ] Easy to modify payload.
-  - [ ] Change payload pos, and update s1 & s2.
+
+- [ ] Improve performance.
+
+* Working on it 
+** TODO Easy to modify payload.
+*** TODO Change payload pos, and update s1 & s2.
+**** DONE x86
+***** DONE s1
+***** DONE s2
+**** TODO x64
+***** TODO s1
+***** DONE s2
