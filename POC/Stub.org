@@ -360,15 +360,11 @@
   	.jmp_stage_2:
   	pop rsi
   	push rsi
-  	;; mov rax, 0xfefffffffeffffff
-  	;; For quick test
-  	;; push 0x36
-  	;; pop rax
-  	;; End quick test
-  	;; add rax, r13
-  	;; push rax
-  	push r13;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
-  	ret;		 ;(pop rip [rsp] -> vaddr_s2_elf)[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
+  	mov rax, 0xfefffffffeffffff
+  	add rax, r13
+  	push rax
+  	;; push r13;[rsp] (entry ,size,va) s2, fd_s1, size_s1, vaddr s1
+  	ret;		 ;(pop rip va s2[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
 
   _exit:	
   	xor edi, edi
@@ -464,20 +460,24 @@
   	call _start.return_crypt_compress_addr
 #+end_src
 
+#+begin_src asm :tangle payload/x64/payload.s :mkdirp yes
+  	global payload
+    payload:
+    	call .woody_write		; Woody Payload.
+    	times 14 ret			;'....WOODY....\n'
+    	.woody_write:
+            pop    rsi		;....WOODY....\n ptr.		;[rsp]vaddr s3 size_s2, vaddr s2
+    	push 0xe		;ptr_size
+    	pop rdx
+    	push 0x1		;fd to write syscall
+    	pop rdi
+    	push 0x1		;write syscall
+    	pop rax
+            syscall			; I shouldn't protect this in case payload fail still working as normally.
+  	#+end_src
+
 #+begin_src asm :tangle payload/x64/stage2.s :mkdirp yes
   global _start
-  payload:
-  	call .woody_write		; Woody Payload.
-  	times 14 ret			;'....WOODY....\n'
-  	.woody_write:
-          pop    rsi		;....WOODY....\n ptr.		;[rsp]vaddr s3 size_s2, vaddr s2
-  	push 0xe		;ptr_size
-  	pop rdx
-  	push 0x1		;fd to write syscall
-  	pop rdi
-  	push 0x1		;write syscall
-  	pop rax
-          syscall			; I shouldn't protect this in case payload fail still working as normally.
 
   jmp_entry_for_stage3:
   	pop r11;entrypoint interp [rsp]vaddr, size_s2, vaddr s2
@@ -1430,7 +1430,7 @@
   	js _exit
   	push eax		;[rsp] (fd, len, va) s1, aslr, (len, va) s2
   .jmp_stage_2:
-  	mov eax, 0x31		;Modify in C.
+  	mov eax, 0xfeffffff		;Modify in C.
   	add edx, eax
   	push edx ;; push (vaddr) s2
   	ret;		 ;(pop rip [rsp] -> vaddr_s2_elf)[rsp] (fd, len, va) s1, aslr, (len, va) s2
@@ -1579,6 +1579,22 @@
   	call _start.return_crypt_compress_addr
 #+end_src
 
+ 
+#+begin_src asm :tangle payload/x32/payload.s :mkdirp yes
+  payload:
+          call .woody_write	;; 
+  	times 14 ret
+          .woody_write:   	
+  	push 1
+  	pop ebx			;fd
+  	pop ecx			;buffer
+  	push 0xe		;len
+          pop    edx		
+  	push 0x4		;write sysnbr
+  	pop eax
+  	int 0x80
+#+end_src
+ 
 #+begin_src asm :tangle payload/x32/stage2.s :mkdirp yes
   global _start:
   	;; Cheatsheet mmap
@@ -1590,19 +1606,7 @@
   	;; ebp offset/0x1000
   	;; eax 192
   ;[esp] (fd, len, vaddr) s1, aslr, (len, vaddr) s2 Fine
-  payload:
-          call .woody_write	;; 
-  	times 14 ret
-          .woody_write:   	
-  	push 1
-  	pop ebx			;fd
-  	pop ecx			;buffer
-  	push 0xd		;len
-          pop    edx		
-  	push 0x4		;write sysnbr
-  	pop eax
-  	int 0x80
-  jmp_pad_s3:	
+ jmp_pad_s3:	
   	pop edx 		;Entry interp;[esp] (e) elf, (va) s3, (len, va) s2;
   	pop esi			;Entry elf; [esp] (va) s3, (len, va) s2; 
   	pop edi			;(va) s3 [esp] (len, va) s2
@@ -2436,6 +2440,8 @@
 **** DONE x86
 ***** DONE s1
 ***** DONE s2
-**** TODO x64
-***** TODO s1
+**** DONE x64
+CLOSED: [2025-10-29 Wed 06:00]
+***** DONE s1
+CLOSED: [2025-10-29 Wed 06:00]
 ***** DONE s2
