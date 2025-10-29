@@ -301,7 +301,7 @@
   	push 0x2
   	pop rax
   	syscall
-  	push rax		;[rsp] 
+  	push rax		;[rsp] (fd, len, va) s1
   	test rax, rax
   	js _exit
   .mmap_stage_2:
@@ -325,12 +325,12 @@
   	jmp end_of_stage1
   .return_crypt_compress_addr:
   	pop rsi		;src;;[rsp] size_s2_elf, fd, size_stage1, vaddr stage1
-  	mov rdx, 	0xfefffffffffff000	;rdx [rsp] size_s2_elf, fd, size_stage1, vaddr stage1
+  	mov rdx, 	0xfefffffffffff000	;[rsp] size_s2_elf, fd, size_stage1, vaddr stage1
   	sub rsp, rdx
   	push rsp		;dest
   	pop rdi
   	push rdx	;[rsp] size_buffer_decrypt, decrypt_buffer, size_s2_elf, fd, size_s1, vaddr_s1
-  	call decrypt	;TODO Ask 4 params if don't need len out i just need to add value to modify in C if not 2 (buffer out, len out, buffer int, len in, key)? 
+  	call decrypt; rsi in, rdx out_len, rdi out
   	test rax, rax
   	jz _exit
   	push r13
