@@ -1379,6 +1379,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
     return (closest_offset);
   }
 
+
   static bool elf_set_s3_get_info(const t_elf_h *ehdr, unsigned char class, uint64_t phnum, size_t gap_size, uint64_t *ret_vaddr, uint64_t *ret_offset, t_elf_ph *phdr)
   {
     if (!ehdr || !phnum)
@@ -1467,6 +1468,29 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   #define PATH_X32_PAYLOAD   "bytecode/x32/payload.bin"
   #endif
 
+  // Architecture indices
+  #define ARCH_X86 0
+  #define ARCH_X64 1
+
+  // Offsets for stage1 and stage2 patching
+  static const size_t STAGE2_OFFSETS[][2] = {
+      [ARCH_X86] = {0x5B, 0x98},
+      [ARCH_X64] = {0x6E, 0xD7}
+  };
+
+  static const size_t STAGE1_OFFSETS[][6] = {
+      [ARCH_X86] = {0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf},
+      [ARCH_X64] = {0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce}
+  };
+
+  // TODO test
+  /* static void patch_buffer(char *buffer, const size_t *offsets, */
+  /*                          const t_type *values, size_t count, size_t data_size) */
+  /* { */
+  /*     for (size_t i = 0; i < count; ++i) { */
+  /*         memcpy(buffer + offsets[i], &values[i].b8, data_size); */
+  /*     } */
+  /* } */
 
   static int elf_inject_s3(void *elf, t_elf_h *ehdr, unsigned char class,
   			      uint64_t *free_va)
