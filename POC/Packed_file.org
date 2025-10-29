@@ -1577,13 +1577,13 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
         free(stage2_elf_compress_encrypt_header);
         return (5); 
       }
-
-    size_t offset_mod[2][6] = {{0x83, 0x95, 0xc, 0x2f, 0x47, 0xa8},{0x8, 0x1f, 0x60, 0x81, 0xa0, 0xce}};
+    //                         x86                                x64
+    size_t offset_mod[2][6] = {{0x8a, 0x9c, 0xc, 0x2f, 0x4e, 0xaf},{0x8, 0x1f, 0x60, 0x81, 0xa0, 0xce}};
     
     uint32_t prefix_size = elf_get_struct_size_elf_header((char *)ehdr.elf32) + elf_get_elfh_phentsize(&ehdr) * (2 + elf_is_gnu_stack_phdr((void *)&ehdr, class, phnum));  //  + jmp pad x32|x64
     t_type s2_entry_off = (t_type){.b8=payload_fd_size + 0x12 + is_64 * 0x5};
     uint32_t size_decrypt_buffer = stage2_elf_compress_encrypt_header_size;// Need to get somehow.
-    t_type tmp_val[] = {(t_type){.b8= (elf_get_highest_loadable_vaddr_avalaible((void *)&ehdr, class, phnum) + prefix_size + 5 + !is_64 * 0x6b)},
+    t_type tmp_val[] = {(t_type){.b8= (elf_get_highest_loadable_vaddr_avalaible((void *)&ehdr, class, phnum) + prefix_size + 5 + !is_64 * 0x72)},
   		      (t_type){.b8=stage1_fd_size + prefix_size + stage2_elf_compress_encrypt_header_size},// s1 size
   		      (t_type){.b8=stage2_elf_buffer_size},// stage2_elf_buffer_size?
   		      (t_type){.b8=size_decrypt_buffer},
