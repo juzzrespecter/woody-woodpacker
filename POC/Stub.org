@@ -2430,18 +2430,31 @@
   	ret
 #+end_src
 
-* How to Improve:
+* How to:
+**  Improve:
 - [-] Reduce bytecode.
   - [X] rep, movsb, stosb, enter, leave
   - [ ] Erase function just used once. (set_auxv, get_at interp, write_dyn, ...)
   - [ ] Refactor the code for don't need to got the setup for syscalls (mmap/2, mproctect) more than once.
   - [ ] Try use loop beside test/cmp jcc .loop_start_pos.
-
 - [ ] Improve performance.
+** Get bytecode:
+Compile asm
+~nasm -f elf{64,32} path.s~
+~readelf -WS path.o~
+#+begin_quote
+Section Headers:
+  [Nr] Name       Type                       Off    Size
+  [ 1] .text             PROGBITS    000180 0001b7
+  #+end_quote
+using off for skip and size for count.
+~dd if=path.o of=dst skip=$((0x180)) bs=1 count=$((0x1B7))~
 
 * Working on it 
-** TODO Easy to modify payload.
-*** TODO Change payload pos, and update s1 & s2.
+** DONE Easy to modify payload.
+CLOSED: [2025-10-30 Thu 08:29]
+*** DONE Change payload pos, and update s1 & s2.
+CLOSED: [2025-10-30 Thu 08:29]
 **** DONE x86
 ***** DONE s1
 ***** DONE s2
