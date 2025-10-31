@@ -1535,6 +1535,17 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return 0; // Success
   }
 
+  void *ft_memjoin(size_t *join_len, void *s1, size_t len_s1, void *s2, size_t len_s2)
+  {
+      void *join;
+      ,*join_len = len_s2 + len_s1;
+      join = malloc(*join_len);
+      if (!join)
+  	return (join);
+      memcpy(join, s1, len_s1);
+      memcpy(join+len_s1, s2, len_s2);
+      return (join);
+  }
 
   int generate_payload(void *elf_mmap, size_t elf_size, char **payload_ptr, size_t *payload_size)
   {
@@ -1552,12 +1563,10 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       char *stage2_buffer;
       size_t stage2_fd_size;
       size_t data_size = (size_t)ft_ternary(is_64, (void *)sizeof(uint64_t), (void *)sizeof(uint32_t));
-      //Create a function to get this code.
       unsigned int s2_patchs_count = 2;
       const size_t stage2_offsets[][2] = {[ARCH_X86] = {0x5B, 0x98}, [ARCH_X64] = {0x6E, 0xD7}};
       const t_type s2_patchs[] = {(t_type){.b8=elf_size},(t_type) {.b8=free_va}};
       if (load_and_patch_buffer(class, &stage2_buffer, &stage2_fd_size, PATH_X32_STAGE2, PATH_X64_STAGE2, stage2_offsets[is_64], s2_patchs, s2_patchs_count))
-  	// End of function
         return (5);
 
       char *payload_buffer;
@@ -1568,33 +1577,20 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
         return (5);
       }
       
-      char		*payloaded_s2_buffer;
       size_t	payloaded_s2_len;
-      payloaded_s2_len = stage2_fd_size + payload_fd_size;
-      payloaded_s2_buffer = malloc(payloaded_s2_len);
-      if (payloaded_s2_buffer == NULL)
-      {
-        free(payload_buffer);
+      char		*payloaded_s2_buffer = ft_memjoin(&payloaded_s2_len, payload_buffer, payload_fd_size, stage2_buffer, stage2_fd_size);
+  						       free(payload_buffer);
         free(stage2_buffer);
+      
+      if (payloaded_s2_buffer == NULL)
         return (5);
-      }
-      //memjoin.
-      memcpy(payloaded_s2_buffer, payload_buffer, payload_fd_size);
-      free(payload_buffer);
-      memcpy(payloaded_s2_buffer + payload_fd_size, stage2_buffer, stage2_fd_size);
-      free(stage2_buffer);
 
-      // Join with elf file
       size_t stage2_elf_buffer_size = payloaded_s2_len+ elf_size;
-      char *stage2_elf_buffer = malloc(stage2_elf_buffer_size);
-      if (!stage2_elf_buffer)
-      {
+      
+      char *stage2_elf_buffer = ft_memjoin(&stage2_elf_buffer_size, payloaded_s2_buffer, payloaded_s2_len, elf_mmap, elf_size);
         free(payloaded_s2_buffer);
+      if (!stage2_elf_buffer)
         return (5);
-      }
-      memcpy(stage2_elf_buffer, payloaded_s2_buffer, payloaded_s2_len);
-      free(payloaded_s2_buffer);
-      memcpy(stage2_elf_buffer + payloaded_s2_len, elf_mmap, elf_size);
       // Compress the data.
       t_list *lz77_buffer = lz77_compress_to_list((unsigned char *)stage2_elf_buffer, stage2_elf_buffer_size);
       free(stage2_elf_buffer);
@@ -1608,16 +1604,11 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
         return (5);
       // in case x86 the size type is uint32_t no uint64_t
       /* size_t data_size = (size_t)ft_ternary(is_64, (void *)sizeof(uint64_t), (void *)sizeof(uint32_t)); */
-      size_t stage2_elf_compress_header_size = stage2_elf_compress_size + data_size;
-      char *stage2_elf_compress_header = malloc(stage2_elf_compress_header_size);
-      if (!stage2_elf_compress_header)
-      {
-        free(stage2_elf_compress);
-        return (5);
-      }
-      memcpy(stage2_elf_compress_header, &stage2_elf_buffer_size, data_size);
-      memcpy(stage2_elf_compress_header + data_size, stage2_elf_compress, stage2_elf_compress_size);
+      size_t stage2_elf_compress_header_size;
+      char *stage2_elf_compress_header = ft_memjoin(&stage2_elf_compress_header_size,&stage2_elf_buffer_size, data_size, stage2_elf_compress, stage2_elf_compress_size);
       free(stage2_elf_compress);
+      if (!stage2_elf_compress_header)
+        return (5);
 
       // Encrypt the join
       size_t stage2_elf_compress_encrypt_header_size;
@@ -1632,6 +1623,11 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       // Get the first stage
       char *stage1_buffer;
       size_t stage1_fd_size;
+      if (load_stage_buffer(class, &stage1_buffer, &stage1_fd_size, PATH_X32_STAGE1, PATH_X64_STAGE1)) 
+      {
+        free(stage2_elf_compress_encrypt_header);
+        return (5);
+      }    
 
       //Create a function to get this code.
       unsigned int s1_patchs_count = 6;
@@ -1651,29 +1647,16 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   			(t_type){.b8=s2_entry_off.b8},
       };
 
-      if (load_and_patch_buffer(class, &stage1_buffer, &stage1_fd_size, PATH_X32_STAGE1, PATH_X64_STAGE1, stage1_offsets[is_64], s1_patchs, s1_patchs_count))
-      //End of function
-  {
-        free(stage2_elf_compress_encrypt_header);
-        return (5); 
-      }
-
+      patch_buffer(stage1_buffer, &stage1_offsets[is_64][0], &s1_patchs[0], s1_patchs_count, data_size);
 
       // Join the first stage with compress and encrypt stage2 + elf file
-      size_t stage1_stage2_elf_size = stage2_elf_compress_encrypt_header_size + stage1_fd_size;
-      char *stage1_stage2_elf = malloc(stage1_stage2_elf_size);
-      if (!stage1_stage2_elf)
+      ,*payload_ptr = ft_memjoin(payload_size, stage1_buffer, stage1_fd_size, stage2_elf_compress_encrypt_header, stage2_elf_compress_encrypt_header_size);
+      free(stage1_buffer);
+      free(stage2_elf_compress_encrypt_header);
+      if (!*payload_ptr)
       {
-        free(stage1_buffer);
-        free(stage2_elf_compress_encrypt_header);
         return (5);
       }
-      memcpy(stage1_stage2_elf, stage1_buffer, stage1_fd_size);
-      free(stage1_buffer);
-      memcpy(stage1_stage2_elf + stage1_fd_size, stage2_elf_compress_encrypt_header, stage2_elf_compress_encrypt_header_size);
-      free(stage2_elf_compress_encrypt_header);
-      ,*payload_size = stage1_stage2_elf_size;
-      ,*payload_ptr = stage1_stage2_elf;
       return (0);
   }
 
