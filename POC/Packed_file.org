@@ -1322,44 +1322,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return (raw);
   }
 
-  int load_stage_buffer(int class, char **stage_buffer, size_t *stage_fd_size, const char *filename_x86, const char *filename_x64)
-  {
-      int stage_fd;
-      
-      // Validate input parameters
-      if (!stage_buffer || !stage_fd_size)
-        return (1);
-      
-      // Initialize output parameters
-      ,*stage_buffer = NULL;
-      ,*stage_fd_size = 0;
-      
-      stage_fd = open(ft_ternary(ELFCLASS32 == class,  filename_x86, filename_x64), O_RDONLY);
-      if (stage_fd < 0 || get_file_size(stage_fd, (off_t *)stage_fd_size) || !*stage_fd_size)
-      {
-        if (stage_fd >= 0)
-  	close(stage_fd);
-        return (1);
-      }
-      
-      ,*stage_buffer = malloc(*stage_fd_size);
-      if (!(*stage_buffer))
-      {
-        close(stage_fd);
-        return (5);
-      }
-      
-      if (read(stage_fd, *stage_buffer, *stage_fd_size) != (ssize_t) *stage_fd_size)
-      {
-        free(*stage_buffer);
-        ,*stage_buffer = NULL;
-        close(stage_fd);
-        return (5);
-      }
-      
-      close(stage_fd);
-      return (0);
-  }
+
 
   static uint64_t elf_get_closest_higher_p_offset(const t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t p_offset)
   {
@@ -1439,40 +1402,80 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
     ERR_COMPRESS = 8,
     ERR_ENCRYPT = 9,
     ERR_INVAL_PH_NDX = 10,
-    ERR_INVAL_S3 = 11
+    ERR_INJECT_S3 = 11
   } t_error;
 
-  #ifndef PATH_X64_STAGE1
-  # define PATH_X64_STAGE1   "bytecode/x64/stage1.bin"
-  #endif
-  #ifndef PATH_X64_STAGE2
-  # define PATH_X64_STAGE2   "bytecode/x64/stage2.bin"
-  #endif
-  #ifndef PATH_X64_STAGE3
-  #define PATH_X64_STAGE3   "bytecode/x64/stage3.bin"
-  #endif
-  #ifndef PATH_X64_PAYLOAD
-  #define PATH_X64_PAYLOAD  "bytecode/x64/payload.bin"
-  #endif
-
-  #ifndef PATH_X32_STAGE1
-  # define PATH_X32_STAGE1   "bytecode/x32/stage1.bin"
-  #endif
-  #ifndef PATH_X32_STAGE2
-  # define PATH_X32_STAGE2   "bytecode/x32/stage2.bin"
-  #endif
-  #ifndef PATH_X32_STAGE3
-  #define PATH_X32_STAGE3   "bytecode/x32/stage3.bin"
-  #endif
-  #ifndef PATH_X32_PAYLOAD
-  #define PATH_X32_PAYLOAD   "bytecode/x32/payload.bin"
-  #endif
-
   // Architecture indices
-  #define ARCH_X86 0
-  #define ARCH_X64 1
+  typedef enum	e_arch{
+      ARCH_X86,
+      ARCH_X64,
+      NUM_ARCHS
+  }	t_arch;
 
-  static void patch_buffer(char *buffer, const size_t *offsets,
+  typedef enum {
+      STAGE_1,
+      STAGE_2,
+      STAGE_3,
+      PAYLOAD_BIN,
+      NUM_BIN_TYPES
+  } t_bin_type;
+
+  /* Path mapping table */
+  static const char *const g_binary_paths[NUM_ARCHS][NUM_BIN_TYPES] = {
+      [ARCH_X86] = {
+          [STAGE_1]     = "bytecode/x32/stage1.bin",
+          [STAGE_2]     = "bytecode/x32/stage2.bin",
+          [STAGE_3]     = "bytecode/x32/stage3.bin",
+          [PAYLOAD_BIN] = "bytecode/x32/payload.bin"
+      },
+      [ARCH_X64] = {
+          [STAGE_1]     = "bytecode/x64/stage1.bin",
+          [STAGE_2]     = "bytecode/x64/stage2.bin",
+          [STAGE_3]     = "bytecode/x64/stage3.bin",
+          [PAYLOAD_BIN] = "bytecode/x64/payload.bin"
+      }
+  };
+
+  int load_stage_buffer(t_arch arch, char **stage_buffer, size_t *stage_fd_size, t_bin_type bin_type)
+  {
+      int stage_fd;
+      
+      // Validate input parameters
+      if (!stage_buffer || !stage_fd_size)
+        return (1);
+      
+      // Initialize output parameters
+      ,*stage_buffer = NULL;
+      ,*stage_fd_size = 0;
+      
+      stage_fd = open(g_binary_paths[arch][bin_type], O_RDONLY);
+      if (stage_fd < 0 || get_file_size(stage_fd, (off_t *)stage_fd_size) || !*stage_fd_size)
+      {
+        if (stage_fd >= 0)
+  	close(stage_fd);
+        return (1);
+      }
+      
+      ,*stage_buffer = malloc(*stage_fd_size);
+      if (!(*stage_buffer))
+      {
+        close(stage_fd);
+        return (5);
+      }
+      
+      if (read(stage_fd, *stage_buffer, *stage_fd_size) != (ssize_t) *stage_fd_size)
+      {
+        free(*stage_buffer);
+        ,*stage_buffer = NULL;
+        close(stage_fd);
+        return (5);
+      }
+      
+      close(stage_fd);
+      return (0);
+  }
+
+  static void apply_patches_to_buffer(char *buffer, const size_t *offsets,
                            const t_type *values, size_t count, size_t data_size)
   {
       for (size_t i = 0; i < count; ++i) {
@@ -1488,8 +1491,9 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       off_t stage3_fd_size;
       char *stage3_buffer;
       uint64_t free_off;
+      t_arch arch = class == ELFCLASS64;
 
-      if (load_stage_buffer(class, &stage3_buffer, (size_t *)&stage3_fd_size, PATH_X32_STAGE3, PATH_X64_STAGE3))
+      if (load_stage_buffer(arch, &stage3_buffer, (size_t *)&stage3_fd_size, STAGE_3))
         return (ERR_LOAD_STAGE);
       if (!elf_set_s3_get_info(ehdr, class, phnum, stage3_fd_size, free_va, &free_off, &phdr))
       {
@@ -1507,37 +1511,36 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   /**
    ,* @brief Loads a stage binary and patches it with provided values.
    ,*
-   ,* @param class             ELF class (ELFCLASS32 or ELFCLASS64)
-   ,* @param path_x86          Path to x86 version of the binary
-   ,* @param path_x64          Path to x64 version of the binary
+   ,* @param arch              x86/x64
+   ,* @param bin_type	    Bin Type
    ,* @param patch_offsets     Array of offset locations to patch (per architecture)
    ,* @param patch_values      Array of t_type values to write at those offsets
    ,* @param patch_count       Number of patches to apply
-   ,* @param is_64bit          Whether current arch is 64-bit (to choose pointer size)
-   ,* @param out_buffer        Output: allocated patched buffer (caller must eventually free)
-   ,* @param out_size          Output: size of loaded binary
+   ,* @param loaded_buffer     Loaded_buffer: allocated patched buffer (caller must eventually free)
+   ,* @param loaded_size       Loaded_size: size of loaded binary
    ,* @return                  0 on success, non-zero on error
    ,*/
-  static int load_and_patch_buffer(unsigned char class, char **out_buffer, size_t *out_size,
-      const char *path_x86, const char *path_x64,
-      const size_t *patch_offsets, const t_type *patch_values, size_t patch_count)
+  static int load_and_apply_patches_to_buffer(t_arch arch, char **loaded_buffer, size_t *loaded_size,
+      t_bin_type bin_type, const size_t *patch_offsets, const t_type *patch_values, size_t patch_count)
   {
       // Step 1: Load raw binary
-      if (load_stage_buffer(class, out_buffer, out_size, path_x86, path_x64))
+      if (load_stage_buffer(arch, loaded_buffer, loaded_size, bin_type))
       {
-          ,*out_buffer = NULL;
+          ,*loaded_buffer = NULL;
           return (5); // Load failed
       }
       // Step 2: Determine data size for patching (32 vs 64-bit pointers/values)
-      size_t data_size = (size_t)ft_ternary(ELFCLASS64 == class, (void *)sizeof(uint64_t), (void *)sizeof(uint32_t));
+      size_t value_size = (size_t)ft_ternary(arch, (void *)sizeof(uint64_t), (void *)sizeof(uint32_t));
       // Step 3: Apply all patches
-      patch_buffer(*out_buffer, patch_offsets, patch_values, patch_count, data_size);
+      apply_patches_to_buffer(*loaded_buffer, patch_offsets, patch_values, patch_count, value_size);
       return 0; // Success
   }
 
-  void *ft_memjoin(size_t *join_len, void *s1, size_t len_s1, void *s2, size_t len_s2)
+
+  void *buffer_join(size_t *join_len, void *s1, size_t len_s1, void *s2, size_t len_s2)
   {
       void *join;
+
       ,*join_len = len_s2 + len_s1;
       join = malloc(*join_len);
       if (!join)
@@ -1547,117 +1550,181 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return (join);
   }
 
-  int generate_payload(void *elf_mmap, size_t elf_size, char **payload_ptr, size_t *payload_size)
+  /**
+   ,* @brief Compresses input data using LZ77, adds size header, then encrypts.
+   ,* @return Encrypted output buffer, or NULL on error.
+   ,*/
+  static char *compress_encrypt_with_header(const void *input_data, size_t input_size,
+  					  size_t value_size, size_t *output_size, size_t *final_compressed_size)
   {
-      const unsigned char 	class = elf_get_elfh_e_ident_class(elf_mmap);
-      uint64_t phnum;
-      t_elf_h ehdr;
-      uint64_t free_va;
+      // Step 1: Compress
+      t_list *compressed_list = lz77_compress_to_list((unsigned char *)input_data, input_size);
+      if (!compressed_list) return NULL;
 
-      ehdr = (t_elf_h){.elf32 = elf_mmap};
-      if (elf_inject_s3(elf_mmap, &ehdr, class, &free_va) != SUCCESS)
-        return (5);
+      size_t compressed_size;
+      unsigned char *compressed_bytes = lz77_get_compress_arr(compressed_list, &compressed_size);
+      ft_lstclear(&compressed_list, free);
+      if (!compressed_bytes) return NULL;
 
+      // Step 2: Prepend original size as header
+      char *compressed_with_header = buffer_join(
+          final_compressed_size,
+          &input_size, value_size,
+          compressed_bytes, compressed_size
+      );
+      free(compressed_bytes);
+      if (!compressed_with_header) return NULL;
 
-      bool is_64 = ELFCLASS64 == class;
+      // Step 3: Encrypt
+      char *encrypted = encrypt(compressed_with_header, *final_compressed_size, output_size);
+      if (encrypted != compressed_with_header)
+  	free(compressed_with_header);
+
+      if (!encrypted || !*output_size) {
+          free(encrypted);
+          return NULL;
+      }
+      return encrypted;
+  }
+
+  /**
+   ,* @brief Generates a complete stager payload:
+   ,*        [Stage1][Encrypted([OriginalSize][LZ77( [Payload][Stage2] + ELF )])]
+   ,* @return               SUCCESS or error code
+   ,*/
+  int generate_payload(void *elf_mmap, size_t elf_size, char **payload_ptr, size_t *payload_size) {
+      const unsigned char class = elf_get_elfh_e_ident_class(elf_mmap);
+      const t_arch arch = (class == ELFCLASS64) ? ARCH_X64 : ARCH_X86;
+      const bool is_64 = (class == ELFCLASS64);
+      const size_t value_size = is_64 ? sizeof(uint64_t) : sizeof(uint32_t);
+
+      t_elf_h elf_header = { .elf32 = elf_mmap };
+      uint64_t injected_s3_vaddr = 0;
+
+      // ========================
+      // PHASE 1: Inject Stage 3
+      // ========================
+      if (elf_inject_s3(elf_mmap, &elf_header, class, &injected_s3_vaddr) != SUCCESS)
+          return ERR_INJECT_S3; 
+
+      // ========================
+      // PHASE 2: Load & Patch Stage 2
+      // ========================
       char *stage2_buffer;
-      size_t stage2_fd_size;
-      size_t data_size = (size_t)ft_ternary(is_64, (void *)sizeof(uint64_t), (void *)sizeof(uint32_t));
-      unsigned int s2_patchs_count = 2;
-      const size_t stage2_offsets[][2] = {[ARCH_X86] = {0x5B, 0x98}, [ARCH_X64] = {0x6E, 0xD7}};
-      const t_type s2_patchs[] = {(t_type){.b8=elf_size},(t_type) {.b8=free_va}};
-      if (load_and_patch_buffer(class, &stage2_buffer, &stage2_fd_size, PATH_X32_STAGE2, PATH_X64_STAGE2, stage2_offsets[is_64], s2_patchs, s2_patchs_count))
-        return (5);
+      size_t stage2_size;
 
-      char *payload_buffer;
-      size_t payload_fd_size;
-      if (load_stage_buffer(class, &payload_buffer, &payload_fd_size, PATH_X32_PAYLOAD, PATH_X64_PAYLOAD)) 
-      {
-        free(stage2_buffer);
-        return (5);
+      static const size_t stage2_patch_offsets[NUM_ARCHS][2] = {
+          [ARCH_X86] = { 0x5B, 0x98 },
+          [ARCH_X64] = { 0x6E, 0xD7 }
+      };
+
+      const t_type stage2_patches[2] = {{.b8 = elf_size}, {.b8 = injected_s3_vaddr}};
+
+      if (load_and_apply_patches_to_buffer(arch, &stage2_buffer, &stage2_size,
+              STAGE_2, stage2_patch_offsets[arch], stage2_patches, 2))
+          return ERR_LOAD_STAGE;
+
+      // ========================
+      // PHASE 3: Load Raw Payload
+      // ========================
+      char *payload_raw;
+      size_t payload_size_raw;
+
+      if (load_stage_buffer(arch, &payload_raw, &payload_size_raw, PAYLOAD_BIN)) {
+          free(stage2_buffer);
+          return ERR_LOAD_STAGE;
       }
-      
-      size_t	payloaded_s2_len;
-      char		*payloaded_s2_buffer = ft_memjoin(&payloaded_s2_len, payload_buffer, payload_fd_size, stage2_buffer, stage2_fd_size);
-  						       free(payload_buffer);
-        free(stage2_buffer);
-      
-      if (payloaded_s2_buffer == NULL)
-        return (5);
 
-      size_t stage2_elf_buffer_size = payloaded_s2_len+ elf_size;
-      
-      char *stage2_elf_buffer = ft_memjoin(&stage2_elf_buffer_size, payloaded_s2_buffer, payloaded_s2_len, elf_mmap, elf_size);
-        free(payloaded_s2_buffer);
-      if (!stage2_elf_buffer)
-        return (5);
-      // Compress the data.
-      t_list *lz77_buffer = lz77_compress_to_list((unsigned char *)stage2_elf_buffer, stage2_elf_buffer_size);
-      free(stage2_elf_buffer);
-      if (!lz77_buffer)
-        return (5);
-      // Get the array of the compress lst
-      size_t stage2_elf_compress_size;
-      unsigned char *stage2_elf_compress = lz77_get_compress_arr(lz77_buffer, &stage2_elf_compress_size);
-      ft_lstclear(&lz77_buffer, free);
-      if (!stage2_elf_compress)
-        return (5);
-      // in case x86 the size type is uint32_t no uint64_t
-      /* size_t data_size = (size_t)ft_ternary(is_64, (void *)sizeof(uint64_t), (void *)sizeof(uint32_t)); */
-      size_t stage2_elf_compress_header_size;
-      char *stage2_elf_compress_header = ft_memjoin(&stage2_elf_compress_header_size,&stage2_elf_buffer_size, data_size, stage2_elf_compress, stage2_elf_compress_size);
-      free(stage2_elf_compress);
-      if (!stage2_elf_compress_header)
-        return (5);
+      // ========================
+      // PHASE 4: Build [Payload][Stage2]
+      // ========================
+      size_t combined_len;
+      char *combined_payload_stage2 = buffer_join(&combined_len, payload_raw,
+  						payload_size_raw, stage2_buffer,
+  						stage2_size);
+      free(payload_raw);
+      free(stage2_buffer);
+      if (!combined_payload_stage2)
+          return ERR_ALLOC;
 
-      // Encrypt the join
-      size_t stage2_elf_compress_encrypt_header_size;
-      char *stage2_elf_compress_encrypt_header = encrypt(stage2_elf_compress_header, stage2_elf_compress_header_size, &stage2_elf_compress_encrypt_header_size);
-      if (stage2_elf_compress_header != stage2_elf_compress_encrypt_header)
-  	free(stage2_elf_compress_header);
-      if (!stage2_elf_compress_encrypt_header || !stage2_elf_compress_encrypt_header_size)
-      {
-        free(stage2_elf_compress_encrypt_header);
-        return (5);
-      }
-      // Get the first stage
+      // ========================
+      // PHASE 5: Append Original ELF → Full Image
+      // ========================
+      size_t full_image_size;
+      char *full_image = buffer_join(&full_image_size, combined_payload_stage2,
+  				   combined_len, elf_mmap, elf_size);
+      free(combined_payload_stage2);
+      if (!full_image)
+          return ERR_ALLOC;
+
+      // ========================
+      // PHASE 6: Compress & Encrypt Full Image
+      // ========================
+      size_t encrypted_size;
+      size_t compressed_with_header_size;  // includes original size header
+
+      char *encrypted_payload = compress_encrypt_with_header(
+          full_image, full_image_size, value_size,
+          &encrypted_size, &compressed_with_header_size);
+
+      free(full_image);
+      if (!encrypted_payload || encrypted_size == 0)
+          return ERR_COMPRESS; // or ERR_ENCRYPT
+
+      // ========================
+      // PHASE 7: Load & Patch Stage 1
+      // ========================
       char *stage1_buffer;
-      size_t stage1_fd_size;
-      if (load_stage_buffer(class, &stage1_buffer, &stage1_fd_size, PATH_X32_STAGE1, PATH_X64_STAGE1)) 
-      {
-        free(stage2_elf_compress_encrypt_header);
-        return (5);
-      }    
+      size_t stage1_size;
 
-      //Create a function to get this code.
-      unsigned int s1_patchs_count = 6;
-      static const size_t stage1_offsets[][6] = {
-  	[ARCH_X86] = {0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf},
-  	[ARCH_X64] = {0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce}
-      };
-      phnum = elf_get_elfh_phnum(&ehdr);
-      uint32_t prefix_size = elf_get_struct_size_elf_header((char *)ehdr.elf32) + elf_get_elfh_phentsize(&ehdr) * (2 + elf_is_gnu_stack_phdr((void *)&ehdr, class, phnum));  //  + jmp pad x32|x64
-      t_type s2_entry_off = (t_type){.b8=payload_fd_size + 0x12 + is_64 * 0x5};
-      uint32_t size_decrypt_buffer = stage2_elf_compress_encrypt_header_size;// Need to get somehow.
-      const t_type s1_patchs[] = {(t_type){.b8= (elf_get_highest_loadable_vaddr_avalaible((void *)&ehdr, class, phnum) + prefix_size + 5 + !is_64 * 0x72)},
-  			(t_type){.b8=stage1_fd_size + prefix_size + stage2_elf_compress_encrypt_header_size},// s1 size
-  			(t_type){.b8=stage2_elf_buffer_size},// stage2_elf_buffer_size?
-  			(t_type){.b8=size_decrypt_buffer},
-  			(t_type){.b8=stage2_elf_compress_header_size},
-  			(t_type){.b8=s2_entry_off.b8},
-      };
-
-      patch_buffer(stage1_buffer, &stage1_offsets[is_64][0], &s1_patchs[0], s1_patchs_count, data_size);
-
-      // Join the first stage with compress and encrypt stage2 + elf file
-      ,*payload_ptr = ft_memjoin(payload_size, stage1_buffer, stage1_fd_size, stage2_elf_compress_encrypt_header, stage2_elf_compress_encrypt_header_size);
-      free(stage1_buffer);
-      free(stage2_elf_compress_encrypt_header);
-      if (!*payload_ptr)
-      {
-        return (5);
+      if (load_stage_buffer(arch, &stage1_buffer, &stage1_size, STAGE_1)) {
+          free(encrypted_payload);
+          return ERR_LOAD_STAGE;
       }
-      return (0);
+
+      // Calculate layout constants
+      const uint64_t phnum = elf_get_elfh_phnum(&elf_header);
+      const uint32_t prefix_size = elf_get_struct_size_elf_header((char *)elf_header.elf32) +
+                             elf_get_elfh_phentsize(&elf_header) *
+                             (2 + elf_is_gnu_stack_phdr(&elf_header, class, phnum));
+
+      // Entry point into Stage 2 (inside decrypted buffer)
+      const uint64_t s2_entry_offset = payload_size_raw + 0x12 + (is_64 ? 0x5 : 0);
+
+      // Patch values for Stage 1
+      const t_type stage1_patches[6] = {
+          {.b8 = elf_get_highest_loadable_vaddr_avalaible(&elf_header, class, phnum) + prefix_size + 5 + (!is_64 * 0x72)}, // Target injection VA
+          {.b8 = stage1_size + prefix_size + encrypted_size},  // Total size after decryption
+          {.b8 = full_image_size},                             // Original full image size (before compression)
+          {.b8 = encrypted_size},                              // Encrypted blob size
+          {.b8 = compressed_with_header_size},                 // Size after decompression (with header)
+          {.b8 = s2_entry_offset}                              // Jump offset into Stage 2
+      };
+      const uint64_t stage1_amount_patchs = 6;
+
+      static const size_t stage1_patch_offsets[NUM_ARCHS][stage1_amount_patchs] = {
+          [ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf },
+          [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce }
+      };
+
+      apply_patches_to_buffer(
+          stage1_buffer,
+          stage1_patch_offsets[arch],
+          stage1_patches,
+          stage1_amount_patchs,
+          value_size
+      );
+
+      // ========================
+      // PHASE 8: Final Assembly: [Stage1][EncryptedBlob]
+      // ========================
+      ,*payload_ptr = buffer_join(payload_size, stage1_buffer, stage1_size,
+  			       encrypted_payload, encrypted_size);
+      free(stage1_buffer);
+      free(encrypted_payload);
+      if (!*payload_ptr)
+          return ERR_ALLOC;
+      return SUCCESS;
   }
 
   /* static t_elf_ph get_n_loadable_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t n) */
