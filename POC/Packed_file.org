@@ -1587,16 +1587,88 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return encrypted;
   }
 
+  static int build_stage2_buffer(t_arch arch, size_t elf_size, uint64_t s3_vaddr,
+  			       char **out_buffer, size_t *out_size,
+  			       size_t *payload_raw_size)
+  {
+      static const size_t stage2_patch_offsets[NUM_ARCHS][2] = {
+          [ARCH_X86] = { 0x5B, 0x98 },
+          [ARCH_X64] = { 0x6E, 0xD7 }
+      };
+      const t_type patches[2] = {{.b8 = elf_size}, {.b8 = s3_vaddr}};
+      char *stage2_buf;
+      size_t stage2_sz;
+      char *payload_raw;
+
+      if (load_and_apply_patches_to_buffer(arch, &stage2_buf, &stage2_sz, STAGE_2,
+  					 stage2_patch_offsets[arch], patches, 2))
+        return (ERR_LOAD_STAGE);
+      if (load_stage_buffer(arch, &payload_raw, payload_raw_size, PAYLOAD_BIN)) {
+          free(stage2_buf);
+          return (ERR_LOAD_STAGE);
+      }
+      ,*out_buffer = buffer_join(out_size, payload_raw, *payload_raw_size, stage2_buf, stage2_sz);
+      free(payload_raw);
+      free(stage2_buf);
+      if (!*out_buffer)
+        return (ERR_ALLOC);
+      return (SUCCESS);
+  }
+
+  static int build_stage1_patched(unsigned char class, t_elf_h *ehdr,
+  				size_t stage2_elf_total_size,
+  				size_t encrypted_size,
+  				size_t compressed_hdr_size,
+  				size_t payload_raw_size, char **out_stage1,
+  				size_t *out_stage1_size)
+  {
+      t_arch arch = (class == ELFCLASS64) ? ARCH_X64 : ARCH_X86;
+      size_t value_size = arch ? sizeof(uint64_t) : sizeof(uint32_t);
+
+      uint64_t phnum = elf_get_elfh_phnum(ehdr);
+      uint32_t prefix_size = elf_get_struct_size_elf_header((char *)ehdr->elf32) +
+                             elf_get_elfh_phentsize(ehdr) *
+                             (2 + elf_is_gnu_stack_phdr(ehdr, class, phnum));
+
+      uint64_t s2_entry_offset = payload_raw_size + 0x12 + (arch ? 0x5 : 0);
+
+      t_type stage1_patches[6] = {
+          {.b8 = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum) + prefix_size + 5 + (!arch * 0x72)},
+          {.b8 = *out_stage1_size + prefix_size + encrypted_size},  // Will update after load
+          {.b8 = stage2_elf_total_size},
+          {.b8 = encrypted_size},
+          {.b8 = compressed_hdr_size},
+          {.b8 = s2_entry_offset}
+      };
+
+      static const size_t stage1_patch_offsets[NUM_ARCHS][6] = {
+          [ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf },
+          [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce }
+      };
+
+      if (load_stage_buffer(arch, out_stage1, out_stage1_size, STAGE_1)) {
+          return ERR_LOAD_STAGE;
+      }
+
+      // Update patch #1: total size after decryption includes decrypted buffer layout
+      stage1_patches[1].b8 = *out_stage1_size + prefix_size + encrypted_size;
+
+      apply_patches_to_buffer(*out_stage1, stage1_patch_offsets[arch],
+                              stage1_patches, 6, value_size);
+
+      return SUCCESS;
+  }
+
   /**
    ,* @brief Generates a complete stager payload:
    ,*        [Stage1][Encrypted([OriginalSize][LZ77( [Payload][Stage2] + ELF )])]
    ,* @return               SUCCESS or error code
    ,*/
-  int generate_payload(void *elf_mmap, size_t elf_size, char **payload_ptr, size_t *payload_size) {
+  int generate_payload(void *elf_mmap, size_t elf_size, char **payload_ptr, size_t *payload_size)
+  {
       const unsigned char class = elf_get_elfh_e_ident_class(elf_mmap);
       const t_arch arch = (class == ELFCLASS64) ? ARCH_X64 : ARCH_X86;
-      const bool is_64 = (class == ELFCLASS64);
-      const size_t value_size = is_64 ? sizeof(uint64_t) : sizeof(uint32_t);
+      const size_t value_size = arch ? sizeof(uint64_t) : sizeof(uint32_t);
 
       t_elf_h elf_header = { .elf32 = elf_mmap };
       uint64_t injected_s3_vaddr = 0;
@@ -1607,49 +1679,13 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       if (elf_inject_s3(elf_mmap, &elf_header, class, &injected_s3_vaddr) != SUCCESS)
           return ERR_INJECT_S3; 
 
-      // ========================
-      // PHASE 2: Load & Patch Stage 2
-      // ========================
-      char *stage2_buffer;
-      size_t stage2_size;
-
-      static const size_t stage2_patch_offsets[NUM_ARCHS][2] = {
-          [ARCH_X86] = { 0x5B, 0x98 },
-          [ARCH_X64] = { 0x6E, 0xD7 }
-      };
-
-      const t_type stage2_patches[2] = {{.b8 = elf_size}, {.b8 = injected_s3_vaddr}};
-
-      if (load_and_apply_patches_to_buffer(arch, &stage2_buffer, &stage2_size,
-              STAGE_2, stage2_patch_offsets[arch], stage2_patches, 2))
-          return ERR_LOAD_STAGE;
-
-      // ========================
-      // PHASE 3: Load Raw Payload
-      // ========================
-      char *payload_raw;
       size_t payload_size_raw;
-
-      if (load_stage_buffer(arch, &payload_raw, &payload_size_raw, PAYLOAD_BIN)) {
-          free(stage2_buffer);
-          return ERR_LOAD_STAGE;
-      }
-
-      // ========================
-      // PHASE 4: Build [Payload][Stage2]
-      // ========================
       size_t combined_len;
-      char *combined_payload_stage2 = buffer_join(&combined_len, payload_raw,
-  						payload_size_raw, stage2_buffer,
-  						stage2_size);
-      free(payload_raw);
-      free(stage2_buffer);
+      char *combined_payload_stage2;
+      if (build_stage2_buffer(arch, elf_size, injected_s3_vaddr, &combined_payload_stage2, &combined_len, &payload_size_raw))
+  	return (ERR_LOAD_STAGE);
       if (!combined_payload_stage2)
-          return ERR_ALLOC;
-
-      // ========================
-      // PHASE 5: Append Original ELF → Full Image
-      // ========================
+        return (ERR_ALLOC);
       size_t full_image_size;
       char *full_image = buffer_join(&full_image_size, combined_payload_stage2,
   				   combined_len, elf_mmap, elf_size);
@@ -1657,16 +1693,12 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       if (!full_image)
           return ERR_ALLOC;
 
-      // ========================
-      // PHASE 6: Compress & Encrypt Full Image
-      // ========================
       size_t encrypted_size;
-      size_t compressed_with_header_size;  // includes original size header
+      size_t compressed_with_header_size;
 
       char *encrypted_payload = compress_encrypt_with_header(
           full_image, full_image_size, value_size,
           &encrypted_size, &compressed_with_header_size);
-
       free(full_image);
       if (!encrypted_payload || encrypted_size == 0)
           return ERR_COMPRESS; // or ERR_ENCRYPT
@@ -1676,44 +1708,46 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       // ========================
       char *stage1_buffer;
       size_t stage1_size;
-
-      if (load_stage_buffer(arch, &stage1_buffer, &stage1_size, STAGE_1)) {
-          free(encrypted_payload);
+      if (build_stage1_patched(class, &elf_header, full_image_size, encrypted_size,
+  			     compressed_with_header_size, payload_size_raw,
+  			     &stage1_buffer, &stage1_size))
+      {
+  	free(encrypted_payload);
           return ERR_LOAD_STAGE;
       }
 
       // Calculate layout constants
-      const uint64_t phnum = elf_get_elfh_phnum(&elf_header);
-      const uint32_t prefix_size = elf_get_struct_size_elf_header((char *)elf_header.elf32) +
-                             elf_get_elfh_phentsize(&elf_header) *
-                             (2 + elf_is_gnu_stack_phdr(&elf_header, class, phnum));
+      /* const uint64_t phnum = elf_get_elfh_phnum(&elf_header); */
+      /* const uint32_t prefix_size = elf_get_struct_size_elf_header((char *)elf_header.elf32) + */
+      /*                        elf_get_elfh_phentsize(&elf_header) * */
+      /*                        (2 + elf_is_gnu_stack_phdr(&elf_header, class, phnum)); */
 
-      // Entry point into Stage 2 (inside decrypted buffer)
-      const uint64_t s2_entry_offset = payload_size_raw + 0x12 + (is_64 ? 0x5 : 0);
+      /* // Entry point into Stage 2 (inside decrypted buffer) */
+      /* const uint64_t s2_entry_offset = payload_size_raw + 0x12 + (arch ? 0x5 : 0); */
 
-      // Patch values for Stage 1
-      const t_type stage1_patches[6] = {
-          {.b8 = elf_get_highest_loadable_vaddr_avalaible(&elf_header, class, phnum) + prefix_size + 5 + (!is_64 * 0x72)}, // Target injection VA
-          {.b8 = stage1_size + prefix_size + encrypted_size},  // Total size after decryption
-          {.b8 = full_image_size},                             // Original full image size (before compression)
-          {.b8 = encrypted_size},                              // Encrypted blob size
-          {.b8 = compressed_with_header_size},                 // Size after decompression (with header)
-          {.b8 = s2_entry_offset}                              // Jump offset into Stage 2
-      };
-      const uint64_t stage1_amount_patchs = 6;
+      /* // Patch values for Stage 1 */
+      /* const t_type stage1_patches[6] = { */
+      /*     {.b8 = elf_get_highest_loadable_vaddr_avalaible(&elf_header, class, phnum) + prefix_size + 5 + (!arch * 0x72)}, // Target injection VA */
+      /*     {.b8 = stage1_size + prefix_size + encrypted_size},  // Total size after decryption */
+      /*     {.b8 = full_image_size},                             // Original full image size (before compression) */
+      /*     {.b8 = encrypted_size},                              // Encrypted blob size */
+      /*     {.b8 = compressed_with_header_size},                 // Size after decompression (with header) */
+      /*     {.b8 = s2_entry_offset}                              // Jump offset into Stage 2 */
+      /* }; */
+      /* const uint64_t stage1_amount_patchs = 6; */
 
-      static const size_t stage1_patch_offsets[NUM_ARCHS][stage1_amount_patchs] = {
-          [ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf },
-          [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce }
-      };
+      /* static const size_t stage1_patch_offsets[NUM_ARCHS][6] = { */
+      /*     [ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf }, */
+      /*     [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce } */
+      /* }; */
 
-      apply_patches_to_buffer(
-          stage1_buffer,
-          stage1_patch_offsets[arch],
-          stage1_patches,
-          stage1_amount_patchs,
-          value_size
-      );
+      /* apply_patches_to_buffer( */
+      /*     stage1_buffer, */
+      /*     stage1_patch_offsets[arch], */
+      /*     stage1_patches, */
+      /*     stage1_amount_patchs, */
+      /*     value_size */
+      /* ); */
 
       // ========================
       // PHASE 8: Final Assembly: [Stage1][EncryptedBlob]
