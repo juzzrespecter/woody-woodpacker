@@ -2188,6 +2188,36 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return (0);
   }
 
+  //TODO TEST elf packer works.
+  int elf_packer(void *elf_mmap, off_t file_size, const char *file_path)
+  {
+      size_t payload_size = 0;
+      char *payload = NULL;
+      if (generate_payload(elf_mmap, (size_t)file_size, &payload, &payload_size))
+        return (5);
+      if (!payload || !payload_size)
+      {
+        free(payload);
+        return (6);
+      }
+      // open the file where we gonna add the payload
+      int packed = open(file_path, O_CREAT | O_TRUNC | O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
+      if (packed < 0)
+      {
+        free(payload);
+        return (7);
+      }
+
+      if (generate_packed_file(elf_mmap, payload, payload_size, packed))
+      {
+        free(payload);
+        close(packed);
+        return (8);
+      }
+      free(payload);
+      close(packed);
+  }
+
   int main(int argc, char **argv)
   {
       //validation params
@@ -2212,6 +2242,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       close(fd);
       if (elf_mmap == (void *) -1)
         return (4);
+      // TODO Use elf_packer
       size_t payload_size = 0;
       char *payload = NULL;
       if (generate_payload(elf_mmap, file_size, &payload, &payload_size))

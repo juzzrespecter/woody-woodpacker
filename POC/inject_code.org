@@ -188,7 +188,7 @@ Compare if the nbr of params is distint of 1.
 
 #+begin_src c :tangle "srcs/inject_code.c" :mkdirp yes
 
-  file_mmap = mmap (NULL, file_size, PROT_NONE | PROT_READ,
+  file_mmap = mmap (NULL, file_size, PROT_WRITE | PROT_READ,
                     MAP_PRIVATE, fd, 0);
   close(fd);
   if (MAP_FAILED == file_mmap)
@@ -206,19 +206,19 @@ Solution Fast check Magic/Signature
 Cause:  ELF, PE and Mach O got Magic number/Signature
    #+begin_src c :tangle include/woody.h 
      # define ELF_MAGIC ELFMAG
-     # define MACH_O_32b_MAGIC "\xfeedface"
-     # define MACH_O_64b_MAGIC "\xfeedfacf"
-     # define MACH_O_MAGIC_SIZE 4
+     /* # define MACH_O_32b_MAGIC "\xfe\xed\xfa\xce" */
+     /* # define MACH_O_64b_MAGIC "\xfe\xed\xfa\xcf" */
+     /* # define MACH_O_MAGIC_SIZE 4 */
      # define DOS_SIGN "MZ" //  0x5A4D 
      # define DOS_SIGN_SIZE 2 // 
-     # define NT_HEADER_OFFSET 0x3C // Below this line the defines are ignored
-     # define PE_SIGN "PE\0\0" // 0x50450000 is the signature on NT_HEADER
+     # define NT_HEADER_OFFSET 0x3C
+     # define PE_SIGN "PE\x0\x0" // 0x50450000 is the signature on NT_HEADER
      # define PE_SIGN_SIZE 4
      # define ELF_MAGIC_SIZE SELFMAG      // Below this line end the ignored defines
 
      typedef enum e_file_type {
        FT_ELF,
-       FT_MACH_O,
+       /* FT_MACH_O, */
        FT_PE,  // FT_DOS?
        FT_UNKNOW
      }	t_file_type;
@@ -235,12 +235,12 @@ I just check the DOS Signature (Could happend that is a DOS file and not PE shou
 
     if (ELF_MAGIC_SIZE < *file_size && !memcmp(file_content, ELFMAG, SELFMAG))
       return (FT_ELF);
-    //if (MACH_O_MAGIC_SIZE < *file_size && !memcmp(file_content, MACH_O_64b_MAGIC, MACH_O_MAGIC_SIZE))
-    //  return (FT_MACH_O);
-    //if (MACH_O_MAGIC_SIZE < *file_size && !memcmp(file_content, MACH_O_64b_MAGIC, MACH_O_MAGIC_SIZE))
-    //  return (FT_MACH_O);
-    //if (DOS_SIGN_SIZE < *file_size && !memcmp(file_content, DOS_SIGN, DOS_SIGN_SIZE))
-    //    return (FT_PE);
+    /* if (MACH_O_MAGIC_SIZE < *file_size && !memcmp(file_content, MACH_O_64b_MAGIC, MACH_O_MAGIC_SIZE)) */
+     /* return (FT_MACH_O); */
+    /* if (MACH_O_MAGIC_SIZE < *file_size && !memcmp(file_content, MACH_O_64b_MAGIC, MACH_O_MAGIC_SIZE)) */
+     /* return (FT_MACH_O); */
+    if (DOS_SIGN_SIZE < *file_size && !memcmp(file_content, DOS_SIGN, DOS_SIGN_SIZE))
+       return (FT_PE);
     return (FT_UNKNOW);
   }
 
@@ -267,25 +267,20 @@ I just check the DOS Signature (Could happend that is a DOS file and not PE shou
 Ideally make a array of pointer function
  something similar to this:
  #+begin_src c  :tangle "srcs/inject_code.c" :mkdirp yes
-   if (!(elf_valid_elf_file(file_mmap, file_size) && elf_is_executable_elf_file(file_mmap)))
-     return (UNVALID_FTYPE);
+   int (*valid[2])(void*,off_t) = {
+     elf_valid_file,
+     elf_valid_file//Should be here the pe_valid_file.
+   };
+   if (!valid[ftype](file_mmap, file_size))
+       return (UNVALID_FTYPE);
 
  #+end_src
-** ELF Format:
 [[file:ELF.org][ELF]]
 
  #+begin_src c  :tangle "srcs/inject_code.c" :mkdirp yes
-   fd = open("woody", O_RDWR | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG |  S_IRWXO);
-   if (fd < 0)
-     return (FAIL_OPEN_FD);
-   // return (UNVALID_FTYPE);
-   write(fd, file_mmap, file_size);// Copy of the file
-   close(fd);
 
  #+end_src
 
-** PE Format:
-** MACH-O Format:
 #+begin_src c :tangle "srcs/inject_code.c" :mkdirp yes
 
   return (SUCCESS);
