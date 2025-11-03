@@ -50,7 +50,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 * Packer
 #+begin_src c :tangle srcs/elf/POC/check_packer.c
   #include <string.h>
-  #include "format_elf.h"
+  #include "woody.h"
   #include <stdbool.h>
   #include <unistd.h>
   #include <stdio.h>
@@ -58,6 +58,12 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   #include <fcntl.h>
   #include <sys/mman.h>
   #include <stdlib.h> //Malloc
+
+  typedef union u_elf_addr
+  {
+    Elf32_Addr b32;    
+    Elf64_Addr b64;
+  }	t_elf_addr;
 
   typedef struct s_lz77
   {
@@ -70,6 +76,45 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   	void			*content;
   	struct s_list	*next;
   }	t_list;
+
+  typedef union u_type
+  {
+    uint8_t	b;
+    uint16_t	b2;
+    uint32_t	b4;
+    uint64_t	b8;
+  } t_type;
+
+  typedef enum e_error {
+    ERR_SUCCESS = 0,
+    ERR_INVALID_ELF = 1,
+    ERR_PREPARE_INFO = 2,
+    ERR_WRITE_HEADER = 3,
+    ERR_WRITE_PHDR = 4,
+    ERR_WRITE_PAYLOAD = 5,
+    ERR_LOAD_STAGE = 6,
+    ERR_ALLOC = 7,
+    ERR_COMPRESS = 8,
+    ERR_ENCRYPT = 9,
+    ERR_INVAL_PH_NDX = 10,
+    ERR_INJECT_S3 = 11
+  } t_error;
+
+  // Architecture indices
+  typedef enum	e_arch{
+      ARCH_X86,
+      ARCH_X64,
+      NUM_ARCHS
+  }	t_arch;
+
+  typedef enum {
+      STAGE_1,
+      STAGE_2,
+      STAGE_3,
+      PAYLOAD_BIN,
+      NUM_BIN_TYPES
+  } t_bin_type;
+
 
   t_list	*ft_lstnew(void *content)
   {
@@ -667,13 +712,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return (6);//2 plus address
   }
 
-  typedef union u_type
-  {
-    uint8_t	b;
-    uint16_t	b2;
-    uint32_t	b4;
-    uint64_t	b8;
-  } t_type;
+
 
   //Begin dynamic Bytecode
   size_t ft_je(unsigned char *dst, size_t distance)
@@ -1025,11 +1064,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return (written);
   }
 
-  typedef  union u_elf_addr
-  {
-    Elf32_Addr b32;    
-    Elf64_Addr b64;
-  }	t_elf_addr;
+
 
   size_t set_jmp_r13(void *dst)
   {
@@ -1234,21 +1269,21 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return (written);
   }
 
-  int get_file_size(int fd, off_t *file_size)
-  {
-      ,*file_size = lseek(fd, 0, SEEK_END);
-      if (*file_size == -1)
-      {
-        perror("Failed to seek the end of file");
-        return (1);
-      }
-      if (lseek(fd, 0, SEEK_SET) == -1)
-      {
-        perror("Failed to seek the begin of file");
-        return (1);
-      }
-      return (0);
-  }
+  /* int get_file_size(int fd, off_t *file_size) */
+  /* { */
+  /*     *file_size = lseek(fd, 0, SEEK_END); */
+  /*     if (*file_size == -1) */
+  /*     { */
+  /*       perror("Failed to seek the end of file"); */
+  /*       return (1); */
+  /*     } */
+  /*     if (lseek(fd, 0, SEEK_SET) == -1) */
+  /*     { */
+  /*       perror("Failed to seek the begin of file"); */
+  /*       return (1); */
+  /*     } */
+  /*     return (0); */
+  /* } */
 
   static t_elf_ph get_n_loadable_and_exec_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t n)
   {
@@ -1390,35 +1425,6 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return (false);
   }
 
-  typedef enum {
-    SUCCESS = 0,
-    ERR_INVALID_ELF = 1,
-    ERR_PREPARE_INFO = 2,
-    ERR_WRITE_HEADER = 3,
-    ERR_WRITE_PHDR = 4,
-    ERR_WRITE_PAYLOAD = 5,
-    ERR_LOAD_STAGE = 6,
-    ERR_ALLOC = 7,
-    ERR_COMPRESS = 8,
-    ERR_ENCRYPT = 9,
-    ERR_INVAL_PH_NDX = 10,
-    ERR_INJECT_S3 = 11
-  } t_error;
-
-  // Architecture indices
-  typedef enum	e_arch{
-      ARCH_X86,
-      ARCH_X64,
-      NUM_ARCHS
-  }	t_arch;
-
-  typedef enum {
-      STAGE_1,
-      STAGE_2,
-      STAGE_3,
-      PAYLOAD_BIN,
-      NUM_BIN_TYPES
-  } t_bin_type;
 
   /* Path mapping table */
   static const char *const g_binary_paths[NUM_ARCHS][NUM_BIN_TYPES] = {
@@ -1499,13 +1505,13 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       {
         free(stage3_buffer);
         ,*free_va = 0;
-        return (SUCCESS);
+        return (ERR_SUCCESS);
       }
       memcpy(elf + free_off, stage3_buffer, stage3_fd_size);
       free(stage3_buffer);
       elf_phdr_set_filesz(&phdr, elf_get_program_header_filesz(&phdr, class) + stage3_fd_size, class);
       elf_phdr_set_memsz(&phdr, elf_get_program_header_memsz(&phdr, class) + stage3_fd_size, class);
-      return (SUCCESS);
+      return (ERR_SUCCESS);
   }
 
   /**
@@ -1612,7 +1618,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       free(stage2_buf);
       if (!*out_buffer)
         return (ERR_ALLOC);
-      return (SUCCESS);
+      return (ERR_SUCCESS);
   }
 
   static int build_stage1_patched(unsigned char class, t_elf_h *ehdr,
@@ -1656,13 +1662,13 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       apply_patches_to_buffer(*out_stage1, stage1_patch_offsets[arch],
                               stage1_patches, 6, value_size);
 
-      return SUCCESS;
+      return ERR_SUCCESS;
   }
 
   /**
    ,* @brief Generates a complete stager payload:
    ,*        [Stage1][Encrypted([OriginalSize][LZ77( [Payload][Stage2] + ELF )])]
-   ,* @return               SUCCESS or error code
+   ,* @return               ERR_SUCCESS or error code
    ,*/
   int generate_payload(void *elf_mmap, size_t elf_size, char **payload_ptr, size_t *payload_size)
   {
@@ -1676,7 +1682,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       // ========================
       // PHASE 1: Inject Stage 3
       // ========================
-      if (elf_inject_s3(elf_mmap, &elf_header, class, &injected_s3_vaddr) != SUCCESS)
+      if (elf_inject_s3(elf_mmap, &elf_header, class, &injected_s3_vaddr) != ERR_SUCCESS)
           return ERR_INJECT_S3; 
 
       size_t payload_size_raw;
@@ -1758,7 +1764,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       free(encrypted_payload);
       if (!*payload_ptr)
           return ERR_ALLOC;
-      return SUCCESS;
+      return ERR_SUCCESS;
   }
 
   /* static t_elf_ph get_n_loadable_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t n) */
@@ -1791,7 +1797,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
       if (*phnum == 0)
         return (ERR_INVALID_ELF);
-      return (SUCCESS);
+      return (ERR_SUCCESS);
   }
 
   /* static int find_section_and_program_indices(t_elf_h *ehdr, uint64_t e_entrypoint, uint64_t shnum, uint64_t phnum, */
@@ -1868,7 +1874,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       elf_ehdr_set_shstrndx(ehdr, 0, class);
       if (write(packed, ehdr->elf32, ehdr_len) != ehdr_len)
         return (ERR_WRITE_HEADER);
-      return (SUCCESS);
+      return (ERR_SUCCESS);
   }
 
   /* static bool last_section_in_phdr(t_elf_h *ehdr, t_elf_ph ndx_ph, uint64_t ndx_sh, unsigned char class, uint64_t phnum) */
@@ -1948,7 +1954,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   {
       if (write(packed, *payload, payload_size) != (ssize_t)payload_size)
         return (ERR_WRITE_PAYLOAD);
-      return (SUCCESS);
+      return (ERR_SUCCESS);
   }
 
   /* static int write_remaining_section_headers(t_elf_h *ehdr, int packed, uint64_t phnum, uint64_t shnum, */
@@ -2188,7 +2194,6 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return (0);
   }
 
-  //TODO TEST elf packer works.
   int elf_packer(void *elf_mmap, off_t file_size, const char *file_path)
   {
       size_t payload_size = 0;
@@ -2216,67 +2221,38 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       }
       free(payload);
       close(packed);
-  }
-
-  int main(int argc, char **argv)
-  {
-      //validation params
-      if (argc != 2)
-      {
-        printf("usage: %s [filename]\n", *argv);
-        return (1);
-      }  	
-      //open file
-      int fd = open(argv[1], O_RDONLY); 
-      if (fd < 0)
-        return (2);
-      // get size file
-      const off_t file_size = lseek(fd, 0, SEEK_END);
-      if ((off_t) -1 == file_size || (off_t) -1 == lseek(fd, 0, SEEK_SET))
-      {
-        close(fd);
-        return (3);
-      }
-      // save on memory all the file
-      void *elf_mmap = mmap(NULL, file_size, PROT_READ|PROT_WRITE, MAP_PRIVATE, fd, 0);
-      close(fd);
-      if (elf_mmap == (void *) -1)
-        return (4);
-      // TODO Use elf_packer
-      size_t payload_size = 0;
-      char *payload = NULL;
-      if (generate_payload(elf_mmap, file_size, &payload, &payload_size))
-      {
-        munmap(elf_mmap, file_size);
-        return (5);
-      }
-      if (!payload || !payload_size)
-      {
-        free(payload);
-        munmap(elf_mmap, file_size);
-        return (6);
-      }
-      // open the file where we gonna add the payload
-      int packed = open("woody", O_CREAT | O_TRUNC | O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
-      if (packed < 0)
-      {
-        free(payload);
-        munmap(elf_mmap, file_size);
-        return (7);
-      }
-
-      if (generate_packed_file(elf_mmap, payload, payload_size, packed))
-      {
-        free(payload);
-        munmap(elf_mmap, file_size);
-        close(packed);
-        return (8);
-      }
-      free(payload);
-      munmap(elf_mmap, file_size);
-      close(packed);
       return (0);
   }
+
+  /* int main(int argc, char **argv) */
+  /* { */
+  /*     //validation params */
+  /*     if (argc != 2) */
+  /*     { */
+  /*       printf("usage: %s [filename]\n", *argv); */
+  /*       return (1); */
+  /*     }  	 */
+  /*     //open file */
+  /*     int fd = open(argv[1], O_RDONLY);  */
+  /*     if (fd < 0) */
+  /*       return (2); */
+  /*     // get size file */
+  /*     const off_t file_size = lseek(fd, 0, SEEK_END); */
+  /*     if ((off_t) -1 == file_size || (off_t) -1 == lseek(fd, 0, SEEK_SET)) */
+  /*     { */
+  /*       close(fd); */
+  /*       return (3); */
+  /*     } */
+  /*     // save on memory all the file */
+  /*     void *elf_mmap = mmap(NULL, file_size, PROT_READ|PROT_WRITE, MAP_PRIVATE, fd, 0); */
+  /*     close(fd); */
+  /*     if (elf_mmap == (void *) -1) */
+  /*       return (4); */
+  /*     int ret_val; */
+  /*     ret_val = elf_packer(elf_mmap, file_size, "woody"); */
+  /*     munmap(elf_mmap, file_size); */
+  /*     return (ret_val); */
+  /* } */
 #+end_src
 
 #+begin_src c :tangle no

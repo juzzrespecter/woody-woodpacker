@@ -40,26 +40,15 @@ PROGRAM-SRC				:=	file_validation\
 #PROGRAM-DIR                            := ./
 
 #PROGRAM-SRCS				:=	$(addprefix $(PROGRAM-DIR), $(PROGRAM-SRC))
-
-SRC					:= $(PROGRAM-SRC) $(CMN-SRCS) $(ELF_PARSER-SRCS)
-
-ADD_INSTRUCTION			:= test_add_instructions
-POC_ADD_INSTRUCTION			:= $(ELF_PARSER-SRCS) $(CMN-SRCS) elf/POC/add_instructions
-
-CHECK_COMPRESS			:= test_check_compress
-POC_CHECK_COMPRESS			:= $(ELF_PARSER-SRCS) $(CMN-SRCS) elf/POC/check_compress
-CHECK_SECTION			:= test_check_section
-POC_CHECK_SECTION			:= $(ELF_PARSER-SRCS) $(CMN-SRCS) elf/POC/elf_phdr_shdr
 CHECK_PACKER			:= test_check_packer
-POC_CHECK_PACKER			:= $(ELF_PARSER-SRCS) $(CMN-SRCS) elf/POC/check_packer
+POC_CHECK_PACKER			:= elf/POC/check_packer
+
+SRC					:= $(PROGRAM-SRC) $(CMN-SRCS) $(ELF_PARSER-SRCS) $(POC_CHECK_PACKER)
+
 
 
 BUILD					:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(SRC)))
 
-BUILD-POC_ADD_INSTRUCTION		:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(POC_ADD_INSTRUCTION)))
-
-BUILD-POC_CHECK_COMPRESS		:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(POC_CHECK_COMPRESS)))
-BUILD-POC_CHECK_SECTION		:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(POC_CHECK_SECTION)))
 BUILD-POC_CHECK_PACKER		:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(POC_CHECK_PACKER)))
 # Makefile
 
@@ -96,12 +85,6 @@ all: $(NAME)
 $(NAME): $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $(BUILD) $(LINKINGFLAGS)
 
-$(ADD_INSTRUCTION): $(BUILD-POC_ADD_INSTRUCTION)
-	$(CC) $(CFLAGS) -o $@ $(BUILD-POC_ADD_INSTRUCTION) $(LINKINGFLAGS)
-$(CHECK_COMPRESS): $(BUILD-POC_CHECK_COMPRESS)
-	$(CC) $(CFLAGS) -o $@ $(BUILD-POC_CHECK_COMPRESS) $(LINKINGFLAGS)
-$(CHECK_SECTION): $(BUILD-POC_CHECK_SECTION)
-	$(CC) $(CFLAGS) -o $@ $(BUILD-POC_CHECK_SECTION) $(LINKINGFLAGS)
 $(CHECK_PACKER): $(BUILD-POC_CHECK_PACKER)
 	$(CC) $(CFLAGS) -o $@ $(BUILD-POC_CHECK_PACKER) $(LINKINGFLAGS)
 
@@ -128,4 +111,4 @@ info-%:
 print-%:
 	@$(info '$*'='$($*)')
 
-.PHONY: all clean fclean re info-% print-%
+.PHONY: $(NAME) all clean fclean re info-% print-%
