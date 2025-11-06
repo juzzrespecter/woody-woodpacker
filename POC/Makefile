@@ -5,23 +5,23 @@ SRCS-DIR				:=	srcs/
 BUILD-DIR				:=	./.build/
 NAME					:=	test_elf
 ELF_PARSER-SRC				:=	get_eh_1 \
-						get_eh_2 \
-						get_eh \
-						get_elfsh_data_1 \
-						get_elfsh_data_2 \
-						get_elfsh_data_3 \
-						get_elfsh_data \
-						get_real_data \
-						validate_elf_h_1 \
-						validate_elf_h \
-						valid_elf_h_attrib \
-						valid_elf_section_header_2 \
-						valid_program_header_2 \
-						valid_program_header \
-						valid_section_header \
-						get_elfh_e_ident \
-						valid_elfh \
-						valid_elf_h_2 \
+					      get_eh_2 \
+					      get_eh \
+					      get_elfsh_data_1 \
+					      get_elfsh_data_2 \
+					      get_elfsh_data_3 \
+					      get_elfsh_data \
+					      get_real_data \
+					      validate_elf_h_1 \
+					      validate_elf_h \
+					      valid_elf_h_attrib \
+					      valid_elf_section_header_2 \
+					      valid_program_header_2 \
+					      valid_program_header \
+					      valid_section_header \
+					      get_elfh_e_ident \
+					      valid_elfh \
+					      valid_elf_h_2 \
 
 ELF_PARSER-DIR                         :=      elf/parser/
 
@@ -34,8 +34,8 @@ CMN-DIR                                :=      cmn/
 CMN-SRCS				:=	$(addprefix $(CMN-DIR), $(CMN-SRC))
 
 PROGRAM-SRC				:=	file_validation\
-						inject_code\
-						signature_check\
+					      inject_code\
+					      signature_check\
 
 #PROGRAM-DIR                            := ./
 
@@ -83,7 +83,7 @@ all: $(NAME)
 #	$(MAKE) -C $<
 
 $(NAME): $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $(BUILD) $(LINKINGFLAGS)
+		$(CC) $(CFLAGS) -o $@ $(BUILD) $(LINKINGFLAGS)
 
 $(CHECK_PACKER): $(BUILD-POC_CHECK_PACKER)
 	$(CC) $(CFLAGS) -o $@ $(BUILD-POC_CHECK_PACKER) $(LINKINGFLAGS)

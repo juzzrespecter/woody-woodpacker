@@ -1,4 +1,4 @@
-#+title: inject code in an elf file
+#+title: inject_code
 #+PROPERTY: header-args:c :tangle "srcs/inject_code.c" :mkdirp yes
 #+PROPERTY: header-args:asm :mkdirp yes
 
@@ -250,7 +250,7 @@ Cause:  ELF, PE and Mach O got Magic number/Signature
        } t_type;
 
        typedef enum e_error {
-         SUCCESS = 0,
+         ERR_SUCCESS = 0,
          ERR_INVALID_ELF = 1,
          ERR_PREPARE_INFO = 2,
          ERR_WRITE_HEADER = 3,
@@ -340,7 +340,7 @@ I just check the DOS Signature (Could happend that is a DOS file and not PE shou
       elf_packer,
       elf_packer//Should be here the pe_packer.
     };
-    if (!packer[ftype](file_mmap, file_size, "woody"))
+    if (packer[ftype](file_mmap, file_size, "woody"))
         return (UNVALID_PACKED);
  #+end_src
 
