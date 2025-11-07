@@ -51,7 +51,7 @@
         prot |= PROT_WRITE;
       if (phdr->p_flags & PF_X)
         prot |= PROT_EXEC;
-
+      
       uint64_t map_end = phdr->p_offset + phdr->p_filesz;
       if (fd == -1)
         {
@@ -65,7 +65,7 @@
       void *map_addr = (char *)base + (page_vaddr - min_vaddr);
       void *result = mmap(map_addr, map_size, prot, 
   			flags, fd, page_offset);
-      if (result == MAP_FAILED)
+      if (result <= -0xfff)/* == MAP_FAILED) */
         return (-1);
       if (fd == -1) {
           // Copy data from ELF buffer to mapped memory
@@ -566,7 +566,7 @@
         pop r14			;
         push rax
         pop r13			;r13 entrypoint to jmp
-        ;; 0x4f3
+       ;; 0x4f3
         call get_at_interp_x64	;[rsp] size_s2, vaddr s2
         cmp rax, -1
         je _exit
@@ -1010,7 +1010,10 @@
 
   .skip_write_dyn:
       ; Calculate entrypoint
-      mov    rax, rbx              ; rax = mapping address
+  	push  rbx
+  	pop rax			;rax = mapping va
+  	push  rbx
+  	pop rdi			; rdi = mapping va
       sub    rax, r13              ; rax = mapping_address - min_vaddr
       add    rax, QWORD  [rbp+0x18]  ; rax = adjusted + entry point
 

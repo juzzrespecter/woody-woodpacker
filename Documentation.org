@@ -79,6 +79,8 @@ These two actions have the same effect. Namely, the archive will not be openable
 ** Info Interesting:
 # How to make a packer
 https://fasterthanli.me/series/making-our-own-executable-packer
+# ELF format
+https://gist.github.com/x0nu11byt3/bcb35c3de461e5fb66173071a2379779
 # PE format
 https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-image_dos_header
 # MACH-O format
