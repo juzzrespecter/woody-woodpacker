@@ -3,125 +3,113 @@
 * Makefile
 
 #+begin_src  c :tangle Makefile
-  MAKEFLAGS				:=	--no-print-directory
-  SHELL					:=	/bin/sh
-  INCLUDE-DIR				:=	./include/
-  SRCS-DIR				:=	srcs/
-  BUILD-DIR				:=	./.build/
-  NAME					:=	test_elf
-  ELF_PARSER-SRC				:=	get_eh_1 \
-  						get_eh_2 \
-  						get_eh \
-  						get_elfsh_data_1 \
-  						get_elfsh_data_2 \
-  						get_elfsh_data_3 \
-  						get_elfsh_data \
-  						get_real_data \
-  						validate_elf_h_1 \
-  						validate_elf_h \
-  						valid_elf_h_attrib \
-  						valid_elf_section_header_2 \
-  						valid_program_header_2 \
-  						valid_program_header \
-  						valid_section_header \
-  						get_elfh_e_ident \
-  						valid_elfh \
-  						valid_elf_h_2 \
+    MAKEFLAGS				:=	--no-print-directory
+    SHELL					:=	/bin/sh
+    INCLUDE-DIR				:=	./include/
+    SRCS-DIR				:=	srcs/
+    BUILD-DIR				:=	./.build/
+    NAME					:=	woody_woodpacker
+    ELF_PARSER-SRC				:=	get_eh_1 \
+    						get_eh_2 \
+    						get_eh \
+    						get_elfsh_data_1 \
+    						get_elfsh_data_2 \
+    						get_elfsh_data_3 \
+    						get_elfsh_data \
+    						get_real_data \
+    						validate_elf_h_1 \
+    						validate_elf_h \
+    						valid_elf_h_attrib \
+    						valid_elf_section_header_2 \
+    						valid_program_header_2 \
+    						valid_program_header \
+    						valid_section_header \
+    						get_elfh_e_ident \
+    						valid_elfh \
+    						valid_elf_h_2 \
 
-  ELF_PARSER-DIR                         :=      elf/parser/
+    ELF_PARSER-DIR                         :=      elf/parser/
 
-  ELF_PARSER-SRCS			:=	$(addprefix $(ELF_PARSER-DIR), $(ELF_PARSER-SRC))
+    ELF_PARSER-SRCS			:=	$(addprefix $(ELF_PARSER-DIR), $(ELF_PARSER-SRC))
 
-  CMN-SRC				:= 	overflow \
+    CMN-SRC				:= 	overflow \
 
-  CMN-DIR                                :=      cmn/
+    CMN-DIR                                :=      cmn/
 
-  CMN-SRCS				:=	$(addprefix $(CMN-DIR), $(CMN-SRC))
+    CMN-SRCS				:=	$(addprefix $(CMN-DIR), $(CMN-SRC))
 
-  PROGRAM-SRC				:=	file_validation\
-  						inject_code\
-  						signature_check\
+    PROGRAM-SRC				:=	file_validation\
+    						main\
+    						signature_check\
 
-  #PROGRAM-DIR                            := ./
+    #PROGRAM-DIR                            := ./
 
-  #PROGRAM-SRCS				:=	$(addprefix $(PROGRAM-DIR), $(PROGRAM-SRC))
-  CHECK_PACKER			:= test_check_packer
-  POC_CHECK_PACKER			:= elf/POC/check_packer
+    #PROGRAM-SRCS				:=	$(addprefix $(PROGRAM-DIR), $(PROGRAM-SRC))
+    ELF_PACKER-DIR                  := elf/packer/
+    ELF_PACKER-SRC			:= elf_packer
+    ELF_PACKER-SRCS				:=	$(addprefix $(ELF_PACKER-DIR), $(ELF_PACKER-SRC))
 
-  SRC					:= $(PROGRAM-SRC) $(CMN-SRCS) $(ELF_PARSER-SRCS) $(POC_CHECK_PACKER)
+    SRCS					:= $(PROGRAM-SRC) $(CMN-SRCS) $(ELF_PARSER-SRCS) $(ELF_PACKER-SRCS)
 
 
 
-  BUILD					:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(SRC)))
+    BUILD					:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(SRCS)))
 
-  BUILD-POC_CHECK_PACKER		:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(POC_CHECK_PACKER)))
-  # Makefile
 
-  # Detect the operating system
-  UNAME_S := $(shell uname -s)
+    # Detect the operating system
+    UNAME_S := $(shell uname -s)
+    # Set the CC variable based on the operating system
+    ifeq ($(UNAME_S),Linux)
+        ifeq ($(shell grep -q 'guix' /etc/os-release && echo yes),yes)
+            CC := gcc
+        else
+            CC := cc
+        endif
+    else
+        $(error Unsupported operating system: $(UNAME_S))
+    endif
 
-  # Set the CC variable based on the operating system
-  ifeq ($(UNAME_S),Linux)
-      # Check for Guix
-      ifeq ($(shell grep -q 'guix' /etc/os-release && echo yes),yes)
-          CC := gcc
-      else
-          CC := cc
-      endif
-  else
-      $(error Unsupported operating system: $(UNAME_S))
-  endif
-  CFLAGS					:= -Wall -Werror -Wextra -g3# -fsanitize=address
-  INCLUDEFLAGS			:= -I $(INCLUDE-DIR) -I lib/include/
-  LINKINGFLAGS			:= #-L lib -l ft
-  RM						:=	rm -rf
-  LIB-DIR					:= lib
-  LIB						:= $(LIB-DIR)/libft.a
+    CFLAGS					:= -Wall -Werror -Wextra -g3# -fsanitize=address
+    INCLUDEFLAGS			:= -I $(INCLUDE-DIR) -I lib/include/
+    LINKINGFLAGS			:= #-L lib -l ft
+    RM						:=	rm -rf
+    LIB-DIR					:= lib
+    LIB						:= $(LIB-DIR)/libft.a
 
-  # For create directory and print
-  DIR_DUP					=	mkdir -p $(@D)
-  # RULES
+    # For create directory and print
+    DIR_DUP					=	mkdir -p $(@D)
+    # RULES
 
-  all: $(NAME)
+    all: $(NAME)
 
-  #$(LIB): $(LIB-DIR)
-  #	$(MAKE) -C $<
+    $(LIB): $(LIB-DIR)
+  	$(MAKE) -C $<
 
-  $(NAME): $(BUILD)
-  	$(CC) $(CFLAGS) -o $@ $(BUILD) $(LINKINGFLAGS)
+    $(NAME): $(BUILD) $(LIB)
+  	$(CC) $(CFLAGS) -o $@ $(BUILD) $(LIB) $(LINKINGFLAGS)
 
-  $(CHECK_PACKER): $(BUILD-POC_CHECK_PACKER)
-  	$(CC) $(CFLAGS) -o $@ $(BUILD-POC_CHECK_PACKER) $(LINKINGFLAGS)
+  #  $(BUILD-DIR):
+  #  	@mkdir -p $@
 
-  $(BUILD-DIR):
-  	@mkdir -p $@
-
-  $(BUILD-DIR)%.o:        $(SRCS-DIR)%.c
+    $(BUILD-DIR)%.o:        $(SRCS-DIR)%.c
   	@$(DIR_DUP)
   	$(CC) $(CFLAGS) $(INCLUDEFLAGS) -c $< -o $@
 
-  clean:
+    clean:
   	@$(RM) $(BUILD-DIR)
-  #	$(MAKE) $@ -C $(LIB-DIR)
+  	$(MAKE) $@ -C $(LIB-DIR)
 
-  fclean: clean
+    fclean: clean
   	@$(RM) $(NAME)
-  #	$(MAKE) $@ -C $(LIB-DIR)
+  	$(MAKE) $@ -C $(LIB-DIR)
 
-  re: fclean all
+    re: fclean all
 
-  info-%:
+    info-%:
   	@$(MAKE) --dry-run --always-make $* | grep -v "info"
 
-  print-%:
+    print-%:
   	@$(info '$*'='$($*)')
 
-  .PHONY: $(NAME) all clean fclean re info-% print-%
+    .PHONY: $(NAME) all clean fclean re info-% print-%
 #+end_src
-
-* DONE Makefile POC complete
-CLOSED: [2025-06-25 Wed 12:53]
-:LOGBOOK:
-- State "DONE"       from "TODO"       [2025-06-25 Wed 12:53]
-CLOCK: [2025-06-25 Wed 12:00]--[2025-06-25 Wed 12:53] =>  0:53
-:END:

@@ -65,18 +65,22 @@ These two actions have the same effect. Namely, the archive will not be openable
   
 ** Bonus
 
-*** 32 bit Management.
+*** DONE 32 bit Management.
+CLOSED: [2025-11-07 Fri 16:57]
 
 *** Parameterized key.
-
-*** Binary compression:
+#+begin_quote
+For Use the key in asm use the offset  inside your code.
+#+end_quote
+*** DONE Binary compression:
+CLOSED: [2025-11-07 Fri 16:54]
 
 *** Optimisation of the used algorithm throught asm.
 
 *** Additional binay management (=PE=, =Mach-O=).
 
 
-** Info Interesting:
+** Bibliography:
 # How to make a packer
 https://fasterthanli.me/series/making-our-own-executable-packer
 # ELF format

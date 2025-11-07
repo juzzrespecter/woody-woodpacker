@@ -1,33 +1,17 @@
 #+title: ELF
-#+PROPERTY: header-args:c :tangle "srcs/elf/parser/inject_code.c :mkdirp yes" :mkdirp yes
+#+PROPERTY: header-args:c :tangle "srcs/elf/parser/inject_code.c" :mkdirp yes
 * Validate ELF
-
 ** What makes invalid a elf file:
 *** DONE Invalid Elf.
 CLOSED: [2025-06-21 Sat 16:08]
 :LOGBOOK:
-- State "DONE"       from "TODO"       [2025-06-21 Sat 16:08]
-CLOCK: [2025-06-21 Sat 15:31]--[2025-06-21 Sat 16:06] =>  0:35
-CLOCK: [2025-06-21 Sat 13:21]--[2025-06-21 Sat 14:30] =>  1:09 
-CLOCK: [2025-06-21 Sat 11:20]--[2025-06-21 Sat 12:25] =>  1:05
-CLOCK: [2025-06-21 Sat 10:32]--[2025-06-21 Sat 10:59] =>  0:27
-CLOCK: [2025-06-20 Fri 17:32]--[2025-06-20 Fri 19:46] =>  2:14
-CLOCK: [2025-06-19 Thu 17:50]--[2025-06-19 Thu 18:38] =>  0:48
-CLOCK: [2025-06-19 Thu 17:15]--[2025-06-19 Thu 17:38] =>  0:23
-CLOCK: [2025-06-19 Thu 14:41]--[2025-06-19 Thu 15:03] =>  0:22
-CLOCK: [2025-06-18 Wed 15:49]--[2025-06-18 Wed 15:51] =>  0:02
-CLOCK: [2025-06-18 Wed 14:23]--[2025-06-18 Wed 15:14] =>  0:51
-CLOCK: [2025-06-18 Wed 13:51]--[2025-06-18 Wed 14:06] =>  0:15
-CLOCK: [2025-06-18 Wed 13:21]--[2025-06-18 Wed 13:36] =>  0:15
-CLOCK: [2025-06-10 Tue 12:27]--[2025-06-10 Tue 13:29] =>  1:02
-CLOCK: [2025-06-10 Tue 11:18]--[2025-06-10 Tue 11:49] =>  0:31
-:END:
 - Invalid Elf_header.
 - Invalid Section_header.
 - Invalid Program_header.
 
 ** Implementation
-*** Abstraction
+*** DONE Abstraction
+CLOSED: [2025-11-07 Fri 16:52]
 
 #+begin_comment
 For simplify the 64/32 bits management we're going to use unions and getters for take the values from the unions and abstract the 64/32 for the code.
@@ -47,8 +31,9 @@ Elf header = ehdr = _h
   # include <stdint.h> // uint64_t
   # include <stdbool.h> // bool
   # include <unistd.h> // off_t
-  # include <string.h> // memcmp
+  # include <string.h> // memcmp TODO Delete.
   # include "common.h" // overflows, enums registers
+  # include "libft.h" // overflows, enums registers
 
      typedef union u_elf_h
      {
@@ -82,7 +67,8 @@ Elf header = ehdr = _h
 
 #+end_src
 
-*** Validation ELF_header
+*** DONE Validation ELF_header
+CLOSED: [2025-11-07 Fri 16:52]
 **** How works the header.
 search man elf for the attributes of the structure:
 =unsigned char e_ident[EI_NIDENT];= {Magicnbr, 32/64b, Dataencoding, version, OSABI, ABI, ...}
@@ -482,7 +468,8 @@ CLOSED: [2025-06-19 Thu 17:46]
 :LOGBOOK:
 - State "DONE"       from "TODO"       [2025-06-19 Thu 17:46]
 :END:
-*** Check integrite struct size with elfheader, phnum not 0 cause this only work on executable, check alignment, check the content of a header + offset exceed file size
+*** DONE Check integrite struct size with elfheader, phnum not 0 cause this only work on executable, check alignment, check the content of a header + offset exceed file size
+CLOSED: [2025-11-07 Fri 16:52]
 #+begin_src c :tangle  srcs/elf/parser/valid_program_header.c :mkdirp yes 
   #include "format_elf.h"
 
@@ -696,7 +683,7 @@ CLOSED: [2025-06-25 Wed 13:07]
 
     bool	elf_valid_elf_magic_number(void *elf_mmap)
     {
-      return (!memcmp(elf_mmap, ELFMAG, (size_t)SELFMAG));
+      return (!ft_memcmp(elf_mmap, ELFMAG, (size_t)SELFMAG));
     }
 
     bool elf_valid_elf_file(void *elf_mmap, off_t elf_size)
@@ -1096,7 +1083,7 @@ CLOSED: [2025-06-20 Fri 19:31]
 #+end_src
 
 #+begin_src c :tangle include/format_elf.h :mkdirp yes
-  // srcs/elf/POC/check_packer.c
+  // srcs/elf/packer/check_packer.c
   int elf_packer(void *elf_mmap, off_t file_size, const char *file_path);
   #endif
 #+end_src

@@ -1,3 +1,0 @@
-#+title: inject_code_elf
-#+PROPERTY: header-args:c :tangle "srcs/inject_code_elf.c" :mkdirp yes
-#+PROPERTY: header-args:asm :mkdirp yes

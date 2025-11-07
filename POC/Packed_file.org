@@ -48,7 +48,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 * Working on it 
 ** TODO Doesn't work with interp in 42 campus
 * Packer
-#+begin_src c :tangle srcs/elf/POC/check_packer.c
+#+begin_src c :tangle srcs/elf/packer/elf_packer.c :mkdirp yes
   #include <string.h>
   #include "woody.h"
   #include <stdbool.h>
@@ -59,95 +59,95 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   #include <sys/mman.h>
   #include <stdlib.h> //Malloc
 
-  t_list	*ft_lstnew(void *content)
-  {
-        t_list	*node;
+  /* t_list	*ft_lstnew(void *content) */
+  /* { */
+  /*       t_list	*node; */
 
-        node = malloc(sizeof(t_list));
-        if (!node)
-                return (NULL);
-        node->content = content;
-        node->next = NULL;
-        return (node);
-  }
+  /*       node = malloc(sizeof(t_list)); */
+  /*       if (!node) */
+  /*               return (NULL); */
+  /*       node->content = content; */
+  /*       node->next = NULL; */
+  /*       return (node); */
+  /* } */
 
-  void	ft_lstdelone(t_list *lst, void (*del)(void *))
-  {
-        if (!lst || !del)
-                return ;
-        del(lst->content);
-        free(lst);
-  }
+  /* void	ft_lstdelone(t_list *lst, void (*del)(void *)) */
+  /* { */
+  /*       if (!lst || !del) */
+  /*               return ; */
+  /*       del(lst->content); */
+  /*       free(lst); */
+  /* } */
 
-  void	ft_lstclear(t_list **lst, void (*del)(void *))
-  {
-        t_list	*node;
-        t_list	*tmp;
+  /* void	ft_lstclear(t_list **lst, void (*del)(void *)) */
+  /* { */
+  /*       t_list	*node; */
+  /*       t_list	*tmp; */
 
-        if (!lst || !*lst)
-                return ;
-        node = *lst;
-        while (node)
-        {
-                tmp = node->next;
-                ft_lstdelone(node, del);
-                node = tmp;
-        }
-        ,*lst = NULL;
-  }
+  /*       if (!lst || !*lst) */
+  /*               return ; */
+  /*       node = *lst; */
+  /*       while (node) */
+  /*       { */
+  /*               tmp = node->next; */
+  /*               ft_lstdelone(node, del); */
+  /*               node = tmp; */
+  /*       } */
+  /*       *lst = NULL; */
+  /* } */
 
-  t_list	*ft_lstlast(t_list *lst)
-  {
-        if (!lst)
-                return (NULL);
-        while (lst->next)
-                lst = lst->next;
-        return (lst);
-  }
+  /* t_list	*ft_lstlast(t_list *lst) */
+  /* { */
+  /*       if (!lst) */
+  /*               return (NULL); */
+  /*       while (lst->next) */
+  /*               lst = lst->next; */
+  /*       return (lst); */
+  /* } */
 
-  void	ft_lstadd_back(t_list **lst, t_list *new)
-  {
-        t_list	*lst_last;
+  /* void	ft_lstadd_back(t_list **lst, t_list *new) */
+  /* { */
+  /*       t_list	*lst_last; */
 
-        if (!new || !lst)
-                return ;
-        if (*lst == NULL)
-                ,*lst = new;
-        else
-        {
-                lst_last = ft_lstlast(*lst);
-                lst_last->next = new;
-        }
-  }
+  /*       if (!new || !lst) */
+  /*               return ; */
+  /*       if (*lst == NULL) */
+  /*               *lst = new; */
+  /*       else */
+  /*       { */
+  /*               lst_last = ft_lstlast(*lst); */
+  /*               lst_last->next = new; */
+  /*       } */
+  /* } */
 
-  void	ft_lstiter(t_list *lst, void (*f)(void *))
-  {
-        t_list	*node;
+  /* void	ft_lstiter(t_list *lst, void (*f)(void *)) */
+  /* { */
+  /*       t_list	*node; */
 
-        if (!lst)
-                return ;
-        node = lst;
-        while (node)
-        {
-                f(node->content);
-                node = node->next;
-        }
-  }
+  /*       if (!lst) */
+  /*               return ; */
+  /*       node = lst; */
+  /*       while (node) */
+  /*       { */
+  /*               f(node->content); */
+  /*               node = node->next; */
+  /*       } */
+  /* } */
 
-  int	ft_lstsize(t_list *lst)
-  {
-        int	lst_num;
+  /* int	ft_lstsize(t_list *lst) */
+  /* { */
+  /*       int	lst_num; */
 
-        if (!(size_t)lst)
-                return (0);
-        lst_num = 1;
-        while (lst->next)
-        {
-                lst_num++;
-                lst = lst->next;
-        }
-        return (lst_num);
-  }
+  /*       if (!(size_t)lst) */
+  /*               return (0); */
+  /*       lst_num = 1; */
+  /*       while (lst->next) */
+  /*       { */
+  /*               lst_num++; */
+  /*               lst = lst->next; */
+  /*       } */
+  /*       return (lst_num); */
+  /* } */
 
   unsigned char *lz77_get_compress_arr(t_list *lst, size_t *arr_size)
   {
@@ -155,20 +155,20 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       unsigned char *str = malloc(*arr_size);
       unsigned char *str_pos = str;
       if (!str)
-        return (str);
+  	return (str);
 
       t_list *tmp = lst;
       while (tmp)
-      {
-        t_lz77 *token = (t_lz77 *)tmp->content;
+  	{
+  	    t_lz77 *token = (t_lz77 *)tmp->content;
 
-        uint16_t dist_len = token->distance_len;
-        str_pos[0] = dist_len & 0xFF;         // low byte
-        str_pos[1] = (dist_len >> 8) & 0xFF;  // high byte  
-        str_pos[2] = token->byte;             // literal byte
-        str_pos += 3;
-        tmp = tmp->next;
-      }
+  	    uint16_t dist_len = token->distance_len;
+  	    str_pos[0] = dist_len & 0xFF;         // low byte
+  	    str_pos[1] = (dist_len >> 8) & 0xFF;  // high byte  
+  	    str_pos[2] = token->byte;             // literal byte
+  	    str_pos += 3;
+  	    tmp = tmp->next;
+  	}
       return ((void *)str);
   }
 
@@ -214,66 +214,66 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       size_t i = 0;
 
       while (i < data_len) {
-        size_t best_offset = 0;
-        size_t best_length = 0;
+  	size_t best_offset = 0;
+  	size_t best_length = 0;
 
-        // Define window start
-        size_t window_start = (i > COMPRESS_LZ77_SLIDING_WINDOW_SIZE) ?
-        i - COMPRESS_LZ77_SLIDING_WINDOW_SIZE : 0;
+  	// Define window start
+  	size_t window_start = (i > COMPRESS_LZ77_SLIDING_WINDOW_SIZE) ?
+  	    i - COMPRESS_LZ77_SLIDING_WINDOW_SIZE : 0;
 
-        // Search for the longest match in sliding window
-        for (size_t offset = 1; offset <= (i - window_start) && offset <= COMPRESS_LZ77_OFFSET_MAX_LIMIT; offset++) {
-        size_t match_length = 0;
-        size_t max_possible = (data_len - i > COMPRESS_LZ77_MAX_MATCH_LEN) ?
-          COMPRESS_LZ77_MAX_MATCH_LEN : (data_len - i);
+  	// Search for the longest match in sliding window
+  	for (size_t offset = 1; offset <= (i - window_start) && offset <= COMPRESS_LZ77_OFFSET_MAX_LIMIT; offset++) {
+  	    size_t match_length = 0;
+  	    size_t max_possible = (data_len - i > COMPRESS_LZ77_MAX_MATCH_LEN) ?
+  		COMPRESS_LZ77_MAX_MATCH_LEN : (data_len - i);
 
-        while (match_length < max_possible && 
-               data[i - offset + match_length] == data[i + match_length]) {
-          match_length++;
-        }
+  	    while (match_length < max_possible && 
+  		   data[i - offset + match_length] == data[i + match_length]) {
+  		match_length++;
+  	    }
 
-        if (match_length >= COMPRESS_LZ77_MIN_MATCH_LEN && match_length > best_length) {
-          best_length = match_length;
-          best_offset = offset;
-        }
-        }
+  	    if (match_length >= COMPRESS_LZ77_MIN_MATCH_LEN && match_length > best_length) {
+  		best_length = match_length;
+  		best_offset = offset;
+  	    }
+  	}
 
-        // Allocate token
-        t_lz77 *token = malloc(sizeof(t_lz77));
-        if (!token) {
-        ft_lstclear(&lst, free);
-        return NULL;
-        }
-        token->distance_len = 0;
-        token->byte = 0;
+  	// Allocate token
+  	t_lz77 *token = malloc(sizeof(t_lz77));
+  	if (!token) {
+  	    ft_lstclear(&lst, free);
+  	    return NULL;
+  	}
+  	token->distance_len = 0;
+  	token->byte = 0;
 
-        if (best_length >= COMPRESS_LZ77_MIN_MATCH_LEN) {
-        // Valid match
-        if (best_offset > 0xFFF) {
-          fprintf(stderr, "Offset %zu exceeds 12-bit limit\n", best_offset);
-          free(token);
-          ft_lstclear(&lst, free);
-          return NULL;
-        }
-        size_t token_len = best_length - 2;
-        token->distance_len = (uint16_t)((best_offset << 4) | (token_len & 0x0F));
-        token->byte = (i + best_length < data_len) ? data[i + best_length] : 0;
-        i += best_length + 1;
-        } else {
-        token->distance_len = 0;
-        token->byte = data[i];
-        i += 1;
-        }
+  	if (best_length >= COMPRESS_LZ77_MIN_MATCH_LEN) {
+  	    // Valid match
+  	    if (best_offset > 0xFFF) {
+  		/* fprintf(stderr, "Offset %zu exceeds 12-bit limit\n", best_offset); */
+  		free(token);
+  		ft_lstclear(&lst, free);
+  		return NULL;
+  	    }
+  	    size_t token_len = best_length - 2;
+  	    token->distance_len = (uint16_t)((best_offset << 4) | (token_len & 0x0F));
+  	    token->byte = (i + best_length < data_len) ? data[i + best_length] : 0;
+  	    i += best_length + 1;
+  	} else {
+  	    token->distance_len = 0;
+  	    token->byte = data[i];
+  	    i += 1;
+  	}
 
-        // Create list node
-        t_list *node = ft_lstnew(token);
-        if (!node) {
-        free(token);
-        ft_lstclear(&lst, free);
-        return NULL;
-        }
+  	// Create list node
+  	t_list *node = ft_lstnew(token);
+  	if (!node) {
+  	    free(token);
+  	    ft_lstclear(&lst, free);
+  	    return NULL;
+  	}
 
-        ft_lstadd_back(&lst, node);
+  	ft_lstadd_back(&lst, node);
       }
 
       return lst;
@@ -283,12 +283,12 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   int lz77_decompress(const uint8_t* in, size_t in_size, uint8_t* out)
   {
       if (in_size <= 7 || out == NULL || in == NULL) {
-        return -1;
+  	return -1;
       }
 
       uint64_t orig_size = *(const uint64_t*)in;
       if (orig_size == 0) {
-        return -1;
+  	return -1;
       }
 
       const uint8_t* p = in + 11;  // Start at in+8, then advance 3 for first iteration
@@ -297,33 +297,33 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
       while (p <= in_end && pos < orig_size) {
 
-        // Read token from [p-3, p-2] 
-        uint16_t token = *(const uint16_t*)(p - 3);
-        uint8_t length = token & 0xF;
-        uint16_t distance = token >> 4;
+  	// Read token from [p-3, p-2] 
+  	uint16_t token = *(const uint16_t*)(p - 3);
+  	uint8_t length = token & 0xF;
+  	uint16_t distance = token >> 4;
 
-        if (length || distance || pos >= distance)
-        {
-        // Copy match
-        length += 2; // Adjust length
+  	if (length || distance || pos >= distance)
+  	    {
+  		// Copy match
+  		length += 2; // Adjust length
 
-        // Ensure bounds
-        if (pos + length > orig_size) {
-          length = orig_size - pos;
-        }
+  		// Ensure bounds
+  		if (pos + length > orig_size) {
+  		    length = orig_size - pos;
+  		}
 
-        // Copy match data (handle overlapping case)
-        size_t src = pos - distance;
-        for (uint16_t i = 0; i < length; i++) {
-          out[pos + i] = out[src + i];
-        }
-        pos += length;
-        }
-        // Add literal if space allows
-        if (pos < orig_size) {
-        out[pos++] = *(p - 1);
-        }
-        p += 3;
+  		// Copy match data (handle overlapping case)
+  		size_t src = pos - distance;
+  		for (uint16_t i = 0; i < length; i++) {
+  		    out[pos + i] = out[src + i];
+  		}
+  		pos += length;
+  	    }
+  	// Add literal if space allows
+  	if (pos < orig_size) {
+  	    out[pos++] = *(p - 1);
+  	}
+  	p += 3;
       }
       return (pos == orig_size) ? 0 : -1;
   }
@@ -334,10 +334,10 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return (((size + alignment - 1) / alignment) * alignment);
   }
 
-  bool is_between(uint64_t lower_limit, uint64_t upper_limit, uint64_t value)
-  {
-      return (lower_limit <= value && value <= upper_limit);
-  }
+  /* bool is_between(uint64_t lower_limit, uint64_t upper_limit, uint64_t value) */
+  /* { */
+  /*     return (lower_limit <= value && value <= upper_limit); */
+  /* } */
 
   // Maybe paranoia
   bool is_little_endian_the_cpu(void)
@@ -351,11 +351,11 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   void elf_phdr_set_memsz(t_elf_ph *phdr, uint64_t value, unsigned char class)
   {
       if (class == ELFCLASS32) 
-      {
-        /* printf("phdr set memsz elf32\n"); */
-        phdr->elf32->p_memsz = (uint32_t) value;
-        return ;
-      }
+  	{
+  	    /* printf("phdr set memsz elf32\n"); */
+  	    phdr->elf32->p_memsz = (uint32_t) value;
+  	    return ;
+  	}
       /* printf("phdr set memsz elf64\n"); */
       phdr->elf64->p_memsz = value;
   }
@@ -363,11 +363,11 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   void elf_phdr_set_offset(t_elf_ph *phdr, uint64_t value, unsigned char class)
   {
       if (class == ELFCLASS32) 
-      {
-        /* printf("phdr set offset elf32\n"); */
-        phdr->elf32->p_offset = (uint32_t) value;
-        return ;
-      }
+  	{
+  	    /* printf("phdr set offset elf32\n"); */
+  	    phdr->elf32->p_offset = (uint32_t) value;
+  	    return ;
+  	}
       /* printf("phdr set offset elf64\n"); */
       phdr->elf64->p_offset = value;
   }
@@ -375,11 +375,11 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   void elf_phdr_set_vaddr(t_elf_ph *phdr, uint64_t value, unsigned char class)
   {
       if (class == ELFCLASS32) 
-      {
-        /* printf("phdr set vaddr elf32\n"); */
-        phdr->elf32->p_vaddr = (uint32_t) value;
-        return ;
-      }
+  	{
+  	    /* printf("phdr set vaddr elf32\n"); */
+  	    phdr->elf32->p_vaddr = (uint32_t) value;
+  	    return ;
+  	}
       /* printf("phdr set vaddr elf64\n"); */
       phdr->elf64->p_vaddr = value;
   }
@@ -387,11 +387,11 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   void elf_phdr_set_paddr(t_elf_ph *phdr, uint64_t value, unsigned char class)
   {
       if (class == ELFCLASS32) 
-      {
-        /* printf("phdr set paddr elf32\n"); */
-        phdr->elf32->p_paddr = (uint32_t) value;
-        return ;
-      }
+  	{
+  	    /* printf("phdr set paddr elf32\n"); */
+  	    phdr->elf32->p_paddr = (uint32_t) value;
+  	    return ;
+  	}
       /* printf("phdr set paddr elf64\n"); */
       phdr->elf64->p_paddr = value;
   }
@@ -399,11 +399,11 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   void elf_phdr_set_filesz(t_elf_ph *phdr, uint64_t value, unsigned char class)
   {
       if (class == ELFCLASS32) 
-      {
-        /* printf("phdr set addr elf32\n"); */
-        phdr->elf32->p_filesz = (uint32_t) value;
-        return ;
-      }
+  	{
+  	    /* printf("phdr set addr elf32\n"); */
+  	    phdr->elf32->p_filesz = (uint32_t) value;
+  	    return ;
+  	}
       /* printf("phdr set addr elf64\n"); */
       phdr->elf64->p_filesz = value;
   }
@@ -411,11 +411,11 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   void elf_phdr_set_align(t_elf_ph *phdr, uint64_t value, unsigned char class)
   {
       if (class == ELFCLASS32) 
-      {
-        /* printf("phdr set addr elf32\n"); */
-        phdr->elf32->p_align = (uint32_t) value;
-        return ;
-      }
+  	{
+  	    /* printf("phdr set addr elf32\n"); */
+  	    phdr->elf32->p_align = (uint32_t) value;
+  	    return ;
+  	}
       /* printf("phdr set addr elf64\n"); */
       phdr->elf64->p_align = value;
   }
@@ -424,11 +424,11 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   void elf_phdr_set_flags(t_elf_ph *phdr, uint64_t value, unsigned char class)
   {
       if (class == ELFCLASS32) 
-      {
-        /* printf("phdr set addr elf32\n"); */
-        phdr->elf32->p_flags = (uint32_t) value;
-        return ;
-      }
+  	{
+  	    /* printf("phdr set addr elf32\n"); */
+  	    phdr->elf32->p_flags = (uint32_t) value;
+  	    return ;
+  	}
       /* printf("phdr set addr elf64\n"); */
       phdr->elf64->p_flags = value;
   }
@@ -436,11 +436,11 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   void elf_phdr_set_type(t_elf_ph *phdr, uint64_t value, unsigned char class)
   {
       if (class == ELFCLASS32) 
-      {
-        /* printf("phdr set addr elf32\n"); */
-        phdr->elf32->p_type = (uint32_t) value;
-        return ;
-      }
+  	{
+  	    /* printf("phdr set addr elf32\n"); */
+  	    phdr->elf32->p_type = (uint32_t) value;
+  	    return ;
+  	}
       /* printf("phdr set addr elf64\n"); */
       phdr->elf64->p_type = value;
   }
@@ -448,11 +448,11 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   void elf_ehdr_set_shoff(t_elf_h *ehdr, uint64_t value, unsigned char class)
   {
       if (class == ELFCLASS32) 
-      {
-        /* printf("ehdr set shoff elf32\n"); */
-        ehdr->elf32->e_shoff = (uint32_t) value;
-        return ;
-      }
+  	{
+  	    /* printf("ehdr set shoff elf32\n"); */
+  	    ehdr->elf32->e_shoff = (uint32_t) value;
+  	    return ;
+  	}
       /* printf("ehdr set shoff elf64\n"); */
       ehdr->elf64->e_shoff = value;
   }
@@ -460,11 +460,11 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   void elf_ehdr_set_shentsize(t_elf_h *ehdr, uint64_t value, unsigned char class)
   {
       if (class == ELFCLASS32) 
-      {
-        /* printf("ehdr set shoff elf32\n"); */
-        ehdr->elf32->e_shentsize = (uint32_t) value;
-        return ;
-      }
+  	{
+  	    /* printf("ehdr set shoff elf32\n"); */
+  	    ehdr->elf32->e_shentsize = (uint32_t) value;
+  	    return ;
+  	}
       /* printf("ehdr set shoff elf64\n"); */
       ehdr->elf64->e_shentsize = value;
   }
@@ -472,11 +472,11 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   void elf_ehdr_set_shstrndx(t_elf_h *ehdr, uint64_t value, unsigned char class)
   {
       if (class == ELFCLASS32) 
-      {
-        /* printf("ehdr set shoff elf32\n"); */
-        ehdr->elf32->e_shstrndx = (uint32_t) value;
-        return ;
-      }
+  	{
+  	    /* printf("ehdr set shoff elf32\n"); */
+  	    ehdr->elf32->e_shstrndx = (uint32_t) value;
+  	    return ;
+  	}
       /* printf("ehdr set shoff elf64\n"); */
       ehdr->elf64->e_shstrndx = value;
   }
@@ -484,11 +484,11 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   void elf_ehdr_set_entry(t_elf_h *ehdr, uint64_t value, unsigned char class)
   {
       if (class == ELFCLASS32) 
-      {
-        /* printf("ehdr set entry elf32\n"); */
-        ehdr->elf32->e_entry = (uint32_t) value;
-        return ;
-      }
+  	{
+  	    /* printf("ehdr set entry elf32\n"); */
+  	    ehdr->elf32->e_entry = (uint32_t) value;
+  	    return ;
+  	}
       /* printf("ehdr set entry elf64\n"); */
       ehdr->elf64->e_entry = value;
   }
@@ -496,11 +496,11 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   void elf_ehdr_set_phnum(t_elf_h *ehdr, uint64_t value, unsigned char class)
   {
       if (class == ELFCLASS32) 
-      {
-        /* printf("ehdr set phnum elf32\n"); */
-        ehdr->elf32->e_phnum = (uint32_t) value;
-        return ;
-      }
+  	{
+  	    /* printf("ehdr set phnum elf32\n"); */
+  	    ehdr->elf32->e_phnum = (uint32_t) value;
+  	    return ;
+  	}
       /* printf("ehdr set phnum elf64\n"); */
       ehdr->elf64->e_phnum = value;
   }
@@ -508,11 +508,11 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   void elf_ehdr_set_shnum(t_elf_h *ehdr, uint64_t value, unsigned char class)
   {
       if (class == ELFCLASS32) 
-      {
-        /* printf("ehdr set shnum elf32\n"); */
-        ehdr->elf32->e_shnum = (uint32_t) value;
-        return ;
-      }
+  	{
+  	    /* printf("ehdr set shnum elf32\n"); */
+  	    ehdr->elf32->e_shnum = (uint32_t) value;
+  	    return ;
+  	}
       /* printf("ehdr set shnum elf64\n"); */
       ehdr->elf64->e_shnum = value;
   }
@@ -525,14 +525,14 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
       i = 0;
       while (i < phnum) 
-      {
-        phdr = elf_get_program_header(ehdr, i);
-        p_vaddr = elf_get_program_header_vaddr(&phdr, class);
-        //  is loadable phdr
-        if (PT_LOAD == elf_get_program_header_type(&phdr, class) && is_between(p_vaddr, p_vaddr + elf_get_program_header_memsz(&phdr, class) - 1, addr))
-        return  (i);
-        i++;
-      }
+  	{
+  	    phdr = elf_get_program_header(ehdr, i);
+  	    p_vaddr = elf_get_program_header_vaddr(&phdr, class);
+  	    //  is loadable phdr
+  	    if (PT_LOAD == elf_get_program_header_type(&phdr, class) && is_between(p_vaddr, p_vaddr + elf_get_program_header_memsz(&phdr, class) - 1, addr))
+  		return  (i);
+  	    i++;
+  	}
       return  (i);
   }
 
@@ -545,13 +545,13 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
       i = 0;
       while (i < shnum)
-      {
-        shdr = elf_get_section_header(ehdr, i);
-        sh_offset = elf_get_section_header_offset(&shdr, class);
-        if (highest_avalaible_offset < sh_offset)
-        highest_avalaible_offset = sh_offset + elf_get_section_header_size(&shdr, class);
-        i++;
-      }
+  	{
+  	    shdr = elf_get_section_header(ehdr, i);
+  	    sh_offset = elf_get_section_header_offset(&shdr, class);
+  	    if (highest_avalaible_offset < sh_offset)
+  		highest_avalaible_offset = sh_offset + elf_get_section_header_size(&shdr, class);
+  	    i++;
+  	}
       return  (highest_avalaible_offset);
   }
 
@@ -562,12 +562,12 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
       i = 0;
       while (i < phnum)
-      {
-        phdr = elf_get_program_header(ehdr, i);
-        if (elf_get_program_header_type(&phdr, class) == PT_GNU_STACK) // If not loadable ignore
-        return (1);
-        i++;
-      }
+  	{
+  	    phdr = elf_get_program_header(ehdr, i);
+  	    if (elf_get_program_header_type(&phdr, class) == PT_GNU_STACK) // If not loadable ignore
+  		return (1);
+  	    i++;
+  	}
       return  (0);
   }
 
@@ -578,12 +578,12 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
       i = 0;
       while (i < phnum)
-      {
-        phdr = elf_get_program_header(ehdr, i);
-        if (elf_get_program_header_type(&phdr, class) == PT_GNU_STACK) // If not loadable ignore
-        return (i);
-        i++;
-      }
+  	{
+  	    phdr = elf_get_program_header(ehdr, i);
+  	    if (elf_get_program_header_type(&phdr, class) == PT_GNU_STACK) // If not loadable ignore
+  		return (i);
+  	    i++;
+  	}
       return  (0);
   }
 
@@ -596,19 +596,19 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
       i = 0;
       while (i < phnum)
-      {
-        phdr = elf_get_program_header(ehdr, i);
-        if (elf_get_program_header_type(&phdr, class) != PT_LOAD || !(elf_get_program_header_flags(&phdr, class) & PF_X)) // If not loadable and executable ignore
-        {
-        i++;
-        continue ;
-        }
-        p_memsz = elf_get_program_header_memsz(&phdr, class);
-        p_align = elf_get_program_header_align(&phdr, class);
-        if (p_memsz < p_align)
-        return (elf_get_program_header_vaddr(&phdr, class) + p_memsz);
-        i++;
-      }
+  	{
+  	    phdr = elf_get_program_header(ehdr, i);
+  	    if (elf_get_program_header_type(&phdr, class) != PT_LOAD || !(elf_get_program_header_flags(&phdr, class) & PF_X)) // If not loadable and executable ignore
+  		{
+  		    i++;
+  		    continue ;
+  		}
+  	    p_memsz = elf_get_program_header_memsz(&phdr, class);
+  	    p_align = elf_get_program_header_align(&phdr, class);
+  	    if (p_memsz < p_align)
+  		return (elf_get_program_header_vaddr(&phdr, class) + p_memsz);
+  	    i++;
+  	}
       return  (0);
   }
 
@@ -623,20 +623,20 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
       i = 0;
       while (i < phnum)
-      {
-        phdr = elf_get_program_header(ehdr, i);
-        if (elf_get_program_header_type(&phdr, class) != PT_LOAD) // If not loadable ignore
-        {
-        i++;
-        continue ;
-        }
-        p_vaddr = elf_get_program_header_vaddr(&phdr, class);
-        p_memsz = elf_get_program_header_memsz(&phdr, class);
-        p_end_vaddr = p_vaddr + p_memsz;
-        if (highest_used_addr <= p_end_vaddr)
-        highest_used_addr = p_end_vaddr;
-        i++;
-      }
+  	{
+  	    phdr = elf_get_program_header(ehdr, i);
+  	    if (elf_get_program_header_type(&phdr, class) != PT_LOAD) // If not loadable ignore
+  		{
+  		    i++;
+  		    continue ;
+  		}
+  	    p_vaddr = elf_get_program_header_vaddr(&phdr, class);
+  	    p_memsz = elf_get_program_header_memsz(&phdr, class);
+  	    p_end_vaddr = p_vaddr + p_memsz;
+  	    if (highest_used_addr <= p_end_vaddr)
+  		highest_used_addr = p_end_vaddr;
+  	    i++;
+  	}
       return  (highest_used_addr);
   }
 
@@ -664,9 +664,9 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       size_t written;
 
       written = 0;
-      memcpy(dst + written, "\x0f\x84", 2);
+      ft_memcpy(dst + written, "\x0f\x84", 2);
       written += 2;
-      memcpy(dst + written, &hop.b4, sizeof(hop.b4));
+      ft_memcpy(dst + written, &hop.b4, sizeof(hop.b4));
       return (written + sizeof(hop.b4));
   }
 
@@ -676,9 +676,9 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       size_t written;
 
       written = 0;
-      memcpy(dst + written, "\x0f\x88", 2);
+      ft_memcpy(dst + written, "\x0f\x88", 2);
       written += 2;
-      memcpy(dst + written, &hop.b4, sizeof(hop.b4));
+      ft_memcpy(dst + written, &hop.b4, sizeof(hop.b4));
       return (written + sizeof(hop.b4));
   }
 
@@ -690,68 +690,68 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
       written = 0;
       if (dst)
-        memcpy(dst, "\xc6", 1);
+  	ft_memcpy(dst, "\xc6", 1);
       written++;
       if (!off.b8)
-      {
-        if (dst)
-          memcpy(dst + written, "\x04", 1);
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, "\x04", 1);
+  	}
       else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) // if offset and byte syze
-      {
-        if (dst)
-          memcpy(dst + written, "\x44", 1);
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, "\x44", 1);
+  	}
       else // if offset and > byte size
-      {
-        if (dst)
-          memcpy(dst + written, "\x84", 1);
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, "\x84", 1);
+  	}
       written++;
       if (dst)
-        memcpy(dst + written, "\x24", 1);
+  	ft_memcpy(dst + written, "\x24", 1);
       written++;
       if (off.b8)
-      {
-        /* if (dst) */
-        /* printf("off -> b value %u, b4 value %u, b8 value %lu\n", (uint32_t)off.b, off.b4, off.b8); */
-        if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
-        {
-        if (dst)
-          memcpy(dst + written, &off.b, sizeof (off.b)); 
-        written += sizeof (off.b);
-        }
-        else if ((uint64_t)off.b4 == off.b8 && off.b4 < 0x80000000)
-        {
-        if (dst)
-          memcpy(dst + written, &off.b4, sizeof (off.b4)); 
-        written += sizeof (off.b4);
-        }
-        else
-        {
-        if (dst)
-          memcpy(dst + written, &off.b8, sizeof (off.b8)); 
-        written += sizeof (off.b8);
-        }
-      }
+  	{
+  	    /* if (dst) */
+  	    /* printf("off -> b value %u, b4 value %u, b8 value %lu\n", (uint32_t)off.b, off.b4, off.b8); */
+  	    if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
+  		{
+  		    if (dst)
+  			ft_memcpy(dst + written, &off.b, sizeof (off.b)); 
+  		    written += sizeof (off.b);
+  		}
+  	    else if ((uint64_t)off.b4 == off.b8 && off.b4 < 0x80000000)
+  		{
+  		    if (dst)
+  			ft_memcpy(dst + written, &off.b4, sizeof (off.b4)); 
+  		    written += sizeof (off.b4);
+  		}
+  	    else
+  		{
+  		    if (dst)
+  			ft_memcpy(dst + written, &off.b8, sizeof (off.b8)); 
+  		    written += sizeof (off.b8);
+  		}
+  	}
       if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8)
-      {
-        if (dst)
-          memcpy(dst + written, &type.b, sizeof (type.b));
-        written += sizeof (type.b);
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, &type.b, sizeof (type.b));
+  	    written += sizeof (type.b);
+  	}
       else if ((uint64_t)type.b4 == type.b8 && type.b4)
-      {
-        if (dst)
-          memcpy(dst + written, &type.b4, sizeof (type.b4));
-        written += sizeof (type.b4);
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, &type.b4, sizeof (type.b4));
+  	    written += sizeof (type.b4);
+  	}
       else
-      {
-        if (dst)
-          memcpy(dst + written, &type.b8, sizeof (type.b8));
-        written += sizeof (type.b8);
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, &type.b8, sizeof (type.b8));
+  	    written += sizeof (type.b8);
+  	}
       return (written);
   }
 
@@ -762,51 +762,51 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
       written = 0;
       if (dst)
-        memcpy(dst, "\x8a", 1);
+  	ft_memcpy(dst, "\x8a", 1);
       written++;
       if (!off.b8)
-      {
-        if (dst)
-        memcpy(dst + written, "\x0c", 1);
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, "\x0c", 1);
+  	}
       else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) // if offset and byte syze
-      {
-        if (dst)
-        memcpy(dst + written, "\x4c", 1);
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, "\x4c", 1);
+  	}
       else // if offset and > byte size
-      {
-        if (dst)
-        memcpy(dst + written, "\x8c", 1);
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, "\x8c", 1);
+  	}
       written++;
       if (dst)
-        memcpy(dst + written, "\x24", 1);
+  	ft_memcpy(dst + written, "\x24", 1);
       written++;
       if (off.b8)
-      {
-        /* if (dst) */
-        /* printf("off -> b value %u, b4 value %u, b8 value %lu\n", (uint32_t)off.b, off.b4, off.b8); */
-        if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
-        {
-        if (dst)
-          memcpy(dst + written, &off.b, sizeof (off.b)); 
-        written += sizeof (off.b);
-        }
-        else if ((uint64_t)off.b4 == off.b8 && off.b4 < 0x80000000)
-        {
-        if (dst)
-          memcpy(dst + written, &off.b4, sizeof (off.b4)); 
-        written += sizeof (off.b4);
-        }
-        else
-        {
-        if (dst)
-          memcpy(dst + written, &off.b8, sizeof (off.b8)); 
-        written += sizeof (off.b8);
-        }
+  	{
+  	    /* if (dst) */
+  	    /* printf("off -> b value %u, b4 value %u, b8 value %lu\n", (uint32_t)off.b, off.b4, off.b8); */
+  	    if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
+  		{
+  		    if (dst)
+  			ft_memcpy(dst + written, &off.b, sizeof (off.b)); 
+  		    written += sizeof (off.b);
+  		}
+  	    else if ((uint64_t)off.b4 == off.b8 && off.b4 < 0x80000000)
+  		{
+  		    if (dst)
+  			ft_memcpy(dst + written, &off.b4, sizeof (off.b4)); 
+  		    written += sizeof (off.b4);
+  		}
+  	    else
+  		{
+  		    if (dst)
+  			ft_memcpy(dst + written, &off.b8, sizeof (off.b8)); 
+  		    written += sizeof (off.b8);
+  		}
 
-      }
+  	}
       return (written);
   }
 
@@ -817,34 +817,34 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
       written = 0;
       if (dst)
-        memcpy(dst, "\x88", 1);
+  	ft_memcpy(dst, "\x88", 1);
       written++;
       if (!off.b8)
-      {
-        if (dst)
-        memcpy(dst + written, "\x08", 1);
-        return (++written);
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, "\x08", 1);
+  	    return (++written);
+  	}
       if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) // if offset and byte syze
-      {
-        if (dst)
-        memcpy(dst + written, "\x48", 1);
-        written++;
-        if (dst)
-        memcpy(dst + written, &off.b, sizeof (off.b)); 
-        return (written + sizeof (off.b));
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, "\x48", 1);
+  	    written++;
+  	    if (dst)
+  		ft_memcpy(dst + written, &off.b, sizeof (off.b)); 
+  	    return (written + sizeof (off.b));
+  	}
       if (dst)
-        memcpy(dst + written, "\x88", 1);
+  	ft_memcpy(dst + written, "\x88", 1);
       written++;
       if ((uint64_t)off.b4 == off.b8 && off.b4 < 0x80000000)
-      {
-        if (dst)
-        memcpy(dst + written, &off.b4, sizeof (off.b4)); 
-        return (written + sizeof (off.b4));
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, &off.b4, sizeof (off.b4)); 
+  	    return (written + sizeof (off.b4));
+  	}
       if (dst)
-        memcpy(dst + written, &off.b8, sizeof (off.b8)); 
+  	ft_memcpy(dst + written, &off.b8, sizeof (off.b8)); 
       return (written + sizeof (off.b8));
   }
 
@@ -855,57 +855,57 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       const t_type	type = (t_type){.b8 = value};
 
       if (ELFCLASS32 == class && type.b8 != type.b4)
-        return (-1);
+  	return (-1);
       written = 0;
       if (class == ELFCLASS64)
-      {
-        if (dst)
-        memcpy(dst, "\x48", 1);
-        written++;
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst, "\x48", 1);
+  	    written++;
+  	}
       if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8 && type.b < 0x80)
-      {
-        if (dst)
-        memcpy(dst + written, "\x83", 1);
-        written++;
-        if (dst)
-        {
-        /* if (ELFCLASS64 == class) */
-        memcpy(dst+written, "\xec", 1);
-        /* else */
-        /* memcpy(dst+written, "\xe8", 1); */
-        }
-        written++;
-        if (dst)
-        memcpy(dst + written, &type.b, sizeof (type.b));
-        written += sizeof(type.b);
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, "\x83", 1);
+  	    written++;
+  	    if (dst)
+  		{
+  		    /* if (ELFCLASS64 == class) */
+  		    ft_memcpy(dst+written, "\xec", 1);
+  		    /* else */
+  		    /* ft_memcpy(dst+written, "\xe8", 1); */
+  		}
+  	    written++;
+  	    if (dst)
+  		ft_memcpy(dst + written, &type.b, sizeof (type.b));
+  	    written += sizeof(type.b);
+  	}
       else
-      {
-        if (dst)
-        {
-        if (ELFCLASS64 == class)
-        {
-          memcpy(dst + written, "\x81\xec", 2);
-          written ++;
-        }
-        else
-          memcpy(dst + written, "\x2d", 1);
-        }
-        written ++;
-        if ((uint64_t)type.b4 == type.b8 && type.b4 < 0x80000000)
-        {
-        if (dst)
-          memcpy(dst + written, &type.b4, sizeof (type.b4));
-        written += sizeof(type.b4);
-        }
-        else
-        {
-        if (dst)
-          memcpy(dst + written, &type.b8, sizeof (type.b8));
-        written += sizeof(type.b8);
-        }
-      }
+  	{
+  	    if (dst)
+  		{
+  		    if (ELFCLASS64 == class)
+  			{
+  			    ft_memcpy(dst + written, "\x81\xec", 2);
+  			    written ++;
+  			}
+  		    else
+  			ft_memcpy(dst + written, "\x2d", 1);
+  		}
+  	    written ++;
+  	    if ((uint64_t)type.b4 == type.b8 && type.b4 < 0x80000000)
+  		{
+  		    if (dst)
+  			ft_memcpy(dst + written, &type.b4, sizeof (type.b4));
+  		    written += sizeof(type.b4);
+  		}
+  	    else
+  		{
+  		    if (dst)
+  			ft_memcpy(dst + written, &type.b8, sizeof (type.b8));
+  		    written += sizeof(type.b8);
+  		}
+  	}
       return (written);
   }
 
@@ -916,50 +916,50 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
       written = 0;
       if (class == ELFCLASS32 && off.b8 != off.b4)
-        return (0);
+  	return (0);
       if (dst)
-        memcpy(dst, "\x80", 1);
+  	ft_memcpy(dst, "\x80", 1);
       written++;
       /* } */
 
       if (!off.b8)
-      {
-        if (dst)
-        memcpy(dst + written, "\x2c", 1);//sub byte
-        written++;
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, "\x2c", 1);//sub byte
+  	    written++;
+  	}
       else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
-      {
-        if (dst)
-        memcpy(dst + written, "\x6c", 1);//sub byte
-        written++;
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, "\x6c", 1);//sub byte
+  	    written++;
+  	}
       else 
-      {
-        if (dst)
-        memcpy(dst + written, "\xac", 1);//sub byte
-        written++;
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, "\xac", 1);//sub byte
+  	    written++;
+  	}
       if (dst)
-        memcpy(dst + written, "\x24", 1);// rsp pointer
+  	ft_memcpy(dst + written, "\x24", 1);// rsp pointer
       written++;
       if (off.b8)
-      {
-        if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
-        {
-        if (dst)
-          memcpy(dst + written, &off.b, sizeof(off.b));
-        written += sizeof (off.b);
-        }
-        else
-        {
-        if (dst)
-          memcpy(dst + written, &off.b4, sizeof(off.b4));
-        written += sizeof (off.b4);
-        }
-      }
+  	{
+  	    if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
+  		{
+  		    if (dst)
+  			ft_memcpy(dst + written, &off.b, sizeof(off.b));
+  		    written += sizeof (off.b);
+  		}
+  	    else
+  		{
+  		    if (dst)
+  			ft_memcpy(dst + written, &off.b4, sizeof(off.b4));
+  		    written += sizeof (off.b4);
+  		}
+  	}
       if (dst)
-        memcpy(dst + written, &value, sizeof (value));
+  	ft_memcpy(dst + written, &value, sizeof (value));
       written += sizeof(value);
       return (written);
   }
@@ -972,38 +972,38 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       written = 0;
       // test need 
       if (class == ELFCLASS64)
-      {
-        if (dst)
-        memcpy(dst, "\x48", 1);
-        written++;
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst, "\x48", 1);
+  	    written++;
+  	}
       if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8 && type.b < 0x80)
-      {
-        if (dst)
-        memcpy(dst + written, "\x83\xc4", 2);
-        written += 2;
-        if (dst)
-        memcpy(dst + written, &type.b, sizeof (type.b));
-        written += sizeof(type.b);
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, "\x83\xc4", 2);
+  	    written += 2;
+  	    if (dst)
+  		ft_memcpy(dst + written, &type.b, sizeof (type.b));
+  	    written += sizeof(type.b);
+  	}
       else
-      {
-        if (dst)
-        memcpy(dst + written, "\x81\xc4", 2);
-        written += 2;
-        if ((uint64_t)type.b4 == type.b8 && type.b4 < 0x80000000)
-        {
-        if (dst)
-          memcpy(dst + written, &type.b4, sizeof (type.b4));
-        written += sizeof(type.b4);
-        }
-        else
-        {
-        if (dst)
-          memcpy(dst + written, &type.b8, sizeof (type.b8));
-        written += sizeof(type.b8);
-        }
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, "\x81\xc4", 2);
+  	    written += 2;
+  	    if ((uint64_t)type.b4 == type.b8 && type.b4 < 0x80000000)
+  		{
+  		    if (dst)
+  			ft_memcpy(dst + written, &type.b4, sizeof (type.b4));
+  		    written += sizeof(type.b4);
+  		}
+  	    else
+  		{
+  		    if (dst)
+  			ft_memcpy(dst + written, &type.b8, sizeof (type.b8));
+  		    written += sizeof(type.b8);
+  		}
+  	}
       return (written);
   }
 
@@ -1012,8 +1012,8 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   size_t set_jmp_r13(void *dst)
   {
       if (dst)
-        /* memcpy(dst, "\xff\xe0", 2); */
-        memcpy(dst, "\x41\xff\xe5", 3);
+  	/* ft_memcpy(dst, "\xff\xe0", 2); */
+  	ft_memcpy(dst, "\x41\xff\xe5", 3);
       /* return (2); */
       return (3);
   }
@@ -1024,21 +1024,21 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       size_t bytes;
 
       if (reg > R15 || (ELFCLASS32 == class && reg >= R8))
-        return (-1);
+  	return (-1);
       bytes = 0;
       if (ELFCLASS64 == class)
-      {
-        if (dst && reg >= R8 && reg <= R15)
-        memcpy(dst + bytes, "\x4D", 1);
-        else if (dst)
-        memcpy(dst + bytes, "\x48", 1);
-        bytes++;
-      }
+  	{
+  	    if (dst && reg >= R8 && reg <= R15)
+  		ft_memcpy(dst + bytes, "\x4D", 1);
+  	    else if (dst)
+  		ft_memcpy(dst + bytes, "\x48", 1);
+  	    bytes++;
+  	}
       if (dst)
-        memcpy(dst + bytes, "\x31", 1);
+  	ft_memcpy(dst + bytes, "\x31", 1);
       bytes++;
       if (dst)
-        memcpy(dst + bytes, &bytecode_regmap[reg], 1);
+  	ft_memcpy(dst + bytes, &bytecode_regmap[reg], 1);
       return (++bytes);
   }
 
@@ -1048,25 +1048,25 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       t_registers reg;
 
       if (ELFCLASS64 == class)
-        reg = RAX;// RAX gonna hold the value of entrypoint.
+  	reg = RAX;// RAX gonna hold the value of entrypoint.
       else
-        reg = EAX;
+  	reg = EAX;
       xor_register_size = 0;
       while ((ELFCLASS64 == class && reg <= R15) || reg < ESP)
-      {
-        if (reg == R13)
-        reg++;
-        if (dst)
-        xor_register_size += set_xor_register_register(dst + xor_register_size, reg, class);
-        else
-        xor_register_size += set_xor_register_register(NULL, reg, class);
-        if (reg >= R8)
-        reg++; 
-        else
-        reg += 2;
-        if (reg == RSP)//No xor rsp
-        reg += 2;
-      }
+  	{
+  	    if (reg == R13)
+  		reg++;
+  	    if (dst)
+  		xor_register_size += set_xor_register_register(dst + xor_register_size, reg, class);
+  	    else
+  		xor_register_size += set_xor_register_register(NULL, reg, class);
+  	    if (reg >= R8)
+  		reg++; 
+  	    else
+  		reg += 2;
+  	    if (reg == RSP)//No xor rsp
+  		reg += 2;
+  	}
       return (xor_register_size);
   }
 
@@ -1077,20 +1077,20 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
       written = 0;
       if (dst)
-        memcpy(dst+ written, "\x49\x81\xc5", 3);
+  	ft_memcpy(dst+ written, "\x49\x81\xc5", 3);
       written +=3;
       if (val.b4 == val.b8)
-      {
-        if (dst)
-        memcpy(dst + written, &val.b4, sizeof(val.b4));
-        written += sizeof(val.b4);
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, &val.b4, sizeof(val.b4));
+  	    written += sizeof(val.b4);
+  	}
       else
-      {
-        if (dst)
-        memcpy(dst + written, &val.b8, sizeof(val.b8));
-        written += sizeof(val.b8);
-      }
+  	{
+  	    if (dst)
+  		ft_memcpy(dst + written, &val.b8, sizeof(val.b8));
+  	    written += sizeof(val.b8);
+  	}
       return (written);
   }
 
@@ -1098,7 +1098,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   size_t pop_r13(void *dst)
   {
       if (dst)
-        memcpy(dst, "\x41\x5d", 2);
+  	ft_memcpy(dst, "\x41\x5d", 2);
       return (2);
   }
 
@@ -1108,42 +1108,42 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       size_t offset = 0;
 
       if (class == ELFCLASS64)
-      {
-        /* memcpy(payload, "\x48", 1); //rex prefix x64 */
-        if (payload)
-        memcpy(payload, "\x49", 1);
-        offset++;
-        if (payload)
-        memcpy(payload + offset, "\xbd", 1); //mov r13
-        offset++;
-        if (payload)
-        memcpy(payload + offset, &u_entrypoint.b64, sizeof (u_entrypoint.b64));
-        offset += sizeof (u_entrypoint.b64);
-        if (payload)
-        {
-        offset += pop_r13(payload + offset);
-        offset += add_r13(payload + offset, u_entrypoint.b64);
-        offset += set_jmp_r13(payload + offset);
-        }
-        else
-        {
-        offset += pop_r13(NULL);
-        offset += add_r13(NULL, u_entrypoint.b64);
-        offset += set_jmp_r13(NULL);
-        }
-      }
+  	{
+  	    /* ft_memcpy(payload, "\x48", 1); //rex prefix x64 */
+  	    if (payload)
+  		ft_memcpy(payload, "\x49", 1);
+  	    offset++;
+  	    if (payload)
+  		ft_memcpy(payload + offset, "\xbd", 1); //mov r13
+  	    offset++;
+  	    if (payload)
+  		ft_memcpy(payload + offset, &u_entrypoint.b64, sizeof (u_entrypoint.b64));
+  	    offset += sizeof (u_entrypoint.b64);
+  	    if (payload)
+  		{
+  		    offset += pop_r13(payload + offset);
+  		    offset += add_r13(payload + offset, u_entrypoint.b64);
+  		    offset += set_jmp_r13(payload + offset);
+  		}
+  	    else
+  		{
+  		    offset += pop_r13(NULL);
+  		    offset += add_r13(NULL, u_entrypoint.b64);
+  		    offset += set_jmp_r13(NULL);
+  		}
+  	}
       else
-      {
-        if (payload)
-        memcpy(payload + offset, "\x81\x04\x24", 3);// add DWORD [esp]
-        offset+= 3;
-        if (payload)
-        memcpy(payload + offset, &u_entrypoint.b32, sizeof (u_entrypoint.b32));
-        offset += sizeof (u_entrypoint.b32);
-        if (payload)
-        memcpy(payload + offset, "\xc3", 1);//ret
-        offset++;
-      }
+  	{
+  	    if (payload)
+  		ft_memcpy(payload + offset, "\x81\x04\x24", 3);// add DWORD [esp]
+  	    offset+= 3;
+  	    if (payload)
+  		ft_memcpy(payload + offset, &u_entrypoint.b32, sizeof (u_entrypoint.b32));
+  	    offset += sizeof (u_entrypoint.b32);
+  	    if (payload)
+  		ft_memcpy(payload + offset, "\xc3", 1);//ret
+  	    offset++;
+  	}
       return (offset);
   }
 
@@ -1161,29 +1161,29 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   /*     payload[--size] -= 13; */
   /* } */
 
-  size_t decrypt_rot13_asm(unsigned char *dst, size_t payload_size, unsigned char class)
-  {
-      size_t written = 0;
-      size_t i = 0;
+  /* size_t decrypt_rot13_asm(unsigned char *dst, size_t payload_size, unsigned char class) */
+  /* { */
+  /*     size_t written = 0; */
+  /*     size_t i = 0; */
 
-      while (i < payload_size)
-      { /* dst + written segfault */
-        if (dst)
-          written += ft_sub_asm_rsp_buffer_byte(dst + written, i, 13, class);
-        else
-          written += ft_sub_asm_rsp_buffer_byte(dst, i, 13, class);
-        i++;
-      }
-      return (written);
-  }
+  /*     while (i < payload_size) */
+  /*     { /\* dst + written segfault *\/ */
+  /*       if (dst) */
+  /*         written += ft_sub_asm_rsp_buffer_byte(dst + written, i, 13, class); */
+  /*       else */
+  /*         written += ft_sub_asm_rsp_buffer_byte(dst, i, 13, class); */
+  /*       i++; */
+  /*     } */
+  /*     return (written); */
+  /* } */
 
   size_t set_mov_edi(void *dst, uint32_t value)
   {
       if (dst)
-      {
-        memcpy(dst, "\xbf", 1);
-        memcpy(dst + 1, &value, sizeof(value));
-      }
+  	{
+  	    ft_memcpy(dst, "\xbf", 1);
+  	    ft_memcpy(dst + 1, &value, sizeof(value));
+  	}
       return (sizeof(value) + 1);
   }
 
@@ -1192,7 +1192,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       size_t written;
       written = ft_mov_cl_from_rsp(dst, offset);
       if (dst)
-        return (written + ft_mov_rax_from_cl(dst + written, offset));
+  	return (written + ft_mov_rax_from_cl(dst + written, offset));
       return (written + ft_mov_rax_from_cl(dst, offset));
   }
 
@@ -1202,13 +1202,13 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       size_t i = 0;
 
       while (i < payload_size)
-      { /* dst + written segfault if dst == NULL*/
-        if (dst)
-          written += copy_payload_to_mmap_aux(dst + written, i);
-        else
-          written += copy_payload_to_mmap_aux(dst, i);
-        i++;
-      }
+  	{ /* dst + written segfault if dst == NULL*/
+  	    if (dst)
+  		written += copy_payload_to_mmap_aux(dst + written, i);
+  	    else
+  		written += copy_payload_to_mmap_aux(dst, i);
+  	    i++;
+  	}
       return (written);
   }
 
@@ -1237,13 +1237,13 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       ph_ndx = 0;
       times_loadable_and_exec = 0;
       while (++ph_ndx < phnum)
-      {
-        phdr = elf_get_program_header(ehdr, ph_ndx);
-        if (PT_LOAD == elf_get_program_header_type(&phdr, class) && PF_X & elf_get_program_header_flags(&phdr, class))
-        times_loadable_and_exec++;
-        if (times_loadable_and_exec == n)
-        return (phdr);
-      }
+  	{
+  	    phdr = elf_get_program_header(ehdr, ph_ndx);
+  	    if (PT_LOAD == elf_get_program_header_type(&phdr, class) && PF_X & elf_get_program_header_flags(&phdr, class))
+  		times_loadable_and_exec++;
+  	    if (times_loadable_and_exec == n)
+  		return (phdr);
+  	}
       phdr.elf32 = NULL;
       return (phdr);
   }
@@ -1268,35 +1268,35 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       const uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
       new_phdr_vaddr = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum);
       if (increment_offset_phdr(ehdr, new_phdr_offset, phnum, class))// I think shouldn't go throught this way.
-        new_phdr_offset += phdr_struct_size;
-      if (new_phdr_vaddr % new_align == new_phdr_offset % new_align) 
-        printf("all fine with addr and offset aligned\n");
-      else
-      {
-        if (new_phdr_vaddr % new_align > new_phdr_offset % new_align)
-        new_phdr_offset += new_phdr_vaddr % new_align - new_phdr_offset % new_align;
-        else
-        new_phdr_vaddr += new_phdr_offset % new_align - new_phdr_vaddr % new_align;
-      }
+  	new_phdr_offset += phdr_struct_size;
+      if (new_phdr_vaddr % new_align != new_phdr_offset % new_align) 
+  	{
+  	    if (new_phdr_vaddr % new_align > new_phdr_offset % new_align)
+  		new_phdr_offset += new_phdr_vaddr % new_align - new_phdr_offset % new_align;
+  	    else
+  		new_phdr_vaddr += new_phdr_offset % new_align - new_phdr_vaddr % new_align;
+  	}
       if (new_phdr_offset % 16)
-      {
-        new_phdr_vaddr += 16 - new_phdr_vaddr % 16;
-        new_phdr_offset += 16 - new_phdr_offset % 16;
-      }
+  	{
+  	    new_phdr_vaddr += 16 - new_phdr_vaddr % 16;
+  	    new_phdr_offset += 16 - new_phdr_offset % 16;
+  	}
       return ((uint32_t)new_phdr_vaddr);
   }
 
-  const void *ft_ternary(const bool condition, const void *true_val, const void *false_val)
-  {
-      if (condition)
-        return (true_val);
-      return (false_val);
-  }
+  /* const void *ft_ternary(const bool condition, const void *true_val, const void *false_val) */
+  /* { */
+  /*     if (condition) */
+  /*       return (true_val); */
+  /*     return (false_val); */
+  /* } */
 
-  void *encrypt(void *raw, size_t raw_size, size_t *ret_size)
+  void *encrypt(void *raw, size_t raw_size, size_t *ret_size, char **key)
   {
       if (raw_size)
-        ,*ret_size = raw_size;
+  	,*ret_size = raw_size;
+      if (!*key)
+  	,*key = NULL;
       return (raw);
   }
 
@@ -1310,13 +1310,13 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       uint64_t cur_offset;
       ph_ndx = 0;
       while (ph_ndx < phnum)
-      {
-        phdr = elf_get_program_header(ehdr, ph_ndx);
-        cur_offset = elf_get_program_header_offset(&phdr, class);
-        if (cur_offset > p_offset && cur_offset < closest_offset)
-        closest_offset = cur_offset;
-        ph_ndx++;
-      }
+  	{
+  	    phdr = elf_get_program_header(ehdr, ph_ndx);
+  	    cur_offset = elf_get_program_header_offset(&phdr, class);
+  	    if (cur_offset > p_offset && cur_offset < closest_offset)
+  		closest_offset = cur_offset;
+  	    ph_ndx++;
+  	}
       return (closest_offset);
   }
 
@@ -1324,9 +1324,9 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   static bool elf_set_s3_get_info(const t_elf_h *ehdr, unsigned char class, uint64_t phnum, size_t gap_size, uint64_t *ret_vaddr, uint64_t *ret_offset, t_elf_ph *phdr)
   {
       if (!ehdr || !phnum)
-        return (false);
+  	return (false);
       if (!gap_size)
-        return (true);
+  	return (true);
       uint64_t ph_ndx;
       uint64_t cur_vaddr_top;//cur
       uint64_t cur_offset_top;//cur
@@ -1337,34 +1337,34 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
       ph_ndx = 0;
       while (ph_ndx < phnum)
-      {
-        ,*phdr = elf_get_program_header(ehdr, ph_ndx);
-        if (!(PT_LOAD == elf_get_program_header_type(phdr, class) && PF_X & elf_get_program_header_flags(phdr, class)))
-        {
-        ph_ndx++;
-        continue;
-        }
-        cur_vaddr_top = elf_get_program_header_vaddr(phdr, class) + elf_get_program_header_memsz(phdr, class);
-        top_vaddr = get_alignment_effective_addr(0x1000, cur_vaddr_top);
-        avalaible_vaddr = top_vaddr - cur_vaddr_top;
-        if (avalaible_vaddr < gap_size)
-        {
-        ph_ndx++;
-        continue;
-        }
-        cur_offset_top = elf_get_program_header_offset(phdr, class) + elf_get_program_header_memsz(phdr, class);
-        top_offset = elf_get_closest_higher_p_offset(ehdr, class, phnum, cur_offset_top);
-        if (top_offset == (uint64_t) -1)
-        top_offset = elf_get_elfh_shoff(ehdr);
-        avalaible_offset = top_offset - cur_offset_top;
-        if (avalaible_offset >= gap_size)
-        {
-        ,*ret_offset = cur_offset_top;
-        ,*ret_vaddr = cur_vaddr_top;
-        return (true);
-        }
-        ph_ndx++;
-      }
+  	{
+  	    ,*phdr = elf_get_program_header(ehdr, ph_ndx);
+  	    if (!(PT_LOAD == elf_get_program_header_type(phdr, class) && PF_X & elf_get_program_header_flags(phdr, class)))
+  		{
+  		    ph_ndx++;
+  		    continue;
+  		}
+  	    cur_vaddr_top = elf_get_program_header_vaddr(phdr, class) + elf_get_program_header_memsz(phdr, class);
+  	    top_vaddr = get_alignment_effective_addr(0x1000, cur_vaddr_top);
+  	    avalaible_vaddr = top_vaddr - cur_vaddr_top;
+  	    if (avalaible_vaddr < gap_size)
+  		{
+  		    ph_ndx++;
+  		    continue;
+  		}
+  	    cur_offset_top = elf_get_program_header_offset(phdr, class) + elf_get_program_header_memsz(phdr, class);
+  	    top_offset = elf_get_closest_higher_p_offset(ehdr, class, phnum, cur_offset_top);
+  	    if (top_offset == (uint64_t) -1)
+  		top_offset = elf_get_elfh_shoff(ehdr);
+  	    avalaible_offset = top_offset - cur_offset_top;
+  	    if (avalaible_offset >= gap_size)
+  		{
+  		    ,*ret_offset = cur_offset_top;
+  		    ,*ret_vaddr = cur_vaddr_top;
+  		    return (true);
+  		}
+  	    ph_ndx++;
+  	}
       return (false);
   }
 
@@ -1391,7 +1391,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
       // Validate input parameters
       if (!stage_buffer || !stage_fd_size)
-        return (1);
+  	return (1);
 
       // Initialize output parameters
       ,*stage_buffer = NULL;
@@ -1399,41 +1399,41 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
       stage_fd = open(g_binary_paths[arch][bin_type], O_RDONLY);
       if (stage_fd < 0 || get_file_size(stage_fd, (off_t *)stage_fd_size) || !*stage_fd_size)
-      {
-        if (stage_fd >= 0)
-        close(stage_fd);
-        return (1);
-      }
+  	{
+  	    if (stage_fd >= 0)
+  		close(stage_fd);
+  	    return (1);
+  	}
 
       ,*stage_buffer = malloc(*stage_fd_size);
       if (!(*stage_buffer))
-      {
-        close(stage_fd);
-        return (5);
-      }
+  	{
+  	    close(stage_fd);
+  	    return (5);
+  	}
 
       if (read(stage_fd, *stage_buffer, *stage_fd_size) != (ssize_t) *stage_fd_size)
-      {
-        free(*stage_buffer);
-        ,*stage_buffer = NULL;
-        close(stage_fd);
-        return (5);
-      }
+  	{
+  	    free(*stage_buffer);
+  	    ,*stage_buffer = NULL;
+  	    close(stage_fd);
+  	    return (5);
+  	}
 
       close(stage_fd);
       return (0);
   }
 
   static void apply_patches_to_buffer(char *buffer, const size_t *offsets,
-                           const t_type *values, size_t count, size_t data_size)
+  				    const t_type *values, size_t count, size_t data_size)
   {
       for (size_t i = 0; i < count; ++i) {
-          memcpy(buffer + offsets[i], &values[i].b8, data_size);
+          ft_memcpy(buffer + offsets[i], &values[i].b8, data_size);
       }
   }
 
   static int elf_inject_s3(void *elf, t_elf_h *ehdr, unsigned char class,
-                         uint64_t *free_va)
+  			 uint64_t *free_va)
   {
       const uint64_t phnum = elf_get_elfh_phnum(ehdr);
       t_elf_ph phdr;
@@ -1443,15 +1443,15 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       t_arch arch = class == ELFCLASS64;
 
       if (load_stage_buffer(arch, &stage3_buffer, (size_t *)&stage3_fd_size, STAGE_3))
-        return (ERR_LOAD_STAGE);
+  	return (ERR_LOAD_STAGE);
       //fine
       if (!elf_set_s3_get_info(ehdr, class, phnum, stage3_fd_size, free_va, &free_off, &phdr))
-      {
-        free(stage3_buffer);
-        ,*free_va = 0;
-        return (ERR_SUCCESS);
-      }
-      memcpy(elf + free_off, stage3_buffer, stage3_fd_size);
+  	{
+  	    free(stage3_buffer);
+  	    ,*free_va = 0;
+  	    return (ERR_SUCCESS);
+  	}
+      ft_memcpy(elf + free_off, stage3_buffer, stage3_fd_size);
       free(stage3_buffer);
       elf_phdr_set_filesz(&phdr, elf_get_program_header_filesz(&phdr, class) + stage3_fd_size, class);
       elf_phdr_set_memsz(&phdr, elf_get_program_header_memsz(&phdr, class) + stage3_fd_size, class);
@@ -1471,14 +1471,14 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
    ,* @return                  0 on success, non-zero on error
    ,*/
   static int load_and_apply_patches_to_buffer(t_arch arch, char **loaded_buffer, size_t *loaded_size,
-      t_bin_type bin_type, const size_t *patch_offsets, const t_type *patch_values, size_t patch_count)
+  					    t_bin_type bin_type, const size_t *patch_offsets, const t_type *patch_values, size_t patch_count)
   {
       // Step 1: Load raw binary
       if (load_stage_buffer(arch, loaded_buffer, loaded_size, bin_type))
-      {
-          ,*loaded_buffer = NULL;
-          return (5); // Load failed
-      }
+  	{
+  	    ,*loaded_buffer = NULL;
+  	    return (5); // Load failed
+  	}
       // Step 2: Determine data size for patching (32 vs 64-bit pointers/values)
       size_t value_size = (size_t)ft_ternary(arch, (void *)sizeof(uint64_t), (void *)sizeof(uint32_t));
       // Step 3: Apply all patches
@@ -1494,9 +1494,9 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       ,*join_len = len_s2 + len_s1;
       join = malloc(*join_len);
       if (!join)
-        return (join);
-      memcpy(join, s1, len_s1);
-      memcpy(join+len_s1, s2, len_s2);
+  	return (join);
+      ft_memcpy(join, s1, len_s1);
+      ft_memcpy(join+len_s1, s2, len_s2);
       return (join);
   }
 
@@ -1505,7 +1505,8 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
    ,* @return Encrypted output buffer, or NULL on error.
    ,*/
   static char *compress_encrypt_with_header(const void *input_data, size_t input_size,
-                                          size_t value_size, size_t *output_size, size_t *final_compressed_size)
+  					  size_t value_size, size_t *output_size,
+  					  size_t *final_compressed_size, char **key)
   {
       // Step 1: Compress
       t_list *compressed_list = lz77_compress_to_list((unsigned char *)input_data, input_size);
@@ -1518,17 +1519,17 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
       // Step 2: Prepend original size as header
       char *compressed_with_header = buffer_join(
-          final_compressed_size,
-          &input_size, value_size,
-          compressed_bytes, compressed_size
-      );
+  					       final_compressed_size,
+  					       &input_size, value_size,
+  					       compressed_bytes, compressed_size
+  					       );
       free(compressed_bytes);
       if (!compressed_with_header) return NULL;
 
       // Step 3: Encrypt
-      char *encrypted = encrypt(compressed_with_header, *final_compressed_size, output_size);
+      char *encrypted = encrypt(compressed_with_header, *final_compressed_size, output_size, key);
       if (encrypted != compressed_with_header)
-        free(compressed_with_header);
+  	free(compressed_with_header);
 
       if (!encrypted || !*output_size) {
           free(encrypted);
@@ -1538,8 +1539,8 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   }
 
   static int build_stage2_buffer(t_arch arch, size_t elf_size, uint64_t s3_vaddr,
-                               char **out_buffer, size_t *out_size,
-                               size_t *payload_raw_size)
+  			       char **out_buffer, size_t *out_size,
+  			       size_t *payload_raw_size)
   {
       static const size_t stage2_patch_offsets[NUM_ARCHS][2] = {
           [ARCH_X86] = { 0x5B, 0x98 },
@@ -1551,8 +1552,8 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       char *payload_raw;
 
       if (load_and_apply_patches_to_buffer(arch, &stage2_buf, &stage2_sz, STAGE_2,
-                                         stage2_patch_offsets[arch], patches, 2))
-        return (ERR_LOAD_STAGE);
+  					 stage2_patch_offsets[arch], patches, 2))
+  	return (ERR_LOAD_STAGE);
       if (load_stage_buffer(arch, &payload_raw, payload_raw_size, PAYLOAD_BIN)) {
           free(stage2_buf);
           return (ERR_LOAD_STAGE);
@@ -1561,43 +1562,54 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       free(payload_raw);
       free(stage2_buf);
       if (!*out_buffer)
-        return (ERR_ALLOC);
+  	return (ERR_ALLOC);
       return (ERR_SUCCESS);
   }
 
+  #define STAGE1_PATCHES 10
+  //Should i
   static int build_stage1_patched(unsigned char class, t_elf_h *ehdr,
-                                size_t stage2_elf_total_size,
-                                size_t encrypted_size,
-                                size_t compressed_hdr_size,
-                                size_t payload_raw_size, char **out_stage1,
-                                size_t *out_stage1_size)
+  				size_t stage2_elf_total_size,
+  				size_t encrypted_size,
+  				size_t compressed_hdr_size,
+  				size_t payload_raw_size, char **out_stage1,
+  				size_t *out_stage1_size, char *key)
   {
       t_arch arch = (class == ELFCLASS64) ? ARCH_X64 : ARCH_X86;
       size_t value_size = arch ? sizeof(uint64_t) : sizeof(uint32_t);
 
       uint64_t phnum = elf_get_elfh_phnum(ehdr);
       uint32_t prefix_size = elf_get_struct_size_elf_header((char *)ehdr->elf32) +
-                             elf_get_elfh_phentsize(ehdr) *
-                             (2 + elf_is_gnu_stack_phdr(ehdr, class, phnum));
+  	elf_get_elfh_phentsize(ehdr) *
+  	(2 + elf_is_gnu_stack_phdr(ehdr, class, phnum));
 
       uint64_t s2_entry_offset = payload_raw_size + 0x12 + (arch ? 0x5 : 0);
+      if (key != NULL)// TODO change as needed.
+  	key = (char*)s2_entry_offset;
 
-      t_type stage1_patches[6] = {
+      t_type stage1_patches[STAGE1_PATCHES] = {
           {.b8 = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum) + prefix_size + 5 + (!arch * 0x72)},
           {.b8 = *out_stage1_size + prefix_size + encrypted_size},  // Will update after load
           {.b8 = stage2_elf_total_size},
           {.b8 = encrypted_size},
           {.b8 = compressed_hdr_size},
-          {.b8 = s2_entry_offset}
+          {.b8 = s2_entry_offset},
+          {.b8 = (uint64_t)key},//Encryption key in case x86 use 32b
+          {.b8 = (uint64_t)key},//In x64 overwrite some off with eq val
+          {.b8 = (uint64_t)key},
+          {.b8 = (uint64_t)key}
       };
+      if (!key && (uint64_t)key != s2_entry_offset)// TODO delete when encrypt works.
+  	free(key);
 
-      static const size_t stage1_patch_offsets[NUM_ARCHS][6] = {
-          [ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf },
-          [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce }
+      static const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCHES] = {
+  	//                                                 Encryption key offsets.
+  	[ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf, 0xaf, 0xaf, 0xaf, 0xaf},
+  	[ARCH_X64] = { 0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce, 0xce, 0xce, 0xce, 0xce}
       };
 
       if (load_stage_buffer(arch, out_stage1, out_stage1_size, STAGE_1)) {
-          return ERR_LOAD_STAGE;
+  	return (ERR_LOAD_STAGE);
       }
 
       // Update patch #1: total size after decryption includes decrypted buffer layout
@@ -1605,8 +1617,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
       apply_patches_to_buffer(*out_stage1, stage1_patch_offsets[arch],
                               stage1_patches, 6, value_size);
-
-      return ERR_SUCCESS;
+      return (ERR_SUCCESS);
   }
 
   /**
@@ -1628,9 +1639,9 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       size_t combined_len;
       char *combined_payload_stage2;
       if (build_stage2_buffer(arch, elf_size, injected_s3_vaddr, &combined_payload_stage2, &combined_len, &payload_size_raw))
-        return (ERR_LOAD_STAGE);
+  	return (ERR_LOAD_STAGE);
       if (!combined_payload_stage2)
-        return (ERR_ALLOC);
+  	return (ERR_ALLOC);
       size_t full_image_size;
       char *full_image = buffer_join(&full_image_size, combined_payload_stage2,
                                      combined_len, elf_mmap, elf_size);
@@ -1639,10 +1650,10 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
           return (ERR_ALLOC);
       size_t encrypted_size;
       size_t compressed_with_header_size;
-
+      char *key = NULL;
       char *encrypted_payload = compress_encrypt_with_header(
-          full_image, full_image_size, value_size,
-          &encrypted_size, &compressed_with_header_size);
+  							   full_image, full_image_size, value_size,
+  							   &encrypted_size, &compressed_with_header_size, &key);
       free(full_image);
       if (!encrypted_payload || encrypted_size == 0)
           return (ERR_COMPRESS);
@@ -1650,14 +1661,14 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       char *stage1_buffer;
       size_t stage1_size;
       if (build_stage1_patched(class, &elf_header, full_image_size, encrypted_size,
-                             compressed_with_header_size, payload_size_raw,
-                             &stage1_buffer, &stage1_size))
-      {
-          free(encrypted_payload);
-          return (ERR_LOAD_STAGE);
-      }
+  			     compressed_with_header_size, payload_size_raw,
+  			     &stage1_buffer, &stage1_size, key))
+  	{
+  	    free(encrypted_payload);
+  	    return (ERR_LOAD_STAGE);
+  	}
       ,*payload_ptr = buffer_join(payload_size, stage1_buffer, stage1_size,
-                               encrypted_payload, encrypted_size);
+  			       encrypted_payload, encrypted_size);
       free(stage1_buffer);
       free(encrypted_payload);
       if (!*payload_ptr)
@@ -1694,7 +1705,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       ,*class = elf_get_elfh_e_ident_class((unsigned char *)ehdr->elf32);
 
       if (*phnum == 0)
-        return (ERR_INVALID_ELF);
+  	return (ERR_INVALID_ELF);
       return (ERR_SUCCESS);
   }
 
@@ -1743,23 +1754,23 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       size_t times = 0;
 
       while (i && times < num)
-      {
-        if ((ssize_t)1 != write(packed, "\0", 1))
-        i = false;
-        times++;
-      }
+  	{
+  	    if ((ssize_t)1 != write(packed, "\0", 1))
+  		i = false;
+  	    times++;
+  	}
       return (!i);
   }
 
   static int prepare_info(t_elf_h *ehdr, unsigned char class, uint64_t *new_phdr_vaddr,
-                        uint64_t phnum)
+  			uint64_t phnum)
   {
       ,*new_phdr_vaddr = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum);
       return 0;
   }
 
   static int write_ehdr(t_elf_h *ehdr, int packed, unsigned char class,
-                      uint64_t new_phdr_vaddr, uint64_t *new_phnum ,uint64_t phnum)
+  		      uint64_t new_phdr_vaddr, uint64_t *new_phnum ,uint64_t phnum)
   {
       ssize_t ehdr_len = elf_get_struct_size_elf_header((char *)ehdr->elf32);
 
@@ -1771,7 +1782,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       elf_ehdr_set_shentsize(ehdr, 0, class);
       elf_ehdr_set_shstrndx(ehdr, 0, class);
       if (write(packed, ehdr->elf32, ehdr_len) != ehdr_len)
-        return (ERR_WRITE_HEADER);
+  	return (ERR_WRITE_HEADER);
       return (ERR_SUCCESS);
   }
 
@@ -1824,7 +1835,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       elf_phdr_set_flags(&phdr, p_flags, class);
       elf_phdr_set_align(&phdr, p_align, class);
       if (write(packed, phdr.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
-        return (ERR_WRITE_PHDR);
+  	return (ERR_WRITE_PHDR);
       p_flags = PF_R | PF_X;
       p_vaddr = new_phdr_vaddr;
       p_paddr = p_vaddr;
@@ -1837,21 +1848,21 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       elf_phdr_set_paddr(&phdr, p_paddr, class);
       elf_phdr_set_flags(&phdr, p_flags, class);
       if (write(packed, phdr.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
-        return (ERR_WRITE_PHDR);
+  	return (ERR_WRITE_PHDR);
       if (elf_is_gnu_stack_phdr(ehdr, class, phnum))
-      {
-        ndx_ph = elf_get_gnu_stack_phdr_ndx(ehdr, class, phnum);
-        phdr = elf_get_program_header(ehdr, ndx_ph);
-        if (write(packed, phdr.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
-        return (ERR_WRITE_PHDR);
-      }
+  	{
+  	    ndx_ph = elf_get_gnu_stack_phdr_ndx(ehdr, class, phnum);
+  	    phdr = elf_get_program_header(ehdr, ndx_ph);
+  	    if (write(packed, phdr.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
+  		return (ERR_WRITE_PHDR);
+  	}
       return (0);
   }
 
   static int write_payload(int packed, void **payload, uint64_t payload_size)
   {
       if (write(packed, *payload, payload_size) != (ssize_t)payload_size)
-        return (ERR_WRITE_PAYLOAD);
+  	return (ERR_WRITE_PAYLOAD);
       return (ERR_SUCCESS);
   }
 
@@ -1878,7 +1889,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   /*     } */
   /*   ndx_sh = 0; */
   /*   t_elf_sh shdr = elf_get_section_header(ehdr, ndx_sh); */
-  /*   memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); */
+  /*   ft_memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); */
   /*   printf("writed payload begining shdr writed: %ld\n", *writed); */
   /*   uint64_t shcp_offset;    */
 
@@ -1889,7 +1900,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   /*     { */
   /*       shdr = elf_get_section_header(ehdr, ndx_sh); */
   /*       shcp_offset = elf_get_section_header_offset(&shdr, class); */
-  /*       memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); */
+  /*       ft_memcpy(shdr_cp.elf32, shdr.elf32, shdr_struct_size); */
   /*       if (increment_offset_phdr(ehdr, shcp_offset, phnum, class)) */
   /* 	{ */
   /* 	  elf_shdr_set_offset(&shdr_cp, elf_get_section_header_offset(&shdr, class) + phdr_struct_size, class); */
@@ -2079,16 +2090,16 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       uint64_t new_phnum;
 
       if (validate_elf_headers(&ehdr, &shnum, &phnum, &class))
-        return (ERR_INVALID_ELF);
+  	return (ERR_INVALID_ELF);
       if (prepare_info(&ehdr, class, &new_phdr_vaddr, phnum))
-        return (ERR_PREPARE_INFO);
+  	return (ERR_PREPARE_INFO);
       if (write_ehdr(&ehdr, packed, class, new_phdr_vaddr, &new_phnum, phnum))
-        return (ERR_WRITE_HEADER);
+  	return (ERR_WRITE_HEADER);
       if (write_program_headers(&ehdr, packed, phnum, new_phdr_vaddr, class, payload_size))
-        return (ERR_WRITE_PHDR);
+  	return (ERR_WRITE_PHDR);
       if (write_payload(packed, &payload, payload_size))
-        return (ERR_WRITE_PAYLOAD);
-      printf("Successfully packed\n");
+  	return (ERR_WRITE_PAYLOAD);
+      /* ft_printf("Successfully packed\n"); */
       return (0);
   }
 
@@ -2097,26 +2108,26 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       size_t payload_size = 0;
       char *payload = NULL;
       if (generate_payload(elf_mmap, (size_t)file_size, &payload, &payload_size))
-        return (5);
+  	return (5);
       if (!payload || !payload_size)
-      {
-        free(payload);
-        return (6);
-      }
+  	{
+  	    free(payload);
+  	    return (6);
+  	}
       // open the file where we gonna add the payload
       int packed = open(file_path, O_CREAT | O_TRUNC | O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
       if (packed < 0)
-      {
-        free(payload);
-        return (7);
-      }
+  	{
+  	    free(payload);
+  	    return (7);
+  	}
 
       if (generate_packed_file(elf_mmap, payload, payload_size, packed))
-      {
-        free(payload);
-        close(packed);
-        return (8);
-      }
+  	{
+  	    free(payload);
+  	    close(packed);
+  	    return (8);
+  	}
       free(payload);
       close(packed);
       return (0);
