@@ -25,14 +25,14 @@ Is related to the fact that =antivirus programs= generally *analyse programs whe
        | SFX  | Bundle a compressed payload and executable module into a single archive. |
        | =UPX= | Obfuscate the code by compressing and encrypting an executable.|
 
-       UPX files can be modified after packing 
+       UPX files can be modified after packing
 
-There’s a known technique that hackers use with UPX to make analysis more difficult, and you need to be aware of it. Corrupted UPX files can’t be decompressed with standard versions of UPX, meaning you can’t view what’s inside. However, it doesn’t affect its ability to execute potentially malicious code inside, which means the payload remains armed. 
+There’s a known technique that hackers use with UPX to make analysis more difficult, and you need to be aware of it. Corrupted UPX files can’t be decompressed with standard versions of UPX, meaning you can’t view what’s inside. However, it doesn’t affect its ability to execute potentially malicious code inside, which means the payload remains armed.
 
-How do hackers “break” the archive Then either: 
+How do hackers “break” the archive Then either:
 
-    Pack the archive with an unreleased version of UPX.   
-    Or modify l_info and p_info structures in an archive. 
+    Pack the archive with an unreleased version of UPX.
+    Or modify l_info and p_info structures in an archive.
 
 These two actions have the same effect. Namely, the archive will not be openable by the standard version of UPX, which can hinder both you as a researcher if you want to unpack the contents and view them in a file browser, and a security system that won’t be able to reliably apply signature-based detection to an encrypted UPX file
 
@@ -49,7 +49,7 @@ These two actions have the same effect. Namely, the archive will not be openable
 - syscall.
 - printf family.
 - libft ones.
- 
+
 *** Requirements:
 
 - Executable name: *woody_woodpacker*
@@ -58,11 +58,11 @@ These two actions have the same effect. Namely, the archive will not be openable
 - Free to choose encryption algorithm:
   *Complex is Important for grading score*
   - In case use encryption key, most randomly possible and display =stdout= when running the program
-    How to check entropy [[https://foxptr.medium.com/understanding-packers-for-malware-ddc58caad229][entropy]] 
+    How to check entropy [[https://foxptr.medium.com/understanding-packers-for-malware-ddc58caad229][entropy]]
 - When running encrypted program should display -> =stdin= "....WOODY....\n" to indicated that the file is encrypted.
 - The encrypt file isn't allowed to crash *if doesn't crash previously i supose*.
 - It execution  after decryption must suffer no alteration.
-  
+
 ** Bonus
 
 *** DONE 32 bit Management.
@@ -90,3 +90,29 @@ https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-image_dos_hea
 # MACH-O format
 https://gpanders.com/blog/exploring-mach-o-part-1/
 https://developer.apple.com/library/archive/documentation/Performance/Conceptual/CodeFootprint/Articles/MachOOverview.html#//apple_ref/doc/uid/20001860-BAJGJEJC
+
+* How to Get the Source Code.
+#+begin_quote
+Type C-c C-c
+#+end_quote
+#+begin_src emacs-lisp
+  (require 'org)
+  (require 'ob-tangle)
+
+  (defun my/org-tangle-files (files)
+    "Tangle RELATIVE-FILES based on the current buffer's directory."
+    (dolist (file files)
+      (message "Tangling %s..." file)
+      (org-babel-tangle-file file)))
+
+  (defun my/files-in-relative-dir (relative-dir filter)
+    "Return a list of files in RELATIVE-DIR (relative to current buffer) matching FILTER.
+  FILTER is a regex string and must be provided."
+    (let* ((base-dir (file-name-directory (buffer-file-name)))
+           (target-dir (expand-file-name relative-dir base-dir)))
+      (directory-files target-dir t filter)))
+
+  (my/org-tangle-files
+   (my/files-in-relative-dir "./POC/" "\\.org$"))
+
+#+end_src

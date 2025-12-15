@@ -64,7 +64,7 @@ _start:
 
 *** check the parameter.
 Compare if the nbr of params is distint of 1.
-   #+begin_src c :tangle "srcs/main.c" :mkdirp yes
+ #+begin_src c :tangle "srcs/main.c" :mkdirp yes
 
      #include "woody.h"
 

@@ -16,12 +16,12 @@ CLOSED: [2025-11-07 Fri 16:52]
 #+begin_comment
 For simplify the 64/32 bits management we're going to use unions and getters for take the values from the unions and abstract the 64/32 for the code.
 Abbreviation
-Program header = Phdr = _ph       
-Section header = Shdr = _sh       
-Elf header = ehdr = _h       
+Program header = Phdr = _ph
+Section header = Shdr = _sh
+Elf header = ehdr = _h
 #+end_comment
 
-#+begin_src c :tangle include/format_elf.h 
+#+begin_src c :tangle include/format_elf.h
   #ifndef FORMAT_ELF_H
   # define FORMAT_ELF_H
   # ifndef DEBUG_LVL
@@ -33,37 +33,40 @@ Elf header = ehdr = _h
   # include <unistd.h> // off_t
   # include <string.h> // memcmp TODO Delete.
   # include "common.h" // overflows, enums registers
-  # include "libft.h" // overflows, enums registers
+  # include "libft.h" // t_list ft_printf ...
 
-     typedef union u_elf_h
-     {
-       Elf32_Ehdr	*elf32;
-       Elf64_Ehdr	*elf64;
-     }	t_elf_h;
+  typedef union u_elf_h
+  {
+    Elf32_Ehdr	*elf32;
+    Elf64_Ehdr	*elf64;
+  }	t_elf_h;
 
-     typedef union u_elf_ph
-     {
-       Elf32_Phdr	*elf32;
-       Elf64_Phdr	*elf64;
-     }	t_elf_ph;
+  typedef union u_elf_ph
+  {
+    Elf32_Phdr	*elf32;
+    Elf64_Phdr	*elf64;
+  }	t_elf_ph;
 
-     typedef union u_elf_sh
-     {
-       Elf32_Shdr	*elf32;
-       Elf64_Shdr	*elf64;
-     }	t_elf_sh;
+  typedef union u_elf_sh
+  {
+    Elf32_Shdr	*elf32;
+    Elf64_Shdr	*elf64;
+  }	t_elf_sh;
 
-     typedef union u_elf_sym
-     {
-       Elf32_Sym	*elf32;
-       Elf64_Sym	*elf64;
-     }	t_elf_sym;
+  typedef union u_elf_sym
+  {
+    Elf32_Sym	*elf32;
+    Elf64_Sym	*elf64;
+  }	t_elf_sym;
 
-       typedef union u_elf_dyn
-     {
-       Elf32_Dyn	*elf32;
-       Elf64_Dyn	*elf64;
-     }	t_elf_dyn;
+  typedef union u_elf_dyn
+  {
+    Elf32_Dyn	*elf32;
+    Elf64_Dyn	*elf64;
+  }	t_elf_dyn;
+
+  # include "elf_setters_phdr.h" // phdr setters
+  # include "elf_setters_ehdr.h" // ehdr setters
 
 #+end_src
 
@@ -97,7 +100,7 @@ When the num of  =S/Phdr= is more than could be handle by uint16_t (65535) the f
 **** Coding
 ***** Creating the getters
 I use the union attribute elf32 for e_ident case be a 64 is in the same place the first position (polymorphism).
-#+begin_src c :tangle srcs/elf/parser/get_eh.c :mkdirp yes 
+#+begin_src c :tangle srcs/elf/parser/get_eh.c :mkdirp yes
     #include "format_elf.h"
 
     uint16_t	elf_get_elfh_type(const t_elf_h *ehdr)
@@ -157,7 +160,7 @@ I use the union attribute elf32 for e_ident case be a 64 is in the same place th
 
 #+end_src
 ***** TODO add prefix elf_funcname to each exclusive elf function.
-#+begin_src c :tangle srcs/elf/parser/get_eh_1.c :mkdirp yes 
+#+begin_src c :tangle srcs/elf/parser/get_eh_1.c :mkdirp yes
   #include "format_elf.h"
 
   uint16_t	elf_get_elfh_ehsize(const t_elf_h *ehdr)
@@ -215,9 +218,9 @@ I use the union attribute elf32 for e_ident case be a 64 is in the same place th
   uint16_t		elf_get_elfh_shnum(const t_elf_h *ehdr);
 #+end_src
 
-#+begin_src c :tangle srcs/elf/parser/get_eh_2.c :mkdirp yes 
+#+begin_src c :tangle srcs/elf/parser/get_eh_2.c :mkdirp yes
   #include "format_elf.h"
-  
+
 uint64_t	elf_get_elfh_entry(const t_elf_h *ehdr)
 {
 	const unsigned char	class = elf_get_elfh_e_ident_class(ehdr->elf32->e_ident);
@@ -335,7 +338,7 @@ Don't got a number of entries that pass the filesize.
      const uint64_t shnum = elf_get_elfh_shnum(ehdr);
 
       return (shoff < (uint64_t )*elf_size
-              && shoff >= elfhsize  && 
+              && shoff >= elfhsize  &&
               shoff + shnum * shsize <= (uint64_t)*elf_size);
     }
 
@@ -350,7 +353,7 @@ Don't got a number of entries that pass the filesize.
 
 #+begin_src c :tangle include/format_elf.h
   // valid_elf_h_attrib
-  
+
   bool	elf_is_valid_elf_shoff(const t_elf_h *ehdr, off_t *elf_size);
   bool	elf_is_valid_elf_phoff(const t_elf_h *ehdr, off_t *elf_size);
 
@@ -397,7 +400,7 @@ Don't got a number of entries that pass the filesize.
 
 #+end_src
 ****** Check integrity in section size, not shstrndx upper shnum, a wrapper of the e_ident validation
-#+begin_src c :tangle srcs/elf/parser/validate_elf_h_1.c :mkdirp yes 
+#+begin_src c :tangle srcs/elf/parser/validate_elf_h_1.c :mkdirp yes
   #include "format_elf.h"
 
   bool	elf_valid_section_size(const t_elf_h *ehdr)
@@ -470,7 +473,7 @@ CLOSED: [2025-06-19 Thu 17:46]
 :END:
 *** DONE Check integrite struct size with elfheader, phnum not 0 cause this only work on executable, check alignment, check the content of a header + offset exceed file size
 CLOSED: [2025-11-07 Fri 16:52]
-#+begin_src c :tangle  srcs/elf/parser/valid_program_header.c :mkdirp yes 
+#+begin_src c :tangle  srcs/elf/parser/valid_program_header.c :mkdirp yes
   #include "format_elf.h"
 
     static bool	elf_valid_elf_ph(unsigned char elf_class, off_t elf_size, const t_elf_h *ehdr,
@@ -518,7 +521,7 @@ CLOSED: [2025-11-07 Fri 16:52]
 #+end_src
 
 
-#+begin_src c :tangle  srcs/elf/parser/valid_program_header_2.c :mkdirp yes 
+#+begin_src c :tangle  srcs/elf/parser/valid_program_header_2.c :mkdirp yes
    #include "format_elf.h"
 
    uint64_t	elf_get_struct_size_elf_ph(unsigned char class)
@@ -590,14 +593,14 @@ CLOSED: [2025-11-07 Fri 16:52]
 
   uint64_t elf_get_program_header_type(t_elf_ph *phdr, unsigned char class)
   {
-    if (class == ELFCLASS32) 
+    if (class == ELFCLASS32)
         return (phdr->elf32->p_type);
     return (phdr->elf64->p_type);
   }
 
   uint64_t elf_get_program_header_flags(t_elf_ph *phdr, unsigned char class)
   {
-    if (class == ELFCLASS32) 
+    if (class == ELFCLASS32)
         return (phdr->elf32->p_flags);
     return (phdr->elf64->p_flags);
   }
@@ -807,7 +810,7 @@ CLOSED: [2025-06-18 Wed 15:51]
 
 #+end_src
 
-#+begin_src c :tangle srcs/elf/parser/get_elfsh_data_1.c :mkdirp yes 
+#+begin_src c :tangle srcs/elf/parser/get_elfsh_data_1.c :mkdirp yes
   #include "format_elf.h"
 
    uint32_t	elf_get_section_header_type(const t_elf_sh *shdr, unsigned char class)
@@ -855,7 +858,7 @@ uint32_t	elf_get_section_header_link(const t_elf_sh *shdr, unsigned char class);
 uint32_t	elf_get_section_header_info(const t_elf_sh *shdr, unsigned char class);
 #+end_src
 
-#+begin_src c :tangle srcs/elf/parser/get_elfsh_data_2.c :mkdirp yes 
+#+begin_src c :tangle srcs/elf/parser/get_elfsh_data_2.c :mkdirp yes
 #include "format_elf.h"
 
 uint64_t	elf_get_section_header_addralign(const t_elf_sh *shdr,
@@ -888,12 +891,12 @@ uint32_t	elf_get_section_header_addr(const t_elf_sh *shdr, unsigned char class)
                       unsigned char class);
   uint32_t	elf_get_section_header_entsize(const t_elf_sh *shdr,
                       unsigned char class);
-  uint32_t	elf_get_section_header_addr(const t_elf_sh *shdr, 
+  uint32_t	elf_get_section_header_addr(const t_elf_sh *shdr,
                       unsigned char class);
 
 #+end_src
 
-#+begin_src c :tangle srcs/elf/parser/get_elfsh_data_3.c :mkdirp yes 
+#+begin_src c :tangle srcs/elf/parser/get_elfsh_data_3.c :mkdirp yes
   #include "format_elf.h"
 
     const char	*elf_get_section_string_table(const t_elf_h *ehdr)
@@ -992,7 +995,7 @@ CLOSED: [2025-06-20 Fri 19:31]
 #+end_src
 
 ****  wrapper case when link point to another section index for more info mustn't link with itself, and setter for symtab_ndx, check integrity that in case the first sh got the value of current sh, ph, strndx got a not zero value, check type overflow.
-#+begin_src c :tangle srcs/elf/parser/valid_elf_section_header_2.c :mkdirp yes 
+#+begin_src c :tangle srcs/elf/parser/valid_elf_section_header_2.c :mkdirp yes
   #include "format_elf.h"
 
   bool	elf_valid_section_header(unsigned char elf_class, const t_elf_sh *shdr, uint16_t index, const t_elf_h *ehdr, uint64_t *symtab)

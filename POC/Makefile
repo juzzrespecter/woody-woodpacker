@@ -24,9 +24,16 @@ MAKEFLAGS				:=	--no-print-directory
   						valid_elf_h_2 \
 
 
-  ELF_PARSER-DIR                         :=      elf/parser/
-
+  ELF_PARSER-DIR                        :=      elf/parser/
   ELF_PARSER-SRCS			:=	$(addprefix $(ELF_PARSER-DIR), $(ELF_PARSER-SRC))
+
+  ELF_SETTERS-DIR                       :=	elf/setters/
+
+  ELF_SETTERS-SRC                       :=	ehdr \
+                                          	phdr
+
+
+  ELF_SETTERS-SRCS			:=	$(addprefix $(ELF_SETTERS-DIR), $(ELF_SETTERS-SRC))
 
   CMN-SRC				:= 	overflow \
 
@@ -49,9 +56,7 @@ MAKEFLAGS				:=	--no-print-directory
   ELF_PACKER-SRC			:= elf_packer
   ELF_PACKER-SRCS				:=	$(addprefix $(ELF_PACKER-DIR), $(ELF_PACKER-SRC))
 
-  SRCS					:= $(PROGRAM-SRC) $(CMN-SRCS) $(ELF_PARSER-SRCS) $(ELF_PACKER-SRCS) $(COMPRESS-SRCS)
-
-
+    SRCS					:= $(PROGRAM-SRC) $(CMN-SRCS) $(ELF_PARSER-SRCS) $(ELF_PACKER-SRCS) $(COMPRESS-SRCS) $(ELF_SETTERS-SRCS)
 
   BUILD					:=	$(addsuffix .o, $(addprefix $(BUILD-DIR), $(SRCS)))
 
@@ -82,8 +87,8 @@ MAKEFLAGS				:=	--no-print-directory
 
   all: $(NAME)
 
-  $(LIB): $(LIB-DIR)
-	$(MAKE) -C $<
+  $(LIB): | $(LIB-DIR)
+	$(MAKE) -C $(LIB-DIR)
 
   $(NAME): $(BUILD) $(LIB)
 	$(CC) $(CFLAGS) -o $@ $(BUILD) $(LIB) $(LINKINGFLAGS)
@@ -111,4 +116,4 @@ MAKEFLAGS				:=	--no-print-directory
   print-%:
 	@$(info '$*'='$($*)')
 
-  .PHONY: $(NAME) all clean fclean re info-% print-%
+  .PHONY: all clean fclean re info-% print-%

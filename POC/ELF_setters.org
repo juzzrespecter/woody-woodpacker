@@ -1,0 +1,208 @@
+#+title: ELF_setters
+#+begin_src c :tangle "srcs/elf/setters/phdr.c" :mkdirp yes
+  #include "format_elf.h"
+
+  void elf_phdr_set_memsz(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+      if (class == ELFCLASS32)
+  	{
+  	    /* printf("phdr set memsz elf32\n"); */
+  	    phdr->elf32->p_memsz = (uint32_t) value;
+  	    return ;
+  	}
+      /* printf("phdr set memsz elf64\n"); */
+      phdr->elf64->p_memsz = value;
+  }
+
+  void elf_phdr_set_offset(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+      if (class == ELFCLASS32)
+  	{
+  	    /* printf("phdr set offset elf32\n"); */
+  	    phdr->elf32->p_offset = (uint32_t) value;
+  	    return ;
+  	}
+      /* printf("phdr set offset elf64\n"); */
+      phdr->elf64->p_offset = value;
+  }
+
+  void elf_phdr_set_vaddr(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+      if (class == ELFCLASS32)
+  	{
+  	    /* printf("phdr set vaddr elf32\n"); */
+  	    phdr->elf32->p_vaddr = (uint32_t) value;
+  	    return ;
+  	}
+      /* printf("phdr set vaddr elf64\n"); */
+      phdr->elf64->p_vaddr = value;
+  }
+
+  void elf_phdr_set_paddr(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+      if (class == ELFCLASS32)
+  	{
+  	    /* printf("phdr set paddr elf32\n"); */
+  	    phdr->elf32->p_paddr = (uint32_t) value;
+  	    return ;
+  	}
+      /* printf("phdr set paddr elf64\n"); */
+      phdr->elf64->p_paddr = value;
+  }
+
+  void elf_phdr_set_filesz(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+      if (class == ELFCLASS32)
+  	{
+  	    /* printf("phdr set addr elf32\n"); */
+  	    phdr->elf32->p_filesz = (uint32_t) value;
+  	    return ;
+  	}
+      /* printf("phdr set addr elf64\n"); */
+      phdr->elf64->p_filesz = value;
+  }
+
+  void elf_phdr_set_align(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+      if (class == ELFCLASS32)
+  	{
+  	    /* printf("phdr set addr elf32\n"); */
+  	    phdr->elf32->p_align = (uint32_t) value;
+  	    return ;
+  	}
+      /* printf("phdr set addr elf64\n"); */
+      phdr->elf64->p_align = value;
+  }
+
+  void elf_phdr_set_flags(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+      if (class == ELFCLASS32)
+  	{
+  	    /* printf("phdr set addr elf32\n"); */
+  	    phdr->elf32->p_flags = (uint32_t) value;
+  	    return ;
+  	}
+      /* printf("phdr set addr elf64\n"); */
+      phdr->elf64->p_flags = value;
+  }
+
+  void elf_phdr_set_type(t_elf_ph *phdr, uint64_t value, unsigned char class)
+  {
+      if (class == ELFCLASS32)
+  	{
+  	    /* printf("phdr set addr elf32\n"); */
+  	    phdr->elf32->p_type = (uint32_t) value;
+  	    return ;
+  	}
+      /* printf("phdr set addr elf64\n"); */
+      phdr->elf64->p_type = value;
+  }
+#+end_src
+
+#+begin_src c :tangle "include/elf_setters_phdr.h" :mkdirp yes
+  #ifndef ELF_SETTERS_PHDR_H
+  # define ELF_SETTERS_PHDR_H
+  # include "format_elf.h"//t_elf_ph
+
+  void elf_phdr_set_type(t_elf_ph *phdr, uint64_t value, unsigned char class);
+  void elf_phdr_set_flags(t_elf_ph *phdr, uint64_t value, unsigned char class);
+  void elf_phdr_set_align(t_elf_ph *phdr, uint64_t value, unsigned char class);
+  void elf_phdr_set_filesz(t_elf_ph *phdr, uint64_t value, unsigned char class);
+  void elf_phdr_set_paddr(t_elf_ph *phdr, uint64_t value, unsigned char class);
+  void elf_phdr_set_vaddr(t_elf_ph *phdr, uint64_t value, unsigned char class);
+  void elf_phdr_set_offset(t_elf_ph *phdr, uint64_t value, unsigned char class);
+  void elf_phdr_set_memsz(t_elf_ph *phdr, uint64_t value, unsigned char class);
+
+  #endif
+#+end_src
+
+#+begin_src c :tangle "include/elf_setters_ehdr.h" :mkdirp yes
+  # define ELF_SETTERS_EHDR_H
+  #ifndef ELF_SETTERS_EHDR_H
+  # include "format_elf.h"//t_elf_h
+
+  void elf_ehdr_set_shoff(t_elf_h *ehdr, uint64_t value, unsigned char class);
+  void elf_ehdr_set_shentsize(t_elf_h *ehdr, uint64_t value, unsigned char class);
+  void elf_ehdr_set_shstrndx(t_elf_h *ehdr, uint64_t value, unsigned char class);
+  void elf_ehdr_set_entry(t_elf_h *ehdr, uint64_t value, unsigned char class);
+  void elf_ehdr_set_phnum(t_elf_h *ehdr, uint64_t value, unsigned char class);
+  void elf_ehdr_set_shnum(t_elf_h *ehdr, uint64_t value, unsigned char class);
+  #endif
+#+end_src
+
+#+begin_src c :tangle "srcs/elf/setters/ehdr.c" :mkdirp yes
+  // begin setter ehdr
+  #include "format_elf.h"
+
+  void elf_ehdr_set_shoff(t_elf_h *ehdr, uint64_t value, unsigned char class)
+  {
+      if (class == ELFCLASS32)
+  	{
+  	    /* printf("ehdr set shoff elf32\n"); */
+  	    ehdr->elf32->e_shoff = (uint32_t) value;
+  	    return ;
+  	}
+      /* printf("ehdr set shoff elf64\n"); */
+      ehdr->elf64->e_shoff = value;
+  }
+
+  void elf_ehdr_set_shentsize(t_elf_h *ehdr, uint64_t value, unsigned char class)
+  {
+      if (class == ELFCLASS32)
+  	{
+  	    /* printf("ehdr set shoff elf32\n"); */
+  	    ehdr->elf32->e_shentsize = (uint32_t) value;
+  	    return ;
+  	}
+      /* printf("ehdr set shoff elf64\n"); */
+      ehdr->elf64->e_shentsize = value;
+  }
+
+  void elf_ehdr_set_shstrndx(t_elf_h *ehdr, uint64_t value, unsigned char class)
+  {
+      if (class == ELFCLASS32)
+  	{
+  	    /* printf("ehdr set shoff elf32\n"); */
+  	    ehdr->elf32->e_shstrndx = (uint32_t) value;
+  	    return ;
+  	}
+      /* printf("ehdr set shoff elf64\n"); */
+      ehdr->elf64->e_shstrndx = value;
+  }
+
+  void elf_ehdr_set_entry(t_elf_h *ehdr, uint64_t value, unsigned char class)
+  {
+      if (class == ELFCLASS32)
+  	{
+  	    /* printf("ehdr set entry elf32\n"); */
+  	    ehdr->elf32->e_entry = (uint32_t) value;
+  	    return ;
+  	}
+      /* printf("ehdr set entry elf64\n"); */
+      ehdr->elf64->e_entry = value;
+  }
+
+  void elf_ehdr_set_phnum(t_elf_h *ehdr, uint64_t value, unsigned char class)
+  {
+      if (class == ELFCLASS32)
+  	{
+  	    /* printf("ehdr set phnum elf32\n"); */
+  	    ehdr->elf32->e_phnum = (uint32_t) value;
+  	    return ;
+  	}
+      /* printf("ehdr set phnum elf64\n"); */
+      ehdr->elf64->e_phnum = value;
+  }
+
+  void elf_ehdr_set_shnum(t_elf_h *ehdr, uint64_t value, unsigned char class)
+  {
+      if (class == ELFCLASS32)
+  	{
+  	    /* printf("ehdr set shnum elf32\n"); */
+  	    ehdr->elf32->e_shnum = (uint32_t) value;
+  	    return ;
+  	}
+      /* printf("ehdr set shnum elf64\n"); */
+      ehdr->elf64->e_shnum = value;
+  }
+#+end_src
