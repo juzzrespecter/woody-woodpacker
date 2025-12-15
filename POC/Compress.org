@@ -1,0 +1,177 @@
+#+title: Compress
+#+startup: fold
+* Lz77
+#+begin_src c :tangle include/compress.h :mkdirp yes:
+  #ifndef COMPRESS_H
+  # define COMPRESS_H
+  # include "lst.h"    // t_list
+  # include <stddef.h> // size_t
+  # include <stdint.h> // uint16_t
+
+  typedef enum	e_compress_lz77
+    {
+      COMPRESS_LZ77_MIN_MATCH_LEN       = 3,
+      COMPRESS_LZ77_MAX_MATCH_LEN       = 17,
+      COMPRESS_LZ77_SLIDING_WINDOW_SIZE = 0x1000,
+      COMPRESS_LZ77_OFFSET_MAX_LIMIT    = 0x0FFF
+    }	t_compress_lz77;
+
+  typedef struct s_lz77
+  {
+    uint16_t distance_len;
+    unsigned char byte;
+  }	__attribute__((packed)) t_lz77;
+
+
+  unsigned char *lz77_get_compress_arr(t_list *lst, size_t *arr_size);
+  t_list *lz77_compress_to_list(const unsigned char *data, size_t data_len);
+
+  #endif
+#+end_src
+#+begin_src c :tangle srcs/compress/compress.c :mkdirp yes:
+  #include "compress.h"
+
+  t_list *lz77_compress_to_list(const unsigned char *data, size_t data_len) {
+      if (!data || data_len == 0) return NULL;
+
+      t_list *lst = NULL;
+      size_t i = 0;
+
+      while (i < data_len) {
+  	size_t best_offset = 0;
+  	size_t best_length = 0;
+
+  	// Define window start
+  	size_t window_start = (i > COMPRESS_LZ77_SLIDING_WINDOW_SIZE) ?
+  	    i - COMPRESS_LZ77_SLIDING_WINDOW_SIZE : 0;
+
+  	// Search for the longest match in sliding window
+  	for (size_t offset = 1; offset <= (i - window_start) && offset <= COMPRESS_LZ77_OFFSET_MAX_LIMIT; offset++) {
+  	    size_t match_length = 0;
+  	    size_t max_possible = (data_len - i > COMPRESS_LZ77_MAX_MATCH_LEN) ?
+  		COMPRESS_LZ77_MAX_MATCH_LEN : (data_len - i);
+
+  	    while (match_length < max_possible &&
+  		   data[i - offset + match_length] == data[i + match_length]) {
+  		match_length++;
+  	    }
+
+  	    if (match_length >= COMPRESS_LZ77_MIN_MATCH_LEN && match_length > best_length) {
+  		best_length = match_length;
+  		best_offset = offset;
+  	    }
+  	}
+
+  	// Allocate token
+  	t_lz77 *token = malloc(sizeof(t_lz77));
+  	if (!token) {
+  	    ft_lstclear(&lst, free);
+  	    return NULL;
+  	}
+  	token->distance_len = 0;
+  	token->byte = 0;
+
+  	if (best_length >= COMPRESS_LZ77_MIN_MATCH_LEN) {
+  	    // Valid match
+  	    if (best_offset > 0xFFF) {
+  		/* fprintf(stderr, "Offset %zu exceeds 12-bit limit\n", best_offset); */
+  		free(token);
+  		ft_lstclear(&lst, free);
+  		return NULL;
+  	    }
+  	    size_t token_len = best_length - 2;
+  	    token->distance_len = (uint16_t)((best_offset << 4) | (token_len & 0x0F));
+  	    token->byte = (i + best_length < data_len) ? data[i + best_length] : 0;
+  	    i += best_length + 1;
+  	} else {
+  	    token->distance_len = 0;
+  	    token->byte = data[i];
+  	    i += 1;
+  	}
+
+  	// Create list node
+  	t_list *node = ft_lstnew(token);
+  	if (!node) {
+  	    free(token);
+  	    ft_lstclear(&lst, free);
+  	    return NULL;
+  	}
+
+  	ft_lstadd_back(&lst, node);
+      }
+
+      return lst;
+  }
+
+  unsigned char *lz77_get_compress_arr(t_list *lst, size_t *arr_size)
+  {
+      ,*arr_size = ft_lstsize(lst) * 3;
+      unsigned char *str = malloc(*arr_size);
+      unsigned char *str_pos = str;
+      if (!str)
+  	return (str);
+      t_list *tmp = lst;
+      while (tmp)
+  	{
+  	    t_lz77 *token = (t_lz77 *)tmp->content;
+
+  	    uint16_t dist_len = token->distance_len;
+  	    str_pos[0] = dist_len & 0xFF;         // low byte
+  	    str_pos[1] = (dist_len >> 8) & 0xFF;  // high byte
+  	    str_pos[2] = token->byte;             // literal byte
+  	    str_pos += 3;
+  	    tmp = tmp->next;
+  	}
+      return ((void *)str);
+  }
+#+end_src
+
+#+begin_src c :tangle no
+   int lz77_decompress(const uint8_t* in, size_t in_size, uint8_t* out)
+   {
+       if (in_size <= 7 || out == NULL || in == NULL) {
+   	return -1;
+       }
+
+       uint64_t orig_size = *(const uint64_t*)in;
+       if (orig_size == 0) {
+   	return -1;
+       } */
+
+       const uint8_t* p = in + 11;  // Start at in+8, then advance 3 for first iteration
+       const uint8_t* in_end = in + in_size;
+       size_t pos = 0;
+
+       while (p <= in_end && pos < orig_size) {
+
+   	// Read token from [p-3, p-2]
+   	uint16_t token = *(const uint16_t*)(p - 3);
+   	uint8_t length = token & 0xF;
+   	uint16_t distance = token >> 4;
+
+   	if (length || distance || pos >= distance)
+   	    {
+   		// Copy match
+   		length += 2; // Adjust length
+
+   		// Ensure bounds
+   		if (pos + length > orig_size) {
+   		    length = orig_size - pos;
+   		}
+
+   		// Copy match data (handle overlapping case)
+   		size_t src = pos - distance;
+   		for (uint16_t i = 0; i < length; i++) {
+   		    out[pos + i] = out[src + i];
+   		}
+   		pos += length;
+   	    }
+   	// Add literal if space allows
+   	if (pos < orig_size) {
+   	    out[pos++] = *(p - 1);
+   	}
+   	p += 3;
+       }
+       return (pos == orig_size) ? 0 : -1;
+   }
+#+end_src

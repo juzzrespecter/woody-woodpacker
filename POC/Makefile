@@ -23,6 +23,7 @@ MAKEFLAGS				:=	--no-print-directory
   						valid_elfh \
   						valid_elf_h_2 \
 
+
   ELF_PARSER-DIR                         :=      elf/parser/
 
   ELF_PARSER-SRCS			:=	$(addprefix $(ELF_PARSER-DIR), $(ELF_PARSER-SRC))
@@ -37,14 +38,18 @@ MAKEFLAGS				:=	--no-print-directory
   						main\
   						signature_check\
 
-  #PROGRAM-DIR                            := ./
+  #PROGRAM-DIR                          := ./
 
-  #PROGRAM-SRCS				:=	$(addprefix $(PROGRAM-DIR), $(PROGRAM-SRC))
+  #PROGRAM-SRCS				:= $(addprefix $(PROGRAM-DIR), $(PROGRAM-SRC))
+  COMPRESS-DIR                          := compress/
+  COMPRESS-SRC			        := compress
+  COMPRESS-SRCS				:= $(addprefix $(COMPRESS-DIR), $(COMPRESS-SRC))
+
   ELF_PACKER-DIR                  := elf/packer/
   ELF_PACKER-SRC			:= elf_packer
   ELF_PACKER-SRCS				:=	$(addprefix $(ELF_PACKER-DIR), $(ELF_PACKER-SRC))
 
-  SRCS					:= $(PROGRAM-SRC) $(CMN-SRCS) $(ELF_PARSER-SRCS) $(ELF_PACKER-SRCS)
+  SRCS					:= $(PROGRAM-SRC) $(CMN-SRCS) $(ELF_PARSER-SRCS) $(ELF_PACKER-SRCS) $(COMPRESS-SRCS)
 
 
 

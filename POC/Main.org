@@ -24,7 +24,7 @@ global _start
 
         section .text
 
-_start: 
+_start:
         xor rdi, rdi    ; return code 0
         mov rax, 60     ; exit syscall
         syscall
@@ -43,7 +43,8 @@ _start:
   # include <fcntl.h> // open, close
   # include <stdio.h> // perror
   # include "format_elf.h" // elf
-  # include "libft.h" // elf
+  # include "compress.h" // lz77
+  # include "libft.h" // lists
 
   typedef enum e_return_errors
   {
@@ -155,13 +156,13 @@ Once fail or not the mmap we don't have any use to the fd, we close it for that 
 *** Detect the type of file between {ELF, PE}
 Solution Fast check Magic/Signature
 Cause:  ELF, PE and Mach O got Magic number/Signature
-   #+begin_src c :tangle include/woody.h 
+   #+begin_src c :tangle include/woody.h
      # define ELF_MAGIC ELFMAG
      /* # define MACH_O_32b_MAGIC "\xfe\xed\xfa\xce" */
      /* # define MACH_O_64b_MAGIC "\xfe\xed\xfa\xcf" */
      /* # define MACH_O_MAGIC_SIZE 4 */
-     # define DOS_SIGN "MZ" //  0x5A4D 
-     # define DOS_SIGN_SIZE 2 // 
+     # define DOS_SIGN "MZ" //  0x5A4D
+     # define DOS_SIGN_SIZE 2 //
      # define NT_HEADER_OFFSET 0x3C
      # define PE_SIGN "PE\x0\x0" // 0x50450000 is the signature on NT_HEADER
      # define PE_SIGN_SIZE 4
@@ -177,15 +178,9 @@ Cause:  ELF, PE and Mach O got Magic number/Signature
 
        typedef  union u_elf_addr
        {
-         Elf32_Addr b32;    
+         Elf32_Addr b32;
          Elf64_Addr b64;
        }	t_elf_addr;
-
-       typedef struct s_lz77
-       {
-         uint16_t distance_len;
-         unsigned char byte;
-       }	__attribute__((packed)) t_lz77;
 
        typedef struct s_list
        {
@@ -297,6 +292,6 @@ I just check the DOS Signature (Could happend that is a DOS file and not PE shou
   }
 #+end_src
 
-#+begin_src c :tangle include/woody.h 
+#+begin_src c :tangle include/woody.h
 # endif
 #+end_src

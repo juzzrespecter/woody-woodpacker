@@ -25,14 +25,14 @@
 - s1 + crypt_compress_s2 + elf_file
   - s1: get aslr, va, size s1, get fd of /proc/self/exe, mmap s2 RW-, decrypt, decompress in s2, mprotect s2, jmp s2.
   - s2: mmap with fd, close fd, munmap s1, load elf, load interp, set auxv, jmp s3, payload.
-  - s3: munmap s2, reset r/edx, jmp to entrypoint(interpe or elf).  if couldn't append to one phdr R-X of the elf file s2 create one. 
+  - s3: munmap s2, reset r/edx, jmp to entrypoint(interpe or elf).  if couldn't append to one phdr R-X of the elf file s2 create one.
 **  Not update AT_EXECFN (auxv)
-The dynamic linker needs the executable path for the AT_EXECFN entry in the auxiliary vector: 
+The dynamic linker needs the executable path for the AT_EXECFN entry in the auxiliary vector:
     This entry must contain the full path to the executable
     Without it, certain runtime behaviors would fail
    Without preserving the path first, UPX would have no way to set up AT_EXECFN correctly.
-The /proc/self/exe Limitation 
-Special virtual file that: 
+The /proc/self/exe Limitation
+Special virtual file that:
     Is only available while the executable is mapped in memory
     Disappears if all mappings of the executable are removed
     Cannot be used after complete unmapping
@@ -45,7 +45,7 @@ PIE == ~Elfh_type == ET_DYN~
 NOPIE = ~Elfh_type == ET_EXEC~
 ** SElinux
 Don't allow to got a mmap with Write and exec. First write then mprotect Read|EXEC
-* Working on it 
+* Working on it
 ** TODO Doesn't work with interp in 42 campus
 * Packer
 #+begin_src c :tangle srcs/elf/packer/elf_packer.c :mkdirp yes
@@ -59,274 +59,173 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   #include <sys/mman.h>
   #include <stdlib.h> //Malloc
 
-  /* t_list	*ft_lstnew(void *content) */
+  /* unsigned char *lz77_get_compress_arr(t_list *lst, size_t *arr_size) */
   /* { */
-  /*       t_list	*node; */
+  /*     *arr_size = ft_lstsize(lst) * 3; */
+  /*     unsigned char *str = malloc(*arr_size); */
+  /*     unsigned char *str_pos = str; */
+  /*     if (!str) */
+  /* 	return (str); */
+  /*     t_list *tmp = lst; */
+  /*     while (tmp) */
+  /* 	{ */
+  /* 	    t_lz77 *token = (t_lz77 *)tmp->content; */
 
-  /*       node = malloc(sizeof(t_list)); */
-  /*       if (!node) */
-  /*               return (NULL); */
-  /*       node->content = content; */
-  /*       node->next = NULL; */
-  /*       return (node); */
+  /* 	    uint16_t dist_len = token->distance_len; */
+  /* 	    str_pos[0] = dist_len & 0xFF;         // low byte */
+  /* 	    str_pos[1] = (dist_len >> 8) & 0xFF;  // high byte */
+  /* 	    str_pos[2] = token->byte;             // literal byte */
+  /* 	    str_pos += 3; */
+  /* 	    tmp = tmp->next; */
+  /* 	} */
+  /*     return ((void *)str); */
   /* } */
 
-  /* void	ft_lstdelone(t_list *lst, void (*del)(void *)) */
-  /* { */
-  /*       if (!lst || !del) */
-  /*               return ; */
-  /*       del(lst->content); */
-  /*       free(lst); */
+  /* /\* #include "libft.h" // Assuming ft_lst functions are here *\/ */
+
+  /* // Assuming these constants are defined somewhere */
+  /* #ifndef COMPRESS_LZ77_SLIDING_WINDOW_SIZE */
+  /* # define COMPRESS_LZ77_SLIDING_WINDOW_SIZE 4096 */
+  /* #endif */
+  /* #ifndef COMPRESS_LZ77_MAX_MATCH_LEN */
+  /* # define COMPRESS_LZ77_MAX_MATCH_LEN 17 */
+  /* #endif */
+  /* #ifndef COMPRESS_LZ77_MIN_MATCH_LEN */
+  /* # define COMPRESS_LZ77_MIN_MATCH_LEN 3 */
+  /* #endif */
+  /* // Constants */
+  /* #ifndef COMPRESS_LZ77_SLIDING_WINDOW_SIZE */
+  /* # define COMPRESS_LZ77_SLIDING_WINDOW_SIZE 0x1000 */
+  /* #endif */
+  /* #ifndef COMPRESS_LZ77_MAX_MATCH_LEN */
+  /* # define COMPRESS_LZ77_MAX_MATCH_LEN 17 */
+  /* #endif */
+  /* #ifndef COMPRESS_LZ77_MIN_MATCH_LEN */
+  /* # define COMPRESS_LZ77_MIN_MATCH_LEN 3 */
+  /* #endif */
+  /* #ifndef COMPRESS_LZ77_OFFSET_MAX_LIMIT */
+  /* # define COMPRESS_LZ77_OFFSET_MAX_LIMIT 0xFFF */
+  /* #endif */
+
+
+  /* /\** */
+  /*  * @brief Compresses data using LZ77 algorithm and returns a list of t_lz77 tokens. */
+  /*  * */
+  /*  * @param data Input data to compress */
+  /*  * @param data_len Length of input data */
+  /*  * @return t_list* Head of the list containing t_lz77 tokens, or NULL on error */
+  /*  *\/ */
+
+  /* t_list *lz77_compress_to_list(const unsigned char *data, size_t data_len) { */
+  /*     if (!data || data_len == 0) return NULL; */
+  /*     t_list *lst = NULL; */
+  /*     size_t i = 0; */
+  /*     while (i < data_len) { */
+  /* 	size_t best_offset = 0; */
+  /* 	size_t best_length = 0; */
+  /* 	// Define window start */
+  /* 	size_t window_start = (i > COMPRESS_LZ77_SLIDING_WINDOW_SIZE) ? */
+  /* 	    i - COMPRESS_LZ77_SLIDING_WINDOW_SIZE : 0; */
+  /* 	// Search for the longest match in sliding window */
+  /* 	for (size_t offset = 1; offset <= (i - window_start) && offset <= COMPRESS_LZ77_OFFSET_MAX_LIMIT; offset++) { */
+  /* 	    size_t match_length = 0; */
+  /* 	    size_t max_possible = (data_len - i > COMPRESS_LZ77_MAX_MATCH_LEN) ? */
+  /* 		COMPRESS_LZ77_MAX_MATCH_LEN : (data_len - i); */
+  /* 	    while (match_length < max_possible && */
+  /* 		   data[i - offset + match_length] == data[i + match_length]) { */
+  /* 		match_length++; */
+  /* 	    } */
+  /* 	    if (match_length >= COMPRESS_LZ77_MIN_MATCH_LEN && match_length > best_length) { */
+  /* 		best_length = match_length; */
+  /* 		best_offset = offset; */
+  /* 	    } */
+  /* 	} */
+  /* 	// Allocate token */
+  /* 	t_lz77 *token = malloc(sizeof(t_lz77)); */
+  /* 	if (!token) { */
+  /* 	    ft_lstclear(&lst, free); */
+  /* 	    return NULL; */
+  /* 	} */
+  /* 	token->distance_len = 0; */
+  /* 	token->byte = 0; */
+
+  /* 	if (best_length >= COMPRESS_LZ77_MIN_MATCH_LEN) { */
+  /* 	    // Valid match */
+  /* 	    if (best_offset > 0xFFF) { */
+  /* 		/\* fprintf(stderr, "Offset %zu exceeds 12-bit limit\n", best_offset); *\/ */
+  /* 		free(token); */
+  /* 		ft_lstclear(&lst, free); */
+  /* 		return NULL; */
+  /* 	    } */
+  /* 	    size_t token_len = best_length - 2; */
+  /* 	    token->distance_len = (uint16_t)((best_offset << 4) | (token_len & 0x0F)); */
+  /* 	    token->byte = (i + best_length < data_len) ? data[i + best_length] : 0; */
+  /* 	    i += best_length + 1; */
+  /* 	} else { */
+  /* 	    token->distance_len = 0; */
+  /* 	    token->byte = data[i]; */
+  /* 	    i += 1; */
+  /* 	} */
+  /* 	// Create list node */
+  /* 	t_list *node = ft_lstnew(token); */
+  /* 	if (!node) { */
+  /* 	    free(token); */
+  /* 	    ft_lstclear(&lst, free); */
+  /* 	    return NULL; */
+  /* 	} */
+  /* 	ft_lstadd_back(&lst, node); */
+  /*     } */
+  /*     return lst; */
   /* } */
 
-  /* void	ft_lstclear(t_list **lst, void (*del)(void *)) */
+
+  /* int lz77_decompress(const uint8_t* in, size_t in_size, uint8_t* out) */
   /* { */
-  /*       t_list	*node; */
-  /*       t_list	*tmp; */
+  /*     if (in_size <= 7 || out == NULL || in == NULL) { */
+  /* 	return -1; */
+  /*     } */
 
-  /*       if (!lst || !*lst) */
-  /*               return ; */
-  /*       node = *lst; */
-  /*       while (node) */
-  /*       { */
-  /*               tmp = node->next; */
-  /*               ft_lstdelone(node, del); */
-  /*               node = tmp; */
-  /*       } */
-  /*       *lst = NULL; */
+  /*     uint64_t orig_size = *(const uint64_t*)in; */
+  /*     if (orig_size == 0) { */
+  /* 	return -1; */
+  /*     } */
+
+  /*     const uint8_t* p = in + 11;  // Start at in+8, then advance 3 for first iteration */
+  /*     const uint8_t* in_end = in + in_size; */
+  /*     size_t pos = 0; */
+
+  /*     while (p <= in_end && pos < orig_size) { */
+
+  /* 	// Read token from [p-3, p-2] */
+  /* 	uint16_t token = *(const uint16_t*)(p - 3); */
+  /* 	uint8_t length = token & 0xF; */
+  /* 	uint16_t distance = token >> 4; */
+
+  /* 	if (length || distance || pos >= distance) */
+  /* 	    { */
+  /* 		// Copy match */
+  /* 		length += 2; // Adjust length */
+
+  /* 		// Ensure bounds */
+  /* 		if (pos + length > orig_size) { */
+  /* 		    length = orig_size - pos; */
+  /* 		} */
+
+  /* 		// Copy match data (handle overlapping case) */
+  /* 		size_t src = pos - distance; */
+  /* 		for (uint16_t i = 0; i < length; i++) { */
+  /* 		    out[pos + i] = out[src + i]; */
+  /* 		} */
+  /* 		pos += length; */
+  /* 	    } */
+  /* 	// Add literal if space allows */
+  /* 	if (pos < orig_size) { */
+  /* 	    out[pos++] = *(p - 1); */
+  /* 	} */
+  /* 	p += 3; */
+  /*     } */
+  /*     return (pos == orig_size) ? 0 : -1; */
   /* } */
-
-  /* t_list	*ft_lstlast(t_list *lst) */
-  /* { */
-  /*       if (!lst) */
-  /*               return (NULL); */
-  /*       while (lst->next) */
-  /*               lst = lst->next; */
-  /*       return (lst); */
-  /* } */
-
-  /* void	ft_lstadd_back(t_list **lst, t_list *new) */
-  /* { */
-  /*       t_list	*lst_last; */
-
-  /*       if (!new || !lst) */
-  /*               return ; */
-  /*       if (*lst == NULL) */
-  /*               *lst = new; */
-  /*       else */
-  /*       { */
-  /*               lst_last = ft_lstlast(*lst); */
-  /*               lst_last->next = new; */
-  /*       } */
-  /* } */
-
-  /* void	ft_lstiter(t_list *lst, void (*f)(void *)) */
-  /* { */
-  /*       t_list	*node; */
-
-  /*       if (!lst) */
-  /*               return ; */
-  /*       node = lst; */
-  /*       while (node) */
-  /*       { */
-  /*               f(node->content); */
-  /*               node = node->next; */
-  /*       } */
-  /* } */
-
-  /* int	ft_lstsize(t_list *lst) */
-  /* { */
-  /*       int	lst_num; */
-
-  /*       if (!(size_t)lst) */
-  /*               return (0); */
-  /*       lst_num = 1; */
-  /*       while (lst->next) */
-  /*       { */
-  /*               lst_num++; */
-  /*               lst = lst->next; */
-  /*       } */
-  /*       return (lst_num); */
-  /* } */
-
-  unsigned char *lz77_get_compress_arr(t_list *lst, size_t *arr_size)
-  {
-      ,*arr_size = ft_lstsize(lst) * 3;
-      unsigned char *str = malloc(*arr_size);
-      unsigned char *str_pos = str;
-      if (!str)
-  	return (str);
-
-      t_list *tmp = lst;
-      while (tmp)
-  	{
-  	    t_lz77 *token = (t_lz77 *)tmp->content;
-
-  	    uint16_t dist_len = token->distance_len;
-  	    str_pos[0] = dist_len & 0xFF;         // low byte
-  	    str_pos[1] = (dist_len >> 8) & 0xFF;  // high byte  
-  	    str_pos[2] = token->byte;             // literal byte
-  	    str_pos += 3;
-  	    tmp = tmp->next;
-  	}
-      return ((void *)str);
-  }
-
-  /* #include "libft.h" // Assuming ft_lst functions are here */
-
-  // Assuming these constants are defined somewhere
-  #ifndef COMPRESS_LZ77_SLIDING_WINDOW_SIZE
-  # define COMPRESS_LZ77_SLIDING_WINDOW_SIZE 4096
-  #endif
-  #ifndef COMPRESS_LZ77_MAX_MATCH_LEN
-  # define COMPRESS_LZ77_MAX_MATCH_LEN 17
-  #endif
-  #ifndef COMPRESS_LZ77_MIN_MATCH_LEN
-  # define COMPRESS_LZ77_MIN_MATCH_LEN 3
-  #endif
-  // Constants
-  #ifndef COMPRESS_LZ77_SLIDING_WINDOW_SIZE
-  # define COMPRESS_LZ77_SLIDING_WINDOW_SIZE 0x1000
-  #endif
-  #ifndef COMPRESS_LZ77_MAX_MATCH_LEN
-  # define COMPRESS_LZ77_MAX_MATCH_LEN 17
-  #endif
-  #ifndef COMPRESS_LZ77_MIN_MATCH_LEN
-  # define COMPRESS_LZ77_MIN_MATCH_LEN 3
-  #endif
-  #ifndef COMPRESS_LZ77_OFFSET_MAX_LIMIT
-  # define COMPRESS_LZ77_OFFSET_MAX_LIMIT 0xFFF
-  #endif
-
-
-  /**
-   ,* @brief Compresses data using LZ77 algorithm and returns a list of t_lz77 tokens.
-   ,*
-   ,* @param data Input data to compress
-   ,* @param data_len Length of input data
-   ,* @return t_list* Head of the list containing t_lz77 tokens, or NULL on error
-   ,*/
-
-  t_list *lz77_compress_to_list(const unsigned char *data, size_t data_len) {
-      if (!data || data_len == 0) return NULL;
-
-      t_list *lst = NULL;
-      size_t i = 0;
-
-      while (i < data_len) {
-  	size_t best_offset = 0;
-  	size_t best_length = 0;
-
-  	// Define window start
-  	size_t window_start = (i > COMPRESS_LZ77_SLIDING_WINDOW_SIZE) ?
-  	    i - COMPRESS_LZ77_SLIDING_WINDOW_SIZE : 0;
-
-  	// Search for the longest match in sliding window
-  	for (size_t offset = 1; offset <= (i - window_start) && offset <= COMPRESS_LZ77_OFFSET_MAX_LIMIT; offset++) {
-  	    size_t match_length = 0;
-  	    size_t max_possible = (data_len - i > COMPRESS_LZ77_MAX_MATCH_LEN) ?
-  		COMPRESS_LZ77_MAX_MATCH_LEN : (data_len - i);
-
-  	    while (match_length < max_possible && 
-  		   data[i - offset + match_length] == data[i + match_length]) {
-  		match_length++;
-  	    }
-
-  	    if (match_length >= COMPRESS_LZ77_MIN_MATCH_LEN && match_length > best_length) {
-  		best_length = match_length;
-  		best_offset = offset;
-  	    }
-  	}
-
-  	// Allocate token
-  	t_lz77 *token = malloc(sizeof(t_lz77));
-  	if (!token) {
-  	    ft_lstclear(&lst, free);
-  	    return NULL;
-  	}
-  	token->distance_len = 0;
-  	token->byte = 0;
-
-  	if (best_length >= COMPRESS_LZ77_MIN_MATCH_LEN) {
-  	    // Valid match
-  	    if (best_offset > 0xFFF) {
-  		/* fprintf(stderr, "Offset %zu exceeds 12-bit limit\n", best_offset); */
-  		free(token);
-  		ft_lstclear(&lst, free);
-  		return NULL;
-  	    }
-  	    size_t token_len = best_length - 2;
-  	    token->distance_len = (uint16_t)((best_offset << 4) | (token_len & 0x0F));
-  	    token->byte = (i + best_length < data_len) ? data[i + best_length] : 0;
-  	    i += best_length + 1;
-  	} else {
-  	    token->distance_len = 0;
-  	    token->byte = data[i];
-  	    i += 1;
-  	}
-
-  	// Create list node
-  	t_list *node = ft_lstnew(token);
-  	if (!node) {
-  	    free(token);
-  	    ft_lstclear(&lst, free);
-  	    return NULL;
-  	}
-
-  	ft_lstadd_back(&lst, node);
-      }
-
-      return lst;
-  }
-
-
-  int lz77_decompress(const uint8_t* in, size_t in_size, uint8_t* out)
-  {
-      if (in_size <= 7 || out == NULL || in == NULL) {
-  	return -1;
-      }
-
-      uint64_t orig_size = *(const uint64_t*)in;
-      if (orig_size == 0) {
-  	return -1;
-      }
-
-      const uint8_t* p = in + 11;  // Start at in+8, then advance 3 for first iteration
-      const uint8_t* in_end = in + in_size;
-      size_t pos = 0;
-
-      while (p <= in_end && pos < orig_size) {
-
-  	// Read token from [p-3, p-2] 
-  	uint16_t token = *(const uint16_t*)(p - 3);
-  	uint8_t length = token & 0xF;
-  	uint16_t distance = token >> 4;
-
-  	if (length || distance || pos >= distance)
-  	    {
-  		// Copy match
-  		length += 2; // Adjust length
-
-  		// Ensure bounds
-  		if (pos + length > orig_size) {
-  		    length = orig_size - pos;
-  		}
-
-  		// Copy match data (handle overlapping case)
-  		size_t src = pos - distance;
-  		for (uint16_t i = 0; i < length; i++) {
-  		    out[pos + i] = out[src + i];
-  		}
-  		pos += length;
-  	    }
-  	// Add literal if space allows
-  	if (pos < orig_size) {
-  	    out[pos++] = *(p - 1);
-  	}
-  	p += 3;
-      }
-      return (pos == orig_size) ? 0 : -1;
-  }
 
 
   uint64_t get_alignment_effective_addr(uint64_t alignment, uint64_t size)
@@ -340,17 +239,17 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   /* } */
 
   // Maybe paranoia
-  bool is_little_endian_the_cpu(void)
-  {
-      uint32_t num = 1;
+  /* bool is_little_endian_the_cpu(void) */
+  /* { */
+  /*     uint32_t num = 1; */
 
-      return (*(uint8_t *)&num == 1);
-  }
+  /*     return (*(uint8_t *)&num == 1); */
+  /* } */
 
-  // Begin setter eh/ph/sh
+  // Begin setters elf ph
   void elf_phdr_set_memsz(t_elf_ph *phdr, uint64_t value, unsigned char class)
   {
-      if (class == ELFCLASS32) 
+      if (class == ELFCLASS32)
   	{
   	    /* printf("phdr set memsz elf32\n"); */
   	    phdr->elf32->p_memsz = (uint32_t) value;
@@ -362,7 +261,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
   void elf_phdr_set_offset(t_elf_ph *phdr, uint64_t value, unsigned char class)
   {
-      if (class == ELFCLASS32) 
+      if (class == ELFCLASS32)
   	{
   	    /* printf("phdr set offset elf32\n"); */
   	    phdr->elf32->p_offset = (uint32_t) value;
@@ -374,7 +273,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
   void elf_phdr_set_vaddr(t_elf_ph *phdr, uint64_t value, unsigned char class)
   {
-      if (class == ELFCLASS32) 
+      if (class == ELFCLASS32)
   	{
   	    /* printf("phdr set vaddr elf32\n"); */
   	    phdr->elf32->p_vaddr = (uint32_t) value;
@@ -386,7 +285,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
   void elf_phdr_set_paddr(t_elf_ph *phdr, uint64_t value, unsigned char class)
   {
-      if (class == ELFCLASS32) 
+      if (class == ELFCLASS32)
   	{
   	    /* printf("phdr set paddr elf32\n"); */
   	    phdr->elf32->p_paddr = (uint32_t) value;
@@ -398,7 +297,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
   void elf_phdr_set_filesz(t_elf_ph *phdr, uint64_t value, unsigned char class)
   {
-      if (class == ELFCLASS32) 
+      if (class == ELFCLASS32)
   	{
   	    /* printf("phdr set addr elf32\n"); */
   	    phdr->elf32->p_filesz = (uint32_t) value;
@@ -410,7 +309,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
   void elf_phdr_set_align(t_elf_ph *phdr, uint64_t value, unsigned char class)
   {
-      if (class == ELFCLASS32) 
+      if (class == ELFCLASS32)
   	{
   	    /* printf("phdr set addr elf32\n"); */
   	    phdr->elf32->p_align = (uint32_t) value;
@@ -423,7 +322,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
   void elf_phdr_set_flags(t_elf_ph *phdr, uint64_t value, unsigned char class)
   {
-      if (class == ELFCLASS32) 
+      if (class == ELFCLASS32)
   	{
   	    /* printf("phdr set addr elf32\n"); */
   	    phdr->elf32->p_flags = (uint32_t) value;
@@ -435,7 +334,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
   void elf_phdr_set_type(t_elf_ph *phdr, uint64_t value, unsigned char class)
   {
-      if (class == ELFCLASS32) 
+      if (class == ELFCLASS32)
   	{
   	    /* printf("phdr set addr elf32\n"); */
   	    phdr->elf32->p_type = (uint32_t) value;
@@ -445,9 +344,10 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       phdr->elf64->p_type = value;
   }
 
+  // begin setter ehdr
   void elf_ehdr_set_shoff(t_elf_h *ehdr, uint64_t value, unsigned char class)
   {
-      if (class == ELFCLASS32) 
+      if (class == ELFCLASS32)
   	{
   	    /* printf("ehdr set shoff elf32\n"); */
   	    ehdr->elf32->e_shoff = (uint32_t) value;
@@ -459,7 +359,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
   void elf_ehdr_set_shentsize(t_elf_h *ehdr, uint64_t value, unsigned char class)
   {
-      if (class == ELFCLASS32) 
+      if (class == ELFCLASS32)
   	{
   	    /* printf("ehdr set shoff elf32\n"); */
   	    ehdr->elf32->e_shentsize = (uint32_t) value;
@@ -471,7 +371,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
   void elf_ehdr_set_shstrndx(t_elf_h *ehdr, uint64_t value, unsigned char class)
   {
-      if (class == ELFCLASS32) 
+      if (class == ELFCLASS32)
   	{
   	    /* printf("ehdr set shoff elf32\n"); */
   	    ehdr->elf32->e_shstrndx = (uint32_t) value;
@@ -483,7 +383,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
   void elf_ehdr_set_entry(t_elf_h *ehdr, uint64_t value, unsigned char class)
   {
-      if (class == ELFCLASS32) 
+      if (class == ELFCLASS32)
   	{
   	    /* printf("ehdr set entry elf32\n"); */
   	    ehdr->elf32->e_entry = (uint32_t) value;
@@ -495,7 +395,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
   void elf_ehdr_set_phnum(t_elf_h *ehdr, uint64_t value, unsigned char class)
   {
-      if (class == ELFCLASS32) 
+      if (class == ELFCLASS32)
   	{
   	    /* printf("ehdr set phnum elf32\n"); */
   	    ehdr->elf32->e_phnum = (uint32_t) value;
@@ -507,7 +407,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
   void elf_ehdr_set_shnum(t_elf_h *ehdr, uint64_t value, unsigned char class)
   {
-      if (class == ELFCLASS32) 
+      if (class == ELFCLASS32)
   	{
   	    /* printf("ehdr set shnum elf32\n"); */
   	    ehdr->elf32->e_shnum = (uint32_t) value;
@@ -524,7 +424,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       uint64_t p_vaddr;
 
       i = 0;
-      while (i < phnum) 
+      while (i < phnum)
   	{
   	    phdr = elf_get_program_header(ehdr, i);
   	    p_vaddr = elf_get_program_header_vaddr(&phdr, class);
@@ -645,507 +545,507 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return (get_alignment_effective_addr(0x1000, elf_get_highest_used_vaddr_avalaible(ehdr, class, phnum)));
   }
 
-  off_t get_je_size(void)
-  {
-      return (6);//3 plus address
-  }
+  /* off_t get_je_size(void) */
+  /* { */
+  /*     return (6);//3 plus address */
+  /* } */
 
-  off_t get_js_size(void)
-  {
-      return (6);//2 plus address
-  }
+  /* off_t get_js_size(void) */
+  /* { */
+  /*     return (6);//2 plus address */
+  /* } */
 
 
 
-  //Begin dynamic Bytecode
-  size_t ft_je(unsigned char *dst, size_t distance)
-  {
-      t_type hop = (t_type){.b8 = distance};
-      size_t written;
+  /* //Begin dynamic Bytecode */
+  /* size_t ft_je(unsigned char *dst, size_t distance) */
+  /* { */
+  /*     t_type hop = (t_type){.b8 = distance}; */
+  /*     size_t written; */
 
-      written = 0;
-      ft_memcpy(dst + written, "\x0f\x84", 2);
-      written += 2;
-      ft_memcpy(dst + written, &hop.b4, sizeof(hop.b4));
-      return (written + sizeof(hop.b4));
-  }
+  /*     written = 0; */
+  /*     ft_memcpy(dst + written, "\x0f\x84", 2); */
+  /*     written += 2; */
+  /*     ft_memcpy(dst + written, &hop.b4, sizeof(hop.b4)); */
+  /*     return (written + sizeof(hop.b4)); */
+  /* } */
 
-  size_t ft_js(unsigned char *dst, size_t distance)
-  {
-      t_type hop = (t_type){.b8 = distance};
-      size_t written;
+  /* size_t ft_js(unsigned char *dst, size_t distance) */
+  /* { */
+  /*     t_type hop = (t_type){.b8 = distance}; */
+  /*     size_t written; */
 
-      written = 0;
-      ft_memcpy(dst + written, "\x0f\x88", 2);
-      written += 2;
-      ft_memcpy(dst + written, &hop.b4, sizeof(hop.b4));
-      return (written + sizeof(hop.b4));
-  }
+  /*     written = 0; */
+  /*     ft_memcpy(dst + written, "\x0f\x88", 2); */
+  /*     written += 2; */
+  /*     ft_memcpy(dst + written, &hop.b4, sizeof(hop.b4)); */
+  /*     return (written + sizeof(hop.b4)); */
+  /* } */
 
-  size_t ft_mov_asm_rsp(void *dst, size_t offset, size_t value) //mov the dst pointer to not overwrite.
-  {
-      size_t	written;
-      const t_type	type = (t_type){.b8 = value};
-      const t_type	off = (t_type){.b8 = offset};
+  /* size_t ft_mov_asm_rsp(void *dst, size_t offset, size_t value) //mov the dst pointer to not overwrite. */
+  /* { */
+  /*     size_t	written; */
+  /*     const t_type	type = (t_type){.b8 = value}; */
+  /*     const t_type	off = (t_type){.b8 = offset}; */
 
-      written = 0;
-      if (dst)
-  	ft_memcpy(dst, "\xc6", 1);
-      written++;
-      if (!off.b8)
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, "\x04", 1);
-  	}
-      else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) // if offset and byte syze
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, "\x44", 1);
-  	}
-      else // if offset and > byte size
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, "\x84", 1);
-  	}
-      written++;
-      if (dst)
-  	ft_memcpy(dst + written, "\x24", 1);
-      written++;
-      if (off.b8)
-  	{
-  	    /* if (dst) */
-  	    /* printf("off -> b value %u, b4 value %u, b8 value %lu\n", (uint32_t)off.b, off.b4, off.b8); */
-  	    if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
-  		{
-  		    if (dst)
-  			ft_memcpy(dst + written, &off.b, sizeof (off.b)); 
-  		    written += sizeof (off.b);
-  		}
-  	    else if ((uint64_t)off.b4 == off.b8 && off.b4 < 0x80000000)
-  		{
-  		    if (dst)
-  			ft_memcpy(dst + written, &off.b4, sizeof (off.b4)); 
-  		    written += sizeof (off.b4);
-  		}
-  	    else
-  		{
-  		    if (dst)
-  			ft_memcpy(dst + written, &off.b8, sizeof (off.b8)); 
-  		    written += sizeof (off.b8);
-  		}
-  	}
-      if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8)
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, &type.b, sizeof (type.b));
-  	    written += sizeof (type.b);
-  	}
-      else if ((uint64_t)type.b4 == type.b8 && type.b4)
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, &type.b4, sizeof (type.b4));
-  	    written += sizeof (type.b4);
-  	}
-      else
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, &type.b8, sizeof (type.b8));
-  	    written += sizeof (type.b8);
-  	}
-      return (written);
-  }
+  /*     written = 0; */
+  /*     if (dst) */
+  /* 	ft_memcpy(dst, "\xc6", 1); */
+  /*     written++; */
+  /*     if (!off.b8) */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, "\x04", 1); */
+  /* 	} */
+  /*     else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) // if offset and byte syze */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, "\x44", 1); */
+  /* 	} */
+  /*     else // if offset and > byte size */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, "\x84", 1); */
+  /* 	} */
+  /*     written++; */
+  /*     if (dst) */
+  /* 	ft_memcpy(dst + written, "\x24", 1); */
+  /*     written++; */
+  /*     if (off.b8) */
+  /* 	{ */
+  /* 	    /\* if (dst) *\/ */
+  /* 	    /\* printf("off -> b value %u, b4 value %u, b8 value %lu\n", (uint32_t)off.b, off.b4, off.b8); *\/ */
+  /* 	    if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) */
+  /* 		{ */
+  /* 		    if (dst) */
+  /* 			ft_memcpy(dst + written, &off.b, sizeof (off.b)); */
+  /* 		    written += sizeof (off.b); */
+  /* 		} */
+  /* 	    else if ((uint64_t)off.b4 == off.b8 && off.b4 < 0x80000000) */
+  /* 		{ */
+  /* 		    if (dst) */
+  /* 			ft_memcpy(dst + written, &off.b4, sizeof (off.b4)); */
+  /* 		    written += sizeof (off.b4); */
+  /* 		} */
+  /* 	    else */
+  /* 		{ */
+  /* 		    if (dst) */
+  /* 			ft_memcpy(dst + written, &off.b8, sizeof (off.b8)); */
+  /* 		    written += sizeof (off.b8); */
+  /* 		} */
+  /* 	} */
+  /*     if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8) */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, &type.b, sizeof (type.b)); */
+  /* 	    written += sizeof (type.b); */
+  /* 	} */
+  /*     else if ((uint64_t)type.b4 == type.b8 && type.b4) */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, &type.b4, sizeof (type.b4)); */
+  /* 	    written += sizeof (type.b4); */
+  /* 	} */
+  /*     else */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, &type.b8, sizeof (type.b8)); */
+  /* 	    written += sizeof (type.b8); */
+  /* 	} */
+  /*     return (written); */
+  /* } */
 
-  size_t ft_mov_cl_from_rsp(void *dst, size_t offset) //mov the dst pointer to not overwrite.
-  {
-      size_t	written;
-      const t_type	off = (t_type){.b8 = offset};
+  /* size_t ft_mov_cl_from_rsp(void *dst, size_t offset) //mov the dst pointer to not overwrite. */
+  /* { */
+  /*     size_t	written; */
+  /*     const t_type	off = (t_type){.b8 = offset}; */
 
-      written = 0;
-      if (dst)
-  	ft_memcpy(dst, "\x8a", 1);
-      written++;
-      if (!off.b8)
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, "\x0c", 1);
-  	}
-      else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) // if offset and byte syze
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, "\x4c", 1);
-  	}
-      else // if offset and > byte size
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, "\x8c", 1);
-  	}
-      written++;
-      if (dst)
-  	ft_memcpy(dst + written, "\x24", 1);
-      written++;
-      if (off.b8)
-  	{
-  	    /* if (dst) */
-  	    /* printf("off -> b value %u, b4 value %u, b8 value %lu\n", (uint32_t)off.b, off.b4, off.b8); */
-  	    if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
-  		{
-  		    if (dst)
-  			ft_memcpy(dst + written, &off.b, sizeof (off.b)); 
-  		    written += sizeof (off.b);
-  		}
-  	    else if ((uint64_t)off.b4 == off.b8 && off.b4 < 0x80000000)
-  		{
-  		    if (dst)
-  			ft_memcpy(dst + written, &off.b4, sizeof (off.b4)); 
-  		    written += sizeof (off.b4);
-  		}
-  	    else
-  		{
-  		    if (dst)
-  			ft_memcpy(dst + written, &off.b8, sizeof (off.b8)); 
-  		    written += sizeof (off.b8);
-  		}
+  /*     written = 0; */
+  /*     if (dst) */
+  /* 	ft_memcpy(dst, "\x8a", 1); */
+  /*     written++; */
+  /*     if (!off.b8) */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, "\x0c", 1); */
+  /* 	} */
+  /*     else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) // if offset and byte syze */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, "\x4c", 1); */
+  /* 	} */
+  /*     else // if offset and > byte size */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, "\x8c", 1); */
+  /* 	} */
+  /*     written++; */
+  /*     if (dst) */
+  /* 	ft_memcpy(dst + written, "\x24", 1); */
+  /*     written++; */
+  /*     if (off.b8) */
+  /* 	{ */
+  /* 	    /\* if (dst) *\/ */
+  /* 	    /\* printf("off -> b value %u, b4 value %u, b8 value %lu\n", (uint32_t)off.b, off.b4, off.b8); *\/ */
+  /* 	    if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) */
+  /* 		{ */
+  /* 		    if (dst) */
+  /* 			ft_memcpy(dst + written, &off.b, sizeof (off.b)); */
+  /* 		    written += sizeof (off.b); */
+  /* 		} */
+  /* 	    else if ((uint64_t)off.b4 == off.b8 && off.b4 < 0x80000000) */
+  /* 		{ */
+  /* 		    if (dst) */
+  /* 			ft_memcpy(dst + written, &off.b4, sizeof (off.b4)); */
+  /* 		    written += sizeof (off.b4); */
+  /* 		} */
+  /* 	    else */
+  /* 		{ */
+  /* 		    if (dst) */
+  /* 			ft_memcpy(dst + written, &off.b8, sizeof (off.b8)); */
+  /* 		    written += sizeof (off.b8); */
+  /* 		} */
 
-  	}
-      return (written);
-  }
+  /* 	} */
+  /*     return (written); */
+  /* } */
 
-  size_t ft_mov_rax_from_cl(void *dst, size_t offset) //mov the dst pointer to not overwrite.
-  {
-      size_t	written;
-      const t_type	off = (t_type){.b8 = offset};
+  /* size_t ft_mov_rax_from_cl(void *dst, size_t offset) //mov the dst pointer to not overwrite. */
+  /* { */
+  /*     size_t	written; */
+  /*     const t_type	off = (t_type){.b8 = offset}; */
 
-      written = 0;
-      if (dst)
-  	ft_memcpy(dst, "\x88", 1);
-      written++;
-      if (!off.b8)
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, "\x08", 1);
-  	    return (++written);
-  	}
-      if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) // if offset and byte syze
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, "\x48", 1);
-  	    written++;
-  	    if (dst)
-  		ft_memcpy(dst + written, &off.b, sizeof (off.b)); 
-  	    return (written + sizeof (off.b));
-  	}
-      if (dst)
-  	ft_memcpy(dst + written, "\x88", 1);
-      written++;
-      if ((uint64_t)off.b4 == off.b8 && off.b4 < 0x80000000)
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, &off.b4, sizeof (off.b4)); 
-  	    return (written + sizeof (off.b4));
-  	}
-      if (dst)
-  	ft_memcpy(dst + written, &off.b8, sizeof (off.b8)); 
-      return (written + sizeof (off.b8));
-  }
+  /*     written = 0; */
+  /*     if (dst) */
+  /* 	ft_memcpy(dst, "\x88", 1); */
+  /*     written++; */
+  /*     if (!off.b8) */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, "\x08", 1); */
+  /* 	    return (++written); */
+  /* 	} */
+  /*     if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) // if offset and byte syze */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, "\x48", 1); */
+  /* 	    written++; */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, &off.b, sizeof (off.b)); */
+  /* 	    return (written + sizeof (off.b)); */
+  /* 	} */
+  /*     if (dst) */
+  /* 	ft_memcpy(dst + written, "\x88", 1); */
+  /*     written++; */
+  /*     if ((uint64_t)off.b4 == off.b8 && off.b4 < 0x80000000) */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, &off.b4, sizeof (off.b4)); */
+  /* 	    return (written + sizeof (off.b4)); */
+  /* 	} */
+  /*     if (dst) */
+  /* 	ft_memcpy(dst + written, &off.b8, sizeof (off.b8)); */
+  /*     return (written + sizeof (off.b8)); */
+  /* } */
 
   // if dst == NULL calculate size.
-  size_t ft_sub_asm_rsp(void *dst, uint64_t value, unsigned char class)//mov the dst pointer to not overwrite.
-  {
-      size_t	written;
-      const t_type	type = (t_type){.b8 = value};
+  /* size_t ft_sub_asm_rsp(void *dst, uint64_t value, unsigned char class)//mov the dst pointer to not overwrite. */
+  /* { */
+  /*     size_t	written; */
+  /*     const t_type	type = (t_type){.b8 = value}; */
 
-      if (ELFCLASS32 == class && type.b8 != type.b4)
-  	return (-1);
-      written = 0;
-      if (class == ELFCLASS64)
-  	{
-  	    if (dst)
-  		ft_memcpy(dst, "\x48", 1);
-  	    written++;
-  	}
-      if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8 && type.b < 0x80)
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, "\x83", 1);
-  	    written++;
-  	    if (dst)
-  		{
-  		    /* if (ELFCLASS64 == class) */
-  		    ft_memcpy(dst+written, "\xec", 1);
-  		    /* else */
-  		    /* ft_memcpy(dst+written, "\xe8", 1); */
-  		}
-  	    written++;
-  	    if (dst)
-  		ft_memcpy(dst + written, &type.b, sizeof (type.b));
-  	    written += sizeof(type.b);
-  	}
-      else
-  	{
-  	    if (dst)
-  		{
-  		    if (ELFCLASS64 == class)
-  			{
-  			    ft_memcpy(dst + written, "\x81\xec", 2);
-  			    written ++;
-  			}
-  		    else
-  			ft_memcpy(dst + written, "\x2d", 1);
-  		}
-  	    written ++;
-  	    if ((uint64_t)type.b4 == type.b8 && type.b4 < 0x80000000)
-  		{
-  		    if (dst)
-  			ft_memcpy(dst + written, &type.b4, sizeof (type.b4));
-  		    written += sizeof(type.b4);
-  		}
-  	    else
-  		{
-  		    if (dst)
-  			ft_memcpy(dst + written, &type.b8, sizeof (type.b8));
-  		    written += sizeof(type.b8);
-  		}
-  	}
-      return (written);
-  }
+  /*     if (ELFCLASS32 == class && type.b8 != type.b4) */
+  /* 	return (-1); */
+  /*     written = 0; */
+  /*     if (class == ELFCLASS64) */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst, "\x48", 1); */
+  /* 	    written++; */
+  /* 	} */
+  /*     if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8 && type.b < 0x80) */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, "\x83", 1); */
+  /* 	    written++; */
+  /* 	    if (dst) */
+  /* 		{ */
+  /* 		    /\* if (ELFCLASS64 == class) *\/ */
+  /* 		    ft_memcpy(dst+written, "\xec", 1); */
+  /* 		    /\* else *\/ */
+  /* 		    /\* ft_memcpy(dst+written, "\xe8", 1); *\/ */
+  /* 		} */
+  /* 	    written++; */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, &type.b, sizeof (type.b)); */
+  /* 	    written += sizeof(type.b); */
+  /* 	} */
+  /*     else */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		{ */
+  /* 		    if (ELFCLASS64 == class) */
+  /* 			{ */
+  /* 			    ft_memcpy(dst + written, "\x81\xec", 2); */
+  /* 			    written ++; */
+  /* 			} */
+  /* 		    else */
+  /* 			ft_memcpy(dst + written, "\x2d", 1); */
+  /* 		} */
+  /* 	    written ++; */
+  /* 	    if ((uint64_t)type.b4 == type.b8 && type.b4 < 0x80000000) */
+  /* 		{ */
+  /* 		    if (dst) */
+  /* 			ft_memcpy(dst + written, &type.b4, sizeof (type.b4)); */
+  /* 		    written += sizeof(type.b4); */
+  /* 		} */
+  /* 	    else */
+  /* 		{ */
+  /* 		    if (dst) */
+  /* 			ft_memcpy(dst + written, &type.b8, sizeof (type.b8)); */
+  /* 		    written += sizeof(type.b8); */
+  /* 		} */
+  /* 	} */
+  /*     return (written); */
+  /* } */
 
-  size_t ft_sub_asm_rsp_buffer_byte(void *dst, uint64_t offset, unsigned char value, unsigned char class)//mov the dst pointer to not overwrite.
-  {
-      size_t	written;
-      const t_type	off = (t_type){.b8 = offset};
+  /* size_t ft_sub_asm_rsp_buffer_byte(void *dst, uint64_t offset, unsigned char value, unsigned char class)//mov the dst pointer to not overwrite. */
+  /* { */
+  /*     size_t	written; */
+  /*     const t_type	off = (t_type){.b8 = offset}; */
 
-      written = 0;
-      if (class == ELFCLASS32 && off.b8 != off.b4)
-  	return (0);
-      if (dst)
-  	ft_memcpy(dst, "\x80", 1);
-      written++;
-      /* } */
+  /*     written = 0; */
+  /*     if (class == ELFCLASS32 && off.b8 != off.b4) */
+  /* 	return (0); */
+  /*     if (dst) */
+  /* 	ft_memcpy(dst, "\x80", 1); */
+  /*     written++; */
+  /*     /\* } *\/ */
 
-      if (!off.b8)
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, "\x2c", 1);//sub byte
-  	    written++;
-  	}
-      else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, "\x6c", 1);//sub byte
-  	    written++;
-  	}
-      else 
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, "\xac", 1);//sub byte
-  	    written++;
-  	}
-      if (dst)
-  	ft_memcpy(dst + written, "\x24", 1);// rsp pointer
-      written++;
-      if (off.b8)
-  	{
-  	    if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80)
-  		{
-  		    if (dst)
-  			ft_memcpy(dst + written, &off.b, sizeof(off.b));
-  		    written += sizeof (off.b);
-  		}
-  	    else
-  		{
-  		    if (dst)
-  			ft_memcpy(dst + written, &off.b4, sizeof(off.b4));
-  		    written += sizeof (off.b4);
-  		}
-  	}
-      if (dst)
-  	ft_memcpy(dst + written, &value, sizeof (value));
-      written += sizeof(value);
-      return (written);
-  }
+  /*     if (!off.b8) */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, "\x2c", 1);//sub byte */
+  /* 	    written++; */
+  /* 	} */
+  /*     else if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, "\x6c", 1);//sub byte */
+  /* 	    written++; */
+  /* 	} */
+  /*     else */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, "\xac", 1);//sub byte */
+  /* 	    written++; */
+  /* 	} */
+  /*     if (dst) */
+  /* 	ft_memcpy(dst + written, "\x24", 1);// rsp pointer */
+  /*     written++; */
+  /*     if (off.b8) */
+  /* 	{ */
+  /* 	    if ((uint32_t)off.b  == off.b4 && (uint64_t)off.b4 == off.b8 && off.b < 0x80) */
+  /* 		{ */
+  /* 		    if (dst) */
+  /* 			ft_memcpy(dst + written, &off.b, sizeof(off.b)); */
+  /* 		    written += sizeof (off.b); */
+  /* 		} */
+  /* 	    else */
+  /* 		{ */
+  /* 		    if (dst) */
+  /* 			ft_memcpy(dst + written, &off.b4, sizeof(off.b4)); */
+  /* 		    written += sizeof (off.b4); */
+  /* 		} */
+  /* 	} */
+  /*     if (dst) */
+  /* 	ft_memcpy(dst + written, &value, sizeof (value)); */
+  /*     written += sizeof(value); */
+  /*     return (written); */
+  /* } */
 
-  size_t ft_add_asm_rsp(void *dst, uint64_t value, unsigned char class)//mov the dst pointer to not overwrite.
-  {
-      size_t	written;
-      const t_type	type = (t_type){.b8 = value};
+  /* size_t ft_add_asm_rsp(void *dst, uint64_t value, unsigned char class)//mov the dst pointer to not overwrite. */
+  /* { */
+  /*     size_t	written; */
+  /*     const t_type	type = (t_type){.b8 = value}; */
 
-      written = 0;
-      // test need 
-      if (class == ELFCLASS64)
-  	{
-  	    if (dst)
-  		ft_memcpy(dst, "\x48", 1);
-  	    written++;
-  	}
-      if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8 && type.b < 0x80)
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, "\x83\xc4", 2);
-  	    written += 2;
-  	    if (dst)
-  		ft_memcpy(dst + written, &type.b, sizeof (type.b));
-  	    written += sizeof(type.b);
-  	}
-      else
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, "\x81\xc4", 2);
-  	    written += 2;
-  	    if ((uint64_t)type.b4 == type.b8 && type.b4 < 0x80000000)
-  		{
-  		    if (dst)
-  			ft_memcpy(dst + written, &type.b4, sizeof (type.b4));
-  		    written += sizeof(type.b4);
-  		}
-  	    else
-  		{
-  		    if (dst)
-  			ft_memcpy(dst + written, &type.b8, sizeof (type.b8));
-  		    written += sizeof(type.b8);
-  		}
-  	}
-      return (written);
-  }
-
-
-
-  size_t set_jmp_r13(void *dst)
-  {
-      if (dst)
-  	/* ft_memcpy(dst, "\xff\xe0", 2); */
-  	ft_memcpy(dst, "\x41\xff\xe5", 3);
-      /* return (2); */
-      return (3);
-  }
-
-  size_t set_xor_register_register(void *dst, t_registers reg, unsigned char class)
-  {
-      const char bytecode_regmap[] = {'\xc0', '\xc0', '\xdb', '\xdb', '\xc9', '\xc9', '\xd2', '\xd2', '\xff', '\xff', '\xf6', '\xf6', '\xed', '\xed', '\xe4', '\xe4', '\xc0', '\xc9', '\xd2','\xdb','\xe4', '\xed', '\xf6', '\xff'};
-      size_t bytes;
-
-      if (reg > R15 || (ELFCLASS32 == class && reg >= R8))
-  	return (-1);
-      bytes = 0;
-      if (ELFCLASS64 == class)
-  	{
-  	    if (dst && reg >= R8 && reg <= R15)
-  		ft_memcpy(dst + bytes, "\x4D", 1);
-  	    else if (dst)
-  		ft_memcpy(dst + bytes, "\x48", 1);
-  	    bytes++;
-  	}
-      if (dst)
-  	ft_memcpy(dst + bytes, "\x31", 1);
-      bytes++;
-      if (dst)
-  	ft_memcpy(dst + bytes, &bytecode_regmap[reg], 1);
-      return (++bytes);
-  }
-
-  size_t set_xor_register_size(void *dst, unsigned char class)
-  {
-      size_t xor_register_size;
-      t_registers reg;
-
-      if (ELFCLASS64 == class)
-  	reg = RAX;// RAX gonna hold the value of entrypoint.
-      else
-  	reg = EAX;
-      xor_register_size = 0;
-      while ((ELFCLASS64 == class && reg <= R15) || reg < ESP)
-  	{
-  	    if (reg == R13)
-  		reg++;
-  	    if (dst)
-  		xor_register_size += set_xor_register_register(dst + xor_register_size, reg, class);
-  	    else
-  		xor_register_size += set_xor_register_register(NULL, reg, class);
-  	    if (reg >= R8)
-  		reg++; 
-  	    else
-  		reg += 2;
-  	    if (reg == RSP)//No xor rsp
-  		reg += 2;
-  	}
-      return (xor_register_size);
-  }
-
-  size_t add_r13(void *dst, uint64_t value)
-  {
-      size_t written;
-      t_type val = (t_type){.b8=value};
-
-      written = 0;
-      if (dst)
-  	ft_memcpy(dst+ written, "\x49\x81\xc5", 3);
-      written +=3;
-      if (val.b4 == val.b8)
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, &val.b4, sizeof(val.b4));
-  	    written += sizeof(val.b4);
-  	}
-      else
-  	{
-  	    if (dst)
-  		ft_memcpy(dst + written, &val.b8, sizeof(val.b8));
-  	    written += sizeof(val.b8);
-  	}
-      return (written);
-  }
+  /*     written = 0; */
+  /*     // test need */
+  /*     if (class == ELFCLASS64) */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst, "\x48", 1); */
+  /* 	    written++; */
+  /* 	} */
+  /*     if ((uint32_t)type.b  == type.b4 && (uint64_t)type.b4 == type.b8 && type.b < 0x80) */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, "\x83\xc4", 2); */
+  /* 	    written += 2; */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, &type.b, sizeof (type.b)); */
+  /* 	    written += sizeof(type.b); */
+  /* 	} */
+  /*     else */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, "\x81\xc4", 2); */
+  /* 	    written += 2; */
+  /* 	    if ((uint64_t)type.b4 == type.b8 && type.b4 < 0x80000000) */
+  /* 		{ */
+  /* 		    if (dst) */
+  /* 			ft_memcpy(dst + written, &type.b4, sizeof (type.b4)); */
+  /* 		    written += sizeof(type.b4); */
+  /* 		} */
+  /* 	    else */
+  /* 		{ */
+  /* 		    if (dst) */
+  /* 			ft_memcpy(dst + written, &type.b8, sizeof (type.b8)); */
+  /* 		    written += sizeof(type.b8); */
+  /* 		} */
+  /* 	} */
+  /*     return (written); */
+  /* } */
 
 
-  size_t pop_r13(void *dst)
-  {
-      if (dst)
-  	ft_memcpy(dst, "\x41\x5d", 2);
-      return (2);
-  }
 
-  size_t set_jmp_entrypoint(void *payload, uint64_t entrypoint, unsigned char class)
-  {
-      t_elf_addr u_entrypoint = (t_elf_addr){.b64 = entrypoint};
-      size_t offset = 0;
+  /* size_t set_jmp_r13(void *dst) */
+  /* { */
+  /*     if (dst) */
+  /* 	/\* ft_memcpy(dst, "\xff\xe0", 2); *\/ */
+  /* 	ft_memcpy(dst, "\x41\xff\xe5", 3); */
+  /*     /\* return (2); *\/ */
+  /*     return (3); */
+  /* } */
 
-      if (class == ELFCLASS64)
-  	{
-  	    /* ft_memcpy(payload, "\x48", 1); //rex prefix x64 */
-  	    if (payload)
-  		ft_memcpy(payload, "\x49", 1);
-  	    offset++;
-  	    if (payload)
-  		ft_memcpy(payload + offset, "\xbd", 1); //mov r13
-  	    offset++;
-  	    if (payload)
-  		ft_memcpy(payload + offset, &u_entrypoint.b64, sizeof (u_entrypoint.b64));
-  	    offset += sizeof (u_entrypoint.b64);
-  	    if (payload)
-  		{
-  		    offset += pop_r13(payload + offset);
-  		    offset += add_r13(payload + offset, u_entrypoint.b64);
-  		    offset += set_jmp_r13(payload + offset);
-  		}
-  	    else
-  		{
-  		    offset += pop_r13(NULL);
-  		    offset += add_r13(NULL, u_entrypoint.b64);
-  		    offset += set_jmp_r13(NULL);
-  		}
-  	}
-      else
-  	{
-  	    if (payload)
-  		ft_memcpy(payload + offset, "\x81\x04\x24", 3);// add DWORD [esp]
-  	    offset+= 3;
-  	    if (payload)
-  		ft_memcpy(payload + offset, &u_entrypoint.b32, sizeof (u_entrypoint.b32));
-  	    offset += sizeof (u_entrypoint.b32);
-  	    if (payload)
-  		ft_memcpy(payload + offset, "\xc3", 1);//ret
-  	    offset++;
-  	}
-      return (offset);
-  }
+  /* size_t set_xor_register_register(void *dst, t_registers reg, unsigned char class) */
+  /* { */
+  /*     const char bytecode_regmap[] = {'\xc0', '\xc0', '\xdb', '\xdb', '\xc9', '\xc9', '\xd2', '\xd2', '\xff', '\xff', '\xf6', '\xf6', '\xed', '\xed', '\xe4', '\xe4', '\xc0', '\xc9', '\xd2','\xdb','\xe4', '\xed', '\xf6', '\xff'}; */
+  /*     size_t bytes; */
+
+  /*     if (reg > R15 || (ELFCLASS32 == class && reg >= R8)) */
+  /* 	return (-1); */
+  /*     bytes = 0; */
+  /*     if (ELFCLASS64 == class) */
+  /* 	{ */
+  /* 	    if (dst && reg >= R8 && reg <= R15) */
+  /* 		ft_memcpy(dst + bytes, "\x4D", 1); */
+  /* 	    else if (dst) */
+  /* 		ft_memcpy(dst + bytes, "\x48", 1); */
+  /* 	    bytes++; */
+  /* 	} */
+  /*     if (dst) */
+  /* 	ft_memcpy(dst + bytes, "\x31", 1); */
+  /*     bytes++; */
+  /*     if (dst) */
+  /* 	ft_memcpy(dst + bytes, &bytecode_regmap[reg], 1); */
+  /*     return (++bytes); */
+  /* } */
+
+  /* size_t set_xor_register_size(void *dst, unsigned char class) */
+  /* { */
+  /*     size_t xor_register_size; */
+  /*     t_registers reg; */
+
+  /*     if (ELFCLASS64 == class) */
+  /* 	reg = RAX;// RAX gonna hold the value of entrypoint. */
+  /*     else */
+  /* 	reg = EAX; */
+  /*     xor_register_size = 0; */
+  /*     while ((ELFCLASS64 == class && reg <= R15) || reg < ESP) */
+  /* 	{ */
+  /* 	    if (reg == R13) */
+  /* 		reg++; */
+  /* 	    if (dst) */
+  /* 		xor_register_size += set_xor_register_register(dst + xor_register_size, reg, class); */
+  /* 	    else */
+  /* 		xor_register_size += set_xor_register_register(NULL, reg, class); */
+  /* 	    if (reg >= R8) */
+  /* 		reg++; */
+  /* 	    else */
+  /* 		reg += 2; */
+  /* 	    if (reg == RSP)//No xor rsp */
+  /* 		reg += 2; */
+  /* 	} */
+  /*     return (xor_register_size); */
+  /* } */
+
+  /* size_t add_r13(void *dst, uint64_t value) */
+  /* { */
+  /*     size_t written; */
+  /*     t_type val = (t_type){.b8=value}; */
+
+  /*     written = 0; */
+  /*     if (dst) */
+  /* 	ft_memcpy(dst+ written, "\x49\x81\xc5", 3); */
+  /*     written +=3; */
+  /*     if (val.b4 == val.b8) */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, &val.b4, sizeof(val.b4)); */
+  /* 	    written += sizeof(val.b4); */
+  /* 	} */
+  /*     else */
+  /* 	{ */
+  /* 	    if (dst) */
+  /* 		ft_memcpy(dst + written, &val.b8, sizeof(val.b8)); */
+  /* 	    written += sizeof(val.b8); */
+  /* 	} */
+  /*     return (written); */
+  /* } */
+
+
+  /* size_t pop_r13(void *dst) */
+  /* { */
+  /*     if (dst) */
+  /* 	ft_memcpy(dst, "\x41\x5d", 2); */
+  /*     return (2); */
+  /* } */
+
+  /* size_t set_jmp_entrypoint(void *payload, uint64_t entrypoint, unsigned char class) */
+  /* { */
+  /*     t_elf_addr u_entrypoint = (t_elf_addr){.b64 = entrypoint}; */
+  /*     size_t offset = 0; */
+
+  /*     if (class == ELFCLASS64) */
+  /* 	{ */
+  /* 	    /\* ft_memcpy(payload, "\x48", 1); //rex prefix x64 *\/ */
+  /* 	    if (payload) */
+  /* 		ft_memcpy(payload, "\x49", 1); */
+  /* 	    offset++; */
+  /* 	    if (payload) */
+  /* 		ft_memcpy(payload + offset, "\xbd", 1); //mov r13 */
+  /* 	    offset++; */
+  /* 	    if (payload) */
+  /* 		ft_memcpy(payload + offset, &u_entrypoint.b64, sizeof (u_entrypoint.b64)); */
+  /* 	    offset += sizeof (u_entrypoint.b64); */
+  /* 	    if (payload) */
+  /* 		{ */
+  /* 		    offset += pop_r13(payload + offset); */
+  /* 		    offset += add_r13(payload + offset, u_entrypoint.b64); */
+  /* 		    offset += set_jmp_r13(payload + offset); */
+  /* 		} */
+  /* 	    else */
+  /* 		{ */
+  /* 		    offset += pop_r13(NULL); */
+  /* 		    offset += add_r13(NULL, u_entrypoint.b64); */
+  /* 		    offset += set_jmp_r13(NULL); */
+  /* 		} */
+  /* 	} */
+  /*     else */
+  /* 	{ */
+  /* 	    if (payload) */
+  /* 		ft_memcpy(payload + offset, "\x81\x04\x24", 3);// add DWORD [esp] */
+  /* 	    offset+= 3; */
+  /* 	    if (payload) */
+  /* 		ft_memcpy(payload + offset, &u_entrypoint.b32, sizeof (u_entrypoint.b32)); */
+  /* 	    offset += sizeof (u_entrypoint.b32); */
+  /* 	    if (payload) */
+  /* 		ft_memcpy(payload + offset, "\xc3", 1);//ret */
+  /* 	    offset++; */
+  /* 	} */
+  /*     return (offset); */
+  /* } */
 
   // End dynamic Bytecode
   /* void encrypt(unsigned char *src, size_t size) */
@@ -1177,40 +1077,40 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   /*     return (written); */
   /* } */
 
-  size_t set_mov_edi(void *dst, uint32_t value)
-  {
-      if (dst)
-  	{
-  	    ft_memcpy(dst, "\xbf", 1);
-  	    ft_memcpy(dst + 1, &value, sizeof(value));
-  	}
-      return (sizeof(value) + 1);
-  }
+  /* size_t set_mov_edi(void *dst, uint32_t value) */
+  /* { */
+  /*     if (dst) */
+  /* 	{ */
+  /* 	    ft_memcpy(dst, "\xbf", 1); */
+  /* 	    ft_memcpy(dst + 1, &value, sizeof(value)); */
+  /* 	} */
+  /*     return (sizeof(value) + 1); */
+  /* } */
 
-  static size_t copy_payload_to_mmap_aux(unsigned char *dst, size_t offset)
-  {
-      size_t written;
-      written = ft_mov_cl_from_rsp(dst, offset);
-      if (dst)
-  	return (written + ft_mov_rax_from_cl(dst + written, offset));
-      return (written + ft_mov_rax_from_cl(dst, offset));
-  }
+  /* static size_t copy_payload_to_mmap_aux(unsigned char *dst, size_t offset) */
+  /* { */
+  /*     size_t written; */
+  /*     written = ft_mov_cl_from_rsp(dst, offset); */
+  /*     if (dst) */
+  /* 	return (written + ft_mov_rax_from_cl(dst + written, offset)); */
+  /*     return (written + ft_mov_rax_from_cl(dst, offset)); */
+  /* } */
 
-  size_t copy_payload_to_mmap(unsigned char *dst, size_t payload_size)
-  {
-      size_t written = 0;
-      size_t i = 0;
+  /* size_t copy_payload_to_mmap(unsigned char *dst, size_t payload_size) */
+  /* { */
+  /*     size_t written = 0; */
+  /*     size_t i = 0; */
 
-      while (i < payload_size)
-  	{ /* dst + written segfault if dst == NULL*/
-  	    if (dst)
-  		written += copy_payload_to_mmap_aux(dst + written, i);
-  	    else
-  		written += copy_payload_to_mmap_aux(dst, i);
-  	    i++;
-  	}
-      return (written);
-  }
+  /*     while (i < payload_size) */
+  /* 	{ /\* dst + written segfault if dst == NULL*\/ */
+  /* 	    if (dst) */
+  /* 		written += copy_payload_to_mmap_aux(dst + written, i); */
+  /* 	    else */
+  /* 		written += copy_payload_to_mmap_aux(dst, i); */
+  /* 	    i++; */
+  /* 	} */
+  /*     return (written); */
+  /* } */
 
   /* int get_file_size(int fd, off_t *file_size) */
   /* { */
@@ -1228,61 +1128,61 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   /*     return (0); */
   /* } */
 
-  static t_elf_ph get_n_loadable_and_exec_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t n)
-  {
-      t_elf_ph phdr;
-      uint64_t ph_ndx;
-      uint64_t times_loadable_and_exec;
+  /* static t_elf_ph get_n_loadable_and_exec_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t n) */
+  /* { */
+  /*     t_elf_ph phdr; */
+  /*     uint64_t ph_ndx; */
+  /*     uint64_t times_loadable_and_exec; */
 
-      ph_ndx = 0;
-      times_loadable_and_exec = 0;
-      while (++ph_ndx < phnum)
-  	{
-  	    phdr = elf_get_program_header(ehdr, ph_ndx);
-  	    if (PT_LOAD == elf_get_program_header_type(&phdr, class) && PF_X & elf_get_program_header_flags(&phdr, class))
-  		times_loadable_and_exec++;
-  	    if (times_loadable_and_exec == n)
-  		return (phdr);
-  	}
-      phdr.elf32 = NULL;
-      return (phdr);
-  }
+  /*     ph_ndx = 0; */
+  /*     times_loadable_and_exec = 0; */
+  /*     while (++ph_ndx < phnum) */
+  /* 	{ */
+  /* 	    phdr = elf_get_program_header(ehdr, ph_ndx); */
+  /* 	    if (PT_LOAD == elf_get_program_header_type(&phdr, class) && PF_X & elf_get_program_header_flags(&phdr, class)) */
+  /* 		times_loadable_and_exec++; */
+  /* 	    if (times_loadable_and_exec == n) */
+  /* 		return (phdr); */
+  /* 	} */
+  /*     phdr.elf32 = NULL; */
+  /*     return (phdr); */
+  /* } */
 
-  static bool increment_offset_phdr(t_elf_h *ehdr, uint64_t offset, uint64_t phnum, unsigned char class)
-  {
-      uint64_t ehdr_struct_size = elf_get_struct_size_elf_header((char *)ehdr->elf32);
-      t_elf_ph phdr_loadable_and_exec_first = get_n_loadable_and_exec_phdr(ehdr, class, phnum, 1);
-      uint64_t phdr_loadable_and_exec_first_offset = elf_get_program_header_offset(&phdr_loadable_and_exec_first, class);
+  /* static bool increment_offset_phdr(t_elf_h *ehdr, uint64_t offset, uint64_t phnum, unsigned char class) */
+  /* { */
+  /*     uint64_t ehdr_struct_size = elf_get_struct_size_elf_header((char *)ehdr->elf32); */
+  /*     t_elf_ph phdr_loadable_and_exec_first = get_n_loadable_and_exec_phdr(ehdr, class, phnum, 1); */
+  /*     uint64_t phdr_loadable_and_exec_first_offset = elf_get_program_header_offset(&phdr_loadable_and_exec_first, class); */
 
-      return (offset > ehdr_struct_size && offset < phdr_loadable_and_exec_first_offset);
-  }
+  /*     return (offset > ehdr_struct_size && offset < phdr_loadable_and_exec_first_offset); */
+  /* } */
 
-  uint32_t get_new_e_entrypoint(t_elf_h *ehdr, unsigned char class)
-  {
-      uint64_t phnum = elf_get_elfh_phnum(ehdr);
-      uint64_t shnum = elf_get_elfh_shnum(ehdr);
-      uint64_t new_phdr_vaddr = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum);
-      uint64_t new_phdr_offset = elf_get_highest_offset_avalaible(ehdr, class, shnum);
+  /* uint32_t get_new_e_entrypoint(t_elf_h *ehdr, unsigned char class) */
+  /* { */
+  /*     uint64_t phnum = elf_get_elfh_phnum(ehdr); */
+  /*     uint64_t shnum = elf_get_elfh_shnum(ehdr); */
+  /*     uint64_t new_phdr_vaddr = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum); */
+  /*     uint64_t new_phdr_offset = elf_get_highest_offset_avalaible(ehdr, class, shnum); */
 
-      const uint64_t new_align = 0x1000;
-      const uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
-      new_phdr_vaddr = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum);
-      if (increment_offset_phdr(ehdr, new_phdr_offset, phnum, class))// I think shouldn't go throught this way.
-  	new_phdr_offset += phdr_struct_size;
-      if (new_phdr_vaddr % new_align != new_phdr_offset % new_align) 
-  	{
-  	    if (new_phdr_vaddr % new_align > new_phdr_offset % new_align)
-  		new_phdr_offset += new_phdr_vaddr % new_align - new_phdr_offset % new_align;
-  	    else
-  		new_phdr_vaddr += new_phdr_offset % new_align - new_phdr_vaddr % new_align;
-  	}
-      if (new_phdr_offset % 16)
-  	{
-  	    new_phdr_vaddr += 16 - new_phdr_vaddr % 16;
-  	    new_phdr_offset += 16 - new_phdr_offset % 16;
-  	}
-      return ((uint32_t)new_phdr_vaddr);
-  }
+  /*     const uint64_t new_align = 0x1000; */
+  /*     const uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class); */
+  /*     new_phdr_vaddr = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum); */
+  /*     if (increment_offset_phdr(ehdr, new_phdr_offset, phnum, class))// I think shouldn't go throught this way. */
+  /* 	new_phdr_offset += phdr_struct_size; */
+  /*     if (new_phdr_vaddr % new_align != new_phdr_offset % new_align) */
+  /* 	{ */
+  /* 	    if (new_phdr_vaddr % new_align > new_phdr_offset % new_align) */
+  /* 		new_phdr_offset += new_phdr_vaddr % new_align - new_phdr_offset % new_align; */
+  /* 	    else */
+  /* 		new_phdr_vaddr += new_phdr_offset % new_align - new_phdr_vaddr % new_align; */
+  /* 	} */
+  /*     if (new_phdr_offset % 16) */
+  /* 	{ */
+  /* 	    new_phdr_vaddr += 16 - new_phdr_vaddr % 16; */
+  /* 	    new_phdr_offset += 16 - new_phdr_offset % 16; */
+  /* 	} */
+  /*     return ((uint32_t)new_phdr_vaddr); */
+  /* } */
 
   /* const void *ft_ternary(const bool condition, const void *true_val, const void *false_val) */
   /* { */
@@ -1427,8 +1327,11 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   static void apply_patches_to_buffer(char *buffer, const size_t *offsets,
   				    const t_type *values, size_t count, size_t data_size)
   {
-      for (size_t i = 0; i < count; ++i) {
-          ft_memcpy(buffer + offsets[i], &values[i].b8, data_size);
+    size_t i = 0;
+    while (i < count)
+      {
+        ft_memcpy(buffer + offsets[i], &values[i].b8, data_size);
+        i++;
       }
   }
 
@@ -1473,31 +1376,31 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   static int load_and_apply_patches_to_buffer(t_arch arch, char **loaded_buffer, size_t *loaded_size,
   					    t_bin_type bin_type, const size_t *patch_offsets, const t_type *patch_values, size_t patch_count)
   {
-      // Step 1: Load raw binary
-      if (load_stage_buffer(arch, loaded_buffer, loaded_size, bin_type))
-  	{
-  	    ,*loaded_buffer = NULL;
-  	    return (5); // Load failed
-  	}
-      // Step 2: Determine data size for patching (32 vs 64-bit pointers/values)
-      size_t value_size = (size_t)ft_ternary(arch, (void *)sizeof(uint64_t), (void *)sizeof(uint32_t));
-      // Step 3: Apply all patches
-      apply_patches_to_buffer(*loaded_buffer, patch_offsets, patch_values, patch_count, value_size);
-      return 0; // Success
+    // Step 1: Load raw binary
+    if (load_stage_buffer(arch, loaded_buffer, loaded_size, bin_type))
+      {
+        ,*loaded_buffer = NULL;
+        return (5); // Load failed
+      }
+    // Step 2: Determine data size for patching (32 vs 64-bit pointers/values)
+    size_t value_size = (size_t)ft_ternary(arch, (void *)sizeof(uint64_t), (void *)sizeof(uint32_t));
+    // Step 3: Apply all patches
+    apply_patches_to_buffer(*loaded_buffer, patch_offsets, patch_values, patch_count, value_size);
+    return 0; // Success
   }
 
 
   void *buffer_join(size_t *join_len, void *s1, size_t len_s1, void *s2, size_t len_s2)
   {
-      void *join;
+    void *join;
 
-      ,*join_len = len_s2 + len_s1;
-      join = malloc(*join_len);
-      if (!join)
-  	return (join);
-      ft_memcpy(join, s1, len_s1);
-      ft_memcpy(join+len_s1, s2, len_s2);
+    ,*join_len = len_s2 + len_s1;
+    join = malloc(*join_len);
+    if (!join)
       return (join);
+    ft_memcpy(join, s1, len_s1);
+    ft_memcpy(join+len_s1, s2, len_s2);
+    return (join);
   }
 
   /**
@@ -1508,62 +1411,62 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   					  size_t value_size, size_t *output_size,
   					  size_t *final_compressed_size, char **key)
   {
-      // Step 1: Compress
-      t_list *compressed_list = lz77_compress_to_list((unsigned char *)input_data, input_size);
-      if (!compressed_list) return NULL;
+    // Step 1: Compress
+    t_list *compressed_list = lz77_compress_to_list((unsigned char *)input_data, input_size);
+    if (!compressed_list) return NULL;
 
-      size_t compressed_size;
-      unsigned char *compressed_bytes = lz77_get_compress_arr(compressed_list, &compressed_size);
-      ft_lstclear(&compressed_list, free);
-      if (!compressed_bytes) return NULL;
+    size_t compressed_size;
+    unsigned char *compressed_bytes = lz77_get_compress_arr(compressed_list, &compressed_size);
+    ft_lstclear(&compressed_list, free);
+    if (!compressed_bytes) return NULL;
 
-      // Step 2: Prepend original size as header
-      char *compressed_with_header = buffer_join(
-  					       final_compressed_size,
-  					       &input_size, value_size,
-  					       compressed_bytes, compressed_size
-  					       );
-      free(compressed_bytes);
-      if (!compressed_with_header) return NULL;
+    // Step 2: Prepend original size as header
+    char *compressed_with_header = buffer_join(
+  					     final_compressed_size,
+  					     &input_size, value_size,
+  					     compressed_bytes, compressed_size
+  					     );
+    free(compressed_bytes);
+    if (!compressed_with_header) return NULL;
 
-      // Step 3: Encrypt
-      char *encrypted = encrypt(compressed_with_header, *final_compressed_size, output_size, key);
-      if (encrypted != compressed_with_header)
-  	free(compressed_with_header);
+    // Step 3: Encrypt
+    char *encrypted = encrypt(compressed_with_header, *final_compressed_size, output_size, key);
+    if (encrypted != compressed_with_header)
+      free(compressed_with_header);
 
-      if (!encrypted || !*output_size) {
-          free(encrypted);
-          return NULL;
-      }
-      return encrypted;
+    if (!encrypted || !*output_size) {
+      free(encrypted);
+      return NULL;
+    }
+    return encrypted;
   }
 
   static int build_stage2_buffer(t_arch arch, size_t elf_size, uint64_t s3_vaddr,
   			       char **out_buffer, size_t *out_size,
   			       size_t *payload_raw_size)
   {
-      static const size_t stage2_patch_offsets[NUM_ARCHS][2] = {
-          [ARCH_X86] = { 0x5B, 0x98 },
-          [ARCH_X64] = { 0x6E, 0xD7 }
-      };
-      const t_type patches[2] = {{.b8 = elf_size}, {.b8 = s3_vaddr}};
-      char *stage2_buf;
-      size_t stage2_sz;
-      char *payload_raw;
+    static const size_t stage2_patch_offsets[NUM_ARCHS][2] = {
+      [ARCH_X86] = { 0x5B, 0x98 },
+      [ARCH_X64] = { 0x6E, 0xD7 }
+    };
+    const t_type patches[2] = {{.b8 = elf_size}, {.b8 = s3_vaddr}};
+    char *stage2_buf;
+    size_t stage2_sz;
+    char *payload_raw;
 
-      if (load_and_apply_patches_to_buffer(arch, &stage2_buf, &stage2_sz, STAGE_2,
-  					 stage2_patch_offsets[arch], patches, 2))
-  	return (ERR_LOAD_STAGE);
-      if (load_stage_buffer(arch, &payload_raw, payload_raw_size, PAYLOAD_BIN)) {
-          free(stage2_buf);
-          return (ERR_LOAD_STAGE);
-      }
-      ,*out_buffer = buffer_join(out_size, payload_raw, *payload_raw_size, stage2_buf, stage2_sz);
-      free(payload_raw);
+    if (load_and_apply_patches_to_buffer(arch, &stage2_buf, &stage2_sz, STAGE_2,
+  				       stage2_patch_offsets[arch], patches, 2))
+      return (ERR_LOAD_STAGE);
+    if (load_stage_buffer(arch, &payload_raw, payload_raw_size, PAYLOAD_BIN)) {
       free(stage2_buf);
-      if (!*out_buffer)
-  	return (ERR_ALLOC);
-      return (ERR_SUCCESS);
+      return (ERR_LOAD_STAGE);
+    }
+    ,*out_buffer = buffer_join(out_size, payload_raw, *payload_raw_size, stage2_buf, stage2_sz);
+    free(payload_raw);
+    free(stage2_buf);
+    if (!*out_buffer)
+      return (ERR_ALLOC);
+    return (ERR_SUCCESS);
   }
 
   #define STAGE1_PATCHES 10
@@ -1575,49 +1478,49 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   				size_t payload_raw_size, char **out_stage1,
   				size_t *out_stage1_size, char *key)
   {
-      t_arch arch = (class == ELFCLASS64) ? ARCH_X64 : ARCH_X86;
-      size_t value_size = arch ? sizeof(uint64_t) : sizeof(uint32_t);
+    t_arch arch = (class == ELFCLASS64) ? ARCH_X64 : ARCH_X86;
+    size_t value_size = arch ? sizeof(uint64_t) : sizeof(uint32_t);
 
-      uint64_t phnum = elf_get_elfh_phnum(ehdr);
-      uint32_t prefix_size = elf_get_struct_size_elf_header((char *)ehdr->elf32) +
-  	elf_get_elfh_phentsize(ehdr) *
-  	(2 + elf_is_gnu_stack_phdr(ehdr, class, phnum));
+    uint64_t phnum = elf_get_elfh_phnum(ehdr);
+    uint32_t prefix_size = elf_get_struct_size_elf_header((char *)ehdr->elf32) +
+      elf_get_elfh_phentsize(ehdr) *
+      (2 + elf_is_gnu_stack_phdr(ehdr, class, phnum));
 
-      uint64_t s2_entry_offset = payload_raw_size + 0x12 + (arch ? 0x5 : 0);
-      if (key != NULL)// TODO change as needed.
-  	key = (char*)s2_entry_offset;
+    uint64_t s2_entry_offset = payload_raw_size + 0x12 + (arch ? 0x5 : 0);
+    if (key != NULL)// TODO change as needed.
+      key = (char*)s2_entry_offset;
 
-      t_type stage1_patches[STAGE1_PATCHES] = {
-          {.b8 = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum) + prefix_size + 5 + (!arch * 0x72)},
-          {.b8 = *out_stage1_size + prefix_size + encrypted_size},  // Will update after load
-          {.b8 = stage2_elf_total_size},
-          {.b8 = encrypted_size},
-          {.b8 = compressed_hdr_size},
-          {.b8 = s2_entry_offset},
-          {.b8 = (uint64_t)key},//Encryption key in case x86 use 32b
-          {.b8 = (uint64_t)key},//In x64 overwrite some off with eq val
-          {.b8 = (uint64_t)key},
-          {.b8 = (uint64_t)key}
-      };
-      if (!key && (uint64_t)key != s2_entry_offset)// TODO delete when encrypt works.
-  	free(key);
+    t_type stage1_patches[STAGE1_PATCHES] = {
+      {.b8 = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum) + prefix_size + 5 + (!arch * 0x72)},
+      {.b8 = *out_stage1_size + prefix_size + encrypted_size},  // Will update after load
+      {.b8 = stage2_elf_total_size},
+      {.b8 = encrypted_size},
+      {.b8 = compressed_hdr_size},
+      {.b8 = s2_entry_offset},
+      {.b8 = (uint64_t)key},//Encryption key in case x86 use 32b
+      {.b8 = (uint64_t)key},//In x64 overwrite some off with eq val
+      {.b8 = (uint64_t)key},
+      {.b8 = (uint64_t)key}
+    };
+    if (!key && (uint64_t)key != s2_entry_offset)// TODO delete when encrypt works.
+      free(key);
 
-      static const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCHES] = {
-  	//                                                 Encryption key offsets.
-  	[ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf, 0xaf, 0xaf, 0xaf, 0xaf},
-  	[ARCH_X64] = { 0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce, 0xce, 0xce, 0xce, 0xce}
-      };
+    static const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCHES] = {
+      //                                                 Encryption key offsets.
+      [ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf, 0xaf, 0xaf, 0xaf, 0xaf},
+      [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce, 0xce, 0xce, 0xce, 0xce}
+    };
 
-      if (load_stage_buffer(arch, out_stage1, out_stage1_size, STAGE_1)) {
-  	return (ERR_LOAD_STAGE);
-      }
+    if (load_stage_buffer(arch, out_stage1, out_stage1_size, STAGE_1)) {
+      return (ERR_LOAD_STAGE);
+    }
 
-      // Update patch #1: total size after decryption includes decrypted buffer layout
-      stage1_patches[1].b8 = *out_stage1_size + prefix_size + encrypted_size;
+    // Update patch #1: total size after decryption includes decrypted buffer layout
+    stage1_patches[1].b8 = *out_stage1_size + prefix_size + encrypted_size;
 
-      apply_patches_to_buffer(*out_stage1, stage1_patch_offsets[arch],
-                              stage1_patches, 6, value_size);
-      return (ERR_SUCCESS);
+    apply_patches_to_buffer(*out_stage1, stage1_patch_offsets[arch],
+  			  stage1_patches, 6, value_size);
+    return (ERR_SUCCESS);
   }
 
   /**
@@ -1627,53 +1530,53 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
    ,*/
   int generate_payload(void *elf_mmap, size_t elf_size, char **payload_ptr, size_t *payload_size)
   {
-      const unsigned char class = elf_get_elfh_e_ident_class(elf_mmap);
-      const t_arch arch = (class == ELFCLASS64) ? ARCH_X64 : ARCH_X86;
-      const size_t value_size = arch ? sizeof(uint64_t) : sizeof(uint32_t);
-      t_elf_h elf_header = { .elf32 = elf_mmap };
-      uint64_t injected_s3_vaddr = 0;
+    const unsigned char class = elf_get_elfh_e_ident_class(elf_mmap);
+    const t_arch arch = (class == ELFCLASS64) ? ARCH_X64 : ARCH_X86;
+    const size_t value_size = arch ? sizeof(uint64_t) : sizeof(uint32_t);
+    t_elf_h elf_header = { .elf32 = elf_mmap };
+    uint64_t injected_s3_vaddr = 0;
 
-      if (elf_inject_s3(elf_mmap, &elf_header, class, &injected_s3_vaddr) != ERR_SUCCESS)
-          return (ERR_INJECT_S3); 
-      size_t payload_size_raw;
-      size_t combined_len;
-      char *combined_payload_stage2;
-      if (build_stage2_buffer(arch, elf_size, injected_s3_vaddr, &combined_payload_stage2, &combined_len, &payload_size_raw))
-  	return (ERR_LOAD_STAGE);
-      if (!combined_payload_stage2)
-  	return (ERR_ALLOC);
-      size_t full_image_size;
-      char *full_image = buffer_join(&full_image_size, combined_payload_stage2,
-                                     combined_len, elf_mmap, elf_size);
-      free(combined_payload_stage2);
-      if (!full_image)
-          return (ERR_ALLOC);
-      size_t encrypted_size;
-      size_t compressed_with_header_size;
-      char *key = NULL;
-      char *encrypted_payload = compress_encrypt_with_header(
-  							   full_image, full_image_size, value_size,
-  							   &encrypted_size, &compressed_with_header_size, &key);
-      free(full_image);
-      if (!encrypted_payload || encrypted_size == 0)
-          return (ERR_COMPRESS);
+    if (elf_inject_s3(elf_mmap, &elf_header, class, &injected_s3_vaddr) != ERR_SUCCESS)
+      return (ERR_INJECT_S3);
+    size_t payload_size_raw;
+    size_t combined_len;
+    char *combined_payload_stage2;
+    if (build_stage2_buffer(arch, elf_size, injected_s3_vaddr, &combined_payload_stage2, &combined_len, &payload_size_raw))
+      return (ERR_LOAD_STAGE);
+    if (!combined_payload_stage2)
+      return (ERR_ALLOC);
+    size_t full_image_size;
+    char *full_image = buffer_join(&full_image_size, combined_payload_stage2,
+  				 combined_len, elf_mmap, elf_size);
+    free(combined_payload_stage2);
+    if (!full_image)
+      return (ERR_ALLOC);
+    size_t encrypted_size;
+    size_t compressed_with_header_size;
+    char *key = NULL;
+    char *encrypted_payload = compress_encrypt_with_header(
+  							 full_image, full_image_size, value_size,
+  							 &encrypted_size, &compressed_with_header_size, &key);
+    free(full_image);
+    if (!encrypted_payload || encrypted_size == 0)
+      return (ERR_COMPRESS);
 
-      char *stage1_buffer;
-      size_t stage1_size;
-      if (build_stage1_patched(class, &elf_header, full_image_size, encrypted_size,
-  			     compressed_with_header_size, payload_size_raw,
-  			     &stage1_buffer, &stage1_size, key))
-  	{
-  	    free(encrypted_payload);
-  	    return (ERR_LOAD_STAGE);
-  	}
-      ,*payload_ptr = buffer_join(payload_size, stage1_buffer, stage1_size,
-  			       encrypted_payload, encrypted_size);
-      free(stage1_buffer);
-      free(encrypted_payload);
-      if (!*payload_ptr)
-          return (ERR_ALLOC);
-      return (ERR_SUCCESS);
+    char *stage1_buffer;
+    size_t stage1_size;
+    if (build_stage1_patched(class, &elf_header, full_image_size, encrypted_size,
+  			   compressed_with_header_size, payload_size_raw,
+  			   &stage1_buffer, &stage1_size, key))
+      {
+        free(encrypted_payload);
+        return (ERR_LOAD_STAGE);
+      }
+    ,*payload_ptr = buffer_join(payload_size, stage1_buffer, stage1_size,
+  			     encrypted_payload, encrypted_size);
+    free(stage1_buffer);
+    free(encrypted_payload);
+    if (!*payload_ptr)
+      return (ERR_ALLOC);
+    return (ERR_SUCCESS);
   }
 
   /* static t_elf_ph get_n_loadable_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t n) */
@@ -1700,13 +1603,13 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
   static int validate_elf_headers(t_elf_h *ehdr, uint64_t *shnum, uint64_t *phnum, unsigned char *class)
   {
-      ,*shnum = elf_get_elfh_shnum(ehdr);
-      ,*phnum = elf_get_elfh_phnum(ehdr);
-      ,*class = elf_get_elfh_e_ident_class((unsigned char *)ehdr->elf32);
+    ,*shnum = elf_get_elfh_shnum(ehdr);
+    ,*phnum = elf_get_elfh_phnum(ehdr);
+    ,*class = elf_get_elfh_e_ident_class((unsigned char *)ehdr->elf32);
 
-      if (*phnum == 0)
-  	return (ERR_INVALID_ELF);
-      return (ERR_SUCCESS);
+    if (*phnum == 0)
+      return (ERR_INVALID_ELF);
+    return (ERR_SUCCESS);
   }
 
   /* static int find_section_and_program_indices(t_elf_h *ehdr, uint64_t e_entrypoint, uint64_t shnum, uint64_t phnum, */
@@ -1748,42 +1651,42 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
 
 
-  bool padding(int packed, size_t num)
-  {
-      bool i = true;
-      size_t times = 0;
+  /* bool padding(int packed, size_t num) */
+  /* { */
+  /*   bool i = true; */
+  /*   size_t times = 0; */
 
-      while (i && times < num)
-  	{
-  	    if ((ssize_t)1 != write(packed, "\0", 1))
-  		i = false;
-  	    times++;
-  	}
-      return (!i);
-  }
+  /*   while (i && times < num) */
+  /*     { */
+  /*       if ((ssize_t)1 != write(packed, "\0", 1)) */
+  /* 	i = false; */
+  /*       times++; */
+  /*     } */
+  /*   return (!i); */
+  /* } */
 
   static int prepare_info(t_elf_h *ehdr, unsigned char class, uint64_t *new_phdr_vaddr,
   			uint64_t phnum)
   {
-      ,*new_phdr_vaddr = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum);
-      return 0;
+    ,*new_phdr_vaddr = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum);
+    return 0;
   }
 
   static int write_ehdr(t_elf_h *ehdr, int packed, unsigned char class,
   		      uint64_t new_phdr_vaddr, uint64_t *new_phnum ,uint64_t phnum)
   {
-      ssize_t ehdr_len = elf_get_struct_size_elf_header((char *)ehdr->elf32);
+    ssize_t ehdr_len = elf_get_struct_size_elf_header((char *)ehdr->elf32);
 
-      ,*new_phnum = 2 + elf_is_gnu_stack_phdr(ehdr, class, phnum);// if is a PHDR PT_GNU_STACK
-      elf_ehdr_set_entry(ehdr, new_phdr_vaddr + ehdr_len + elf_get_elfh_phentsize(ehdr) * *new_phnum, class);
-      elf_ehdr_set_phnum(ehdr, *new_phnum, class);
-      elf_ehdr_set_shoff(ehdr, 0, class);
-      elf_ehdr_set_shnum(ehdr, 0, class);
-      elf_ehdr_set_shentsize(ehdr, 0, class);
-      elf_ehdr_set_shstrndx(ehdr, 0, class);
-      if (write(packed, ehdr->elf32, ehdr_len) != ehdr_len)
-  	return (ERR_WRITE_HEADER);
-      return (ERR_SUCCESS);
+    ,*new_phnum = 2 + elf_is_gnu_stack_phdr(ehdr, class, phnum);// if is a PHDR PT_GNU_STACK
+    elf_ehdr_set_entry(ehdr, new_phdr_vaddr + ehdr_len + elf_get_elfh_phentsize(ehdr) * *new_phnum, class);
+    elf_ehdr_set_phnum(ehdr, *new_phnum, class);
+    elf_ehdr_set_shoff(ehdr, 0, class);
+    elf_ehdr_set_shnum(ehdr, 0, class);
+    elf_ehdr_set_shentsize(ehdr, 0, class);
+    elf_ehdr_set_shstrndx(ehdr, 0, class);
+    if (write(packed, ehdr->elf32, ehdr_len) != ehdr_len)
+      return (ERR_WRITE_HEADER);
+    return (ERR_SUCCESS);
   }
 
   /* static bool last_section_in_phdr(t_elf_h *ehdr, t_elf_ph ndx_ph, uint64_t ndx_sh, unsigned char class, uint64_t phnum) */
@@ -1801,69 +1704,69 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   static int write_program_headers(t_elf_h *ehdr, int packed, uint64_t phnum, uint64_t new_phdr_vaddr,
                                    unsigned char class, uint64_t payload_size)
   {
-      const uint64_t ehdr_struct_size = elf_get_struct_size_elf_header((char *)ehdr->elf32);
-      const uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
-      t_elf_ph phdr;
-      uint64_t ndx_ph;
-      uint64_t p_offset;
-      uint64_t p_filesz;
-      uint64_t p_memsz;
-      uint64_t p_align;
-      uint64_t p_vaddr;
-      uint64_t p_paddr;
-      uint64_t p_type;
-      uint64_t p_flags;
+    const uint64_t ehdr_struct_size = elf_get_struct_size_elf_header((char *)ehdr->elf32);
+    const uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
+    t_elf_ph phdr;
+    uint64_t ndx_ph;
+    uint64_t p_offset;
+    uint64_t p_filesz;
+    uint64_t p_memsz;
+    uint64_t p_align;
+    uint64_t p_vaddr;
+    uint64_t p_paddr;
+    uint64_t p_type;
+    uint64_t p_flags;
 
-      ndx_ph = 0;
-      phdr = elf_get_program_header(ehdr, ndx_ph);
+    ndx_ph = 0;
+    phdr = elf_get_program_header(ehdr, ndx_ph);
 
-      p_align = 0x1000;
-      p_filesz = p_align;
-      p_memsz = elf_get_highest_used_vaddr_avalaible(ehdr, class, phnum);
-      p_offset = 0;
-      p_vaddr = elf_get_program_header_vaddr(&phdr, class) & ~(p_align - 1);
-      p_memsz -= p_vaddr;
-      p_paddr = elf_get_program_header_paddr(&phdr, class) & ~(p_align - 1);
-      p_type = PT_LOAD;
-      p_flags = PF_R | PF_W;
-      elf_phdr_set_filesz(&phdr, p_filesz, class);
-      elf_phdr_set_memsz(&phdr, p_memsz, class);
-      elf_phdr_set_offset(&phdr, p_offset, class);
-      elf_phdr_set_vaddr(&phdr, p_vaddr, class);
-      elf_phdr_set_paddr(&phdr, p_paddr, class);
-      elf_phdr_set_type(&phdr, p_type, class);
-      elf_phdr_set_flags(&phdr, p_flags, class);
-      elf_phdr_set_align(&phdr, p_align, class);
-      if (write(packed, phdr.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
+    p_align = 0x1000;
+    p_filesz = p_align;
+    p_memsz = elf_get_highest_used_vaddr_avalaible(ehdr, class, phnum);
+    p_offset = 0;
+    p_vaddr = elf_get_program_header_vaddr(&phdr, class) & ~(p_align - 1);
+    p_memsz -= p_vaddr;
+    p_paddr = elf_get_program_header_paddr(&phdr, class) & ~(p_align - 1);
+    p_type = PT_LOAD;
+    p_flags = PF_R | PF_W;
+    elf_phdr_set_filesz(&phdr, p_filesz, class);
+    elf_phdr_set_memsz(&phdr, p_memsz, class);
+    elf_phdr_set_offset(&phdr, p_offset, class);
+    elf_phdr_set_vaddr(&phdr, p_vaddr, class);
+    elf_phdr_set_paddr(&phdr, p_paddr, class);
+    elf_phdr_set_type(&phdr, p_type, class);
+    elf_phdr_set_flags(&phdr, p_flags, class);
+    elf_phdr_set_align(&phdr, p_align, class);
+    if (write(packed, phdr.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
+      return (ERR_WRITE_PHDR);
+    p_flags = PF_R | PF_X;
+    p_vaddr = new_phdr_vaddr;
+    p_paddr = p_vaddr;
+    p_memsz = payload_size + ehdr_struct_size + phdr_struct_size * (2 + elf_is_gnu_stack_phdr(ehdr, class, phnum));
+
+    p_filesz = p_memsz;
+    elf_phdr_set_filesz(&phdr, p_filesz, class);
+    elf_phdr_set_memsz(&phdr, p_memsz, class);
+    elf_phdr_set_vaddr(&phdr, p_vaddr, class);
+    elf_phdr_set_paddr(&phdr, p_paddr, class);
+    elf_phdr_set_flags(&phdr, p_flags, class);
+    if (write(packed, phdr.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
+      return (ERR_WRITE_PHDR);
+    if (elf_is_gnu_stack_phdr(ehdr, class, phnum))
+      {
+        ndx_ph = elf_get_gnu_stack_phdr_ndx(ehdr, class, phnum);
+        phdr = elf_get_program_header(ehdr, ndx_ph);
+        if (write(packed, phdr.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
   	return (ERR_WRITE_PHDR);
-      p_flags = PF_R | PF_X;
-      p_vaddr = new_phdr_vaddr;
-      p_paddr = p_vaddr;
-      p_memsz = payload_size + ehdr_struct_size + phdr_struct_size * (2 + elf_is_gnu_stack_phdr(ehdr, class, phnum));
-
-      p_filesz = p_memsz;
-      elf_phdr_set_filesz(&phdr, p_filesz, class);
-      elf_phdr_set_memsz(&phdr, p_memsz, class);
-      elf_phdr_set_vaddr(&phdr, p_vaddr, class);
-      elf_phdr_set_paddr(&phdr, p_paddr, class);
-      elf_phdr_set_flags(&phdr, p_flags, class);
-      if (write(packed, phdr.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
-  	return (ERR_WRITE_PHDR);
-      if (elf_is_gnu_stack_phdr(ehdr, class, phnum))
-  	{
-  	    ndx_ph = elf_get_gnu_stack_phdr_ndx(ehdr, class, phnum);
-  	    phdr = elf_get_program_header(ehdr, ndx_ph);
-  	    if (write(packed, phdr.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
-  		return (ERR_WRITE_PHDR);
-  	}
-      return (0);
+      }
+    return (0);
   }
 
   static int write_payload(int packed, void **payload, uint64_t payload_size)
   {
-      if (write(packed, *payload, payload_size) != (ssize_t)payload_size)
-  	return (ERR_WRITE_PAYLOAD);
-      return (ERR_SUCCESS);
+    if (write(packed, *payload, payload_size) != (ssize_t)payload_size)
+      return (ERR_WRITE_PAYLOAD);
+    return (ERR_SUCCESS);
   }
 
   /* static int write_remaining_section_headers(t_elf_h *ehdr, int packed, uint64_t phnum, uint64_t shnum, */
@@ -1926,7 +1829,6 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   /*   free(shdr_cp.elf32); */
   /*   return 0; */
   /* } */
-  // TODO Recover this functi
 
 
   /* static bool in_array(void **arr, uint64_t arr_size, void *value) */
@@ -2222,14 +2124,14 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
         {
           shdr = elf_get_section_header(ehdr, ndx_sh);
           uint32_t sh_type = elf_get_section_header_type(&shdr, class);
-          
+
           if (sh_type == SHT_DYNAMIC)
   	  return (shdr);
   	ndx_sh++;
       }
       shdr.elf32 = NULL;
       return (shdr);
-  } 
+  }
 #+end_src
 
 #+begin_src  c :tangle no
