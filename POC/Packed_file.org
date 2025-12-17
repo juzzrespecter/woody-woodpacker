@@ -44,8 +44,8 @@ PIE == ~Elfh_type == ET_DYN~
   In case no aslr activate the ~diff == 0 and no real deal ~
 NOPIE = ~Elfh_type == ET_EXEC~
 ** SElinux
-Don't allow to got a mmap with Write and exec. First write then mprotect Read|EXEC
 * Packer
+Don't allow to got a mmap with Write and exec. First write then mprotect Read|EXEC
 #+begin_src c :tangle srcs/elf/packer/elf_packer.c :mkdirp yes
   #include <string.h>
   #include "woody.h"
@@ -218,97 +218,117 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       }
   };
 
+  // I leave it here
+  bool invalid_read(int fd, void *buffer, size_t len)
+  {
+      return (read(fd, buffer, len) != (ssize_t) len);
+  }
+
   int load_stage_buffer(t_arch arch, char **stage_buffer, size_t *stage_fd_size, t_bin_type bin_type)
   {
       int stage_fd;
+      t_buffer stage;
 
       // Validate input parameters
       if (!stage_buffer || !stage_fd_size)
   	return (1);
-
       // Initialize output parameters
       ,*stage_buffer = NULL;
       ,*stage_fd_size = 0;
-
       stage_fd = open(g_binary_paths[arch][bin_type], O_RDONLY);
-      if (stage_fd < 0 || get_file_size(stage_fd, (off_t *)stage_fd_size) || !*stage_fd_size)
-  	{
-  	    if (stage_fd >= 0)
-  		close(stage_fd);
-  	    return (1);
-  	}
-
-      ,*stage_buffer = malloc(*stage_fd_size);
-      if (!(*stage_buffer))
-  	{
+      if (stage_fd < 0 || get_file_size(stage_fd, (off_t *)&stage.len) || !stage.len)
+      {
+  	if (stage_fd >= 0)
   	    close(stage_fd);
-  	    return (5);
-  	}
+  	return (1);
+      }
+      stage.data = malloc(stage.len);
+      if (!stage.data)
+      {
+  	close(stage_fd);
+  	return (5);
+      }
 
-      if (read(stage_fd, *stage_buffer, *stage_fd_size) != (ssize_t) *stage_fd_size)
-  	{
-  	    free(*stage_buffer);
-  	    ,*stage_buffer = NULL;
-  	    close(stage_fd);
-  	    return (5);
-  	}
-
+      ,*stage_fd_size = stage.len;
+      ,*stage_buffer = stage.data;
+      bool invalid = invalid_read(stage_fd, stage.data, stage.len);
       close(stage_fd);
+      if (invalid)
+      {
+  	free(stage.data);
+  	,*stage_buffer = NULL;
+  	close(stage_fd);
+  	return (5);
+      }
       return (0);
   }
 
   static int load_and_apply_patches_to_buffer(t_arch arch, char **loaded_buffer, size_t *loaded_size,
   					    t_bin_type bin_type, const size_t *patch_offsets, const t_type *patch_values, size_t patch_count)
   {
-    // Step 1: Load raw binary
-    if (load_stage_buffer(arch, loaded_buffer, loaded_size, bin_type))
+    t_buffer binary;
+
+    if (load_stage_buffer(arch, (char **)&binary.data, &binary.len, bin_type))
       {
         ,*loaded_buffer = NULL;
+        ,*loaded_size = 0;
         return (5); // Load failed
       }
+    ,*loaded_buffer = binary.data;
+    ,*loaded_size = binary.len;
     // Step 2: Determine data size for patching (32 vs 64-bit pointers/values)
     size_t value_size = (size_t)ft_ternary(arch, (void *)sizeof(uint64_t), (void *)sizeof(uint32_t));
     // Step 3: Apply all patches
-    apply_patches_to_buffer(*loaded_buffer, patch_offsets, patch_values, patch_count, value_size);
+    apply_patches_to_buffer(binary.data, patch_offsets, patch_values, patch_count, value_size);
     return 0; // Success
   }
 
   //payload
-  static char *compress_encrypt_with_header(const void *input_data, size_t input_size,
-  					  size_t value_size, size_t *output_size,
-  					  size_t *final_compressed_size, char **key)
+  //Delete output_size and change return type value for t_buffer.
+  static char *compress_encrypt_with_header(const void *input_data, size_t input_size,//Change with t_buffer
+  					  size_t value_size, size_t *output_size,					  size_t *final_compressed_size, char **key)
   {
-    // Step 1: Compress
-    t_list *compressed_list = lz77_compress_to_list((unsigned char *)input_data, input_size);
-    if (!compressed_list) return NULL;
+      t_buffer input;
 
-    size_t compressed_size;
-    unsigned char *compressed_bytes = lz77_get_compress_arr(compressed_list, &compressed_size);
-    ft_lstclear(&compressed_list, free);
-    if (!compressed_bytes) return NULL;
+      input.len=input_size;
+      input.data=(void *)input_data;
+      // Step 1: Compress
+      t_list *compressed_list = lz77_compress_to_list((unsigned char *)input.data, input.len);
+      if (!compressed_list)
+  	return NULL;
+      t_buffer compressed;
 
-    // Step 2: Prepend original size as header
-    char *compressed_with_header = alloc_concat_buffers(
-  					     final_compressed_size,
-  					     &input_size, value_size,
-  					     compressed_bytes, compressed_size
-  					     );
-    free(compressed_bytes);
-    if (!compressed_with_header) return NULL;
+      compressed.data = lz77_get_compress_arr(compressed_list, &compressed.len);
+      ft_lstclear(&compressed_list, free);
+      if (!compressed.data)
+  	return NULL;
+      // Step 2: Prepend original size as header
+      t_buffer compressed_with_header;
+      compressed_with_header.data = alloc_concat_buffers(&compressed_with_header.len,
+  						       &input.len, value_size,
+  						       compressed.data, compressed.len);
+      ,*final_compressed_size = compressed_with_header.len;
+      free(compressed.data);
+      if (!compressed_with_header.data)
+  	return NULL;
 
-    // Step 3: Encrypt
-    char *encrypted = encrypt(compressed_with_header, *final_compressed_size, output_size, key);
-    if (encrypted != compressed_with_header)
-      free(compressed_with_header);
+      // Step 3: Encrypt
+      t_buffer encrypted;
+      encrypted.data = encrypt(compressed_with_header.data, compressed_with_header.len, &encrypted.len, key);
 
-    if (!encrypted || !*output_size) {
-      free(encrypted);
-      return NULL;
-    }
-    return encrypted;
+      if (encrypted.data != compressed_with_header.data)
+  	free(compressed_with_header.data);
+      ,*output_size = encrypted.len;
+      if (!encrypted.data || !encrypted.len)
+      {
+  	free(encrypted.data);
+  	return NULL;
+      }
+      return (encrypted.data);
   }
 
   // payload/stage2
+  // Change out_buffer, out_size and return that in a t_buffer.
   static int build_stage2_buffer(t_arch arch, size_t elf_size, uint64_t s3_vaddr,
   			       char **out_buffer, size_t *out_size,
   			       size_t *payload_raw_size)
@@ -318,22 +338,25 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       [ARCH_X64] = { 0x6E, 0xD7 }
     };
     const t_type patches[2] = {{.b8 = elf_size}, {.b8 = s3_vaddr}};
-    char *stage2_buf;
-    size_t stage2_sz;
-    char *payload_raw;
-
-    if (load_and_apply_patches_to_buffer(arch, &stage2_buf, &stage2_sz, STAGE_2,
+    t_buffer stage2;
+    t_buffer raw_payload;
+    if (load_and_apply_patches_to_buffer(arch, (char **)&stage2.data, &stage2.len, STAGE_2,
   				       stage2_patch_offsets[arch], patches, 2))
       return (ERR_LOAD_STAGE);
-    if (load_stage_buffer(arch, &payload_raw, payload_raw_size, PAYLOAD_BIN)) {
-      free(stage2_buf);
+
+    if (load_stage_buffer(arch, (char **)&raw_payload.data, &raw_payload.len, PAYLOAD_BIN)) {
+      free(stage2.data);
       return (ERR_LOAD_STAGE);
     }
-    ,*out_buffer = alloc_concat_buffers(out_size, payload_raw, *payload_raw_size, stage2_buf, stage2_sz);
-    free(payload_raw);
-    free(stage2_buf);
-    if (!*out_buffer)
+    ,*payload_raw_size = raw_payload.len;
+    t_buffer out;
+    out.data = alloc_concat_buffers(&out.len, raw_payload.data, raw_payload.len, stage2.data, stage2.len);
+    free(raw_payload.data);
+    free(stage2.data);
+    if (!out.data)
       return (ERR_ALLOC);
+    ,*out_buffer = out.data;
+    ,*out_size = out.len;
     return (ERR_SUCCESS);
   }
 
@@ -413,17 +436,17 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
   //build_stage1_patched
   #define STAGE1_PATCHES 10 //Should use a ENUM
-
+  // change return to t_buffer and delete out_stage1 and out_stage1_size.
   static int build_stage1_patched(unsigned char class, t_elf_h *ehdr,
   				size_t stage2_elf_total_size,
   				size_t encrypted_size,
   				size_t compressed_hdr_size,
-  				size_t payload_raw_size, char **out_stage1,
-  				size_t *out_stage1_size, char *key)
+  				size_t payload_raw_size,
+  				char **out_stage1, size_t *out_stage1_size,
+  				char *key)
   {
     t_arch arch = (class == ELFCLASS64) ? ARCH_X64 : ARCH_X86;
     size_t value_size = arch ? sizeof(uint64_t) : sizeof(uint32_t);
-
     uint64_t phnum = elf_get_elfh_phnum(ehdr);
     uint32_t prefix_size = elf_get_struct_size_elf_header((char *)ehdr->elf32) +
       elf_get_elfh_phentsize(ehdr) *
@@ -438,13 +461,14 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       [ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf, 0xaf, 0xaf, 0xaf, 0xaf},
       [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce, 0xce, 0xce, 0xce, 0xce}
     };
+    t_buffer stage1;
 
-    if (load_stage_buffer(arch, out_stage1, out_stage1_size, STAGE_1)) {
+    if (load_stage_buffer(arch, (char **)&stage1.data, &stage1.len, STAGE_1))
       return (ERR_LOAD_STAGE);
-    }
+
     t_type stage1_patches[STAGE1_PATCHES] = {
       {.b8 = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum) + prefix_size + 5 + (!arch * 0x72)},
-      {.b8 = *out_stage1_size + prefix_size + encrypted_size},  // Will update after load
+      {.b8 = stage1.len + prefix_size + encrypted_size},  // Will update after load
       {.b8 = stage2_elf_total_size},
       {.b8 = encrypted_size},
       {.b8 = compressed_hdr_size},
@@ -459,11 +483,14 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
     // Update patch #1: total size after decryption includes decrypted buffer layout
     /* stage1_patches[1].b8 = *out_stage1_size + prefix_size + encrypted_size; */
 
-    apply_patches_to_buffer(*out_stage1, stage1_patch_offsets[arch],
+    apply_patches_to_buffer(stage1.data, stage1_patch_offsets[arch],
   			  stage1_patches, 6, value_size);
+    ,*out_stage1 = stage1.data;
+    ,*out_stage1_size = stage1.len;
     return (ERR_SUCCESS);
   }
 
+  //return t_buffer delete payload_ptr & payload_size.
   int generate_payload(void *elf_mmap, size_t elf_size, char **payload_ptr, size_t *payload_size)
   {
     const unsigned char class = elf_get_elfh_e_ident_class(elf_mmap);
@@ -475,23 +502,23 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
     if (elf_inject_s3(elf_mmap, &elf_header, class, &injected_s3_vaddr) != ERR_SUCCESS)
       return (ERR_INJECT_S3);
     size_t payload_size_raw;
-    size_t combined_len;
-    char *combined_payload_stage2;
-    if (build_stage2_buffer(arch, elf_size, injected_s3_vaddr, &combined_payload_stage2, &combined_len, &payload_size_raw))
+    /* size_t combined_len; */
+    /* char *combined_payload_stage2; */
+    t_buffer payload_stage2;
+    if (build_stage2_buffer(arch, elf_size, injected_s3_vaddr, (char **)&payload_stage2.data, &payload_stage2.len, &payload_size_raw))
       return (ERR_LOAD_STAGE);
-    if (!combined_payload_stage2)
+    if (!payload_stage2.data)
       return (ERR_ALLOC);
     size_t full_image_size;
-    char *full_image = alloc_concat_buffers(&full_image_size, combined_payload_stage2,
-  				 combined_len, elf_mmap, elf_size);
-    free(combined_payload_stage2);
+    char *full_image = alloc_concat_buffers(&full_image_size, payload_stage2.data,
+  				 payload_stage2.len, elf_mmap, elf_size);
+    free(payload_stage2.data);
     if (!full_image)
       return (ERR_ALLOC);
     size_t encrypted_size;
     size_t compressed_with_header_size;
     char *key = NULL;
-    char *encrypted_payload = compress_encrypt_with_header(
-  							 full_image, full_image_size, value_size,
+    char *encrypted_payload = compress_encrypt_with_header(full_image, full_image_size, value_size,
   							 &encrypted_size, &compressed_with_header_size, &key);
     free(full_image);
     if (!encrypted_payload || encrypted_size == 0)
@@ -736,4 +763,9 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
     return (arr_size);// if arr_size == 0 False
   }
 #+end_src
+
 * How much time i use in leave it clean
+:LOGBOOK:
+CLOCK: [2025-12-17 Wed 07:49]
+CLOCK: [2025-12-17 Wed 07:25]--[2025-12-17 Wed 07:47] =>  0:22
+:END:
