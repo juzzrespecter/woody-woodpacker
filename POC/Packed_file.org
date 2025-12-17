@@ -57,6 +57,12 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   #include <sys/mman.h>
   #include <stdlib.h> //Malloc
 
+  typedef struct s_buffer
+  {
+      void   *data;
+      size_t  len;
+  } t_buffer;
+
   // Encrypt.org
   void *encrypt(void *raw, size_t raw_size, size_t *ret_size, char **key)
   {
@@ -73,18 +79,21 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return (((size + alignment - 1) / alignment) * alignment);
   }
   //cmn/buffer.c
-  void *buffer_join(size_t *join_len, void *s1, size_t len_s1, void *s2, size_t len_s2)
-  {
-    void *join;
 
-    ,*join_len = len_s2 + len_s1;
-    join = malloc(*join_len);
-    if (!join)
-      return (join);
-    ft_memcpy(join, s1, len_s1);
-    ft_memcpy(join+len_s1, s2, len_s2);
-    return (join);
+  void *alloc_concat_buffers(size_t *join_len, void *s1, size_t len_s1, void *s2, size_t len_s2)
+  {
+    t_buffer concat;
+
+    concat.len = len_s2 + len_s1;
+    concat.data = malloc(concat.len);
+    if (!concat.data)
+      return (concat.data);
+    ft_memcpy(concat.data, s1, len_s1);
+    ft_memcpy(concat.data+len_s1, s2, len_s2);
+    ,*join_len = concat.len;
+    return (concat.data);
   }
+
   //
   static void apply_patches_to_buffer(char *buffer, const size_t *offsets,
   				    const t_type *values, size_t count, size_t data_size)
@@ -98,7 +107,6 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   }
 
   //elf/analysis.c
-
   size_t elf_is_gnu_stack_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
   {
       t_elf_ph phdr;
@@ -280,7 +288,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
     if (!compressed_bytes) return NULL;
 
     // Step 2: Prepend original size as header
-    char *compressed_with_header = buffer_join(
+    char *compressed_with_header = alloc_concat_buffers(
   					     final_compressed_size,
   					     &input_size, value_size,
   					     compressed_bytes, compressed_size
@@ -321,7 +329,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       free(stage2_buf);
       return (ERR_LOAD_STAGE);
     }
-    ,*out_buffer = buffer_join(out_size, payload_raw, *payload_raw_size, stage2_buf, stage2_sz);
+    ,*out_buffer = alloc_concat_buffers(out_size, payload_raw, *payload_raw_size, stage2_buf, stage2_sz);
     free(payload_raw);
     free(stage2_buf);
     if (!*out_buffer)
@@ -419,12 +427,21 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
     uint64_t phnum = elf_get_elfh_phnum(ehdr);
     uint32_t prefix_size = elf_get_struct_size_elf_header((char *)ehdr->elf32) +
       elf_get_elfh_phentsize(ehdr) *
-      (2 + elf_is_gnu_stack_phdr(ehdr, class, phnum));
+      (2 + (0 != elf_get_gnu_stack_phdr_ndx(ehdr, class, phnum)));
 
     uint64_t s2_entry_offset = payload_raw_size + 0x12 + (arch ? 0x5 : 0);
     if (key != NULL)// TODO change as needed.
       key = (char*)s2_entry_offset;
 
+    static const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCHES] = {
+      //                                                 Encryption key offsets.
+      [ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf, 0xaf, 0xaf, 0xaf, 0xaf},
+      [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce, 0xce, 0xce, 0xce, 0xce}
+    };
+
+    if (load_stage_buffer(arch, out_stage1, out_stage1_size, STAGE_1)) {
+      return (ERR_LOAD_STAGE);
+    }
     t_type stage1_patches[STAGE1_PATCHES] = {
       {.b8 = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum) + prefix_size + 5 + (!arch * 0x72)},
       {.b8 = *out_stage1_size + prefix_size + encrypted_size},  // Will update after load
@@ -439,19 +456,8 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
     };
     if (!key && (uint64_t)key != s2_entry_offset)// TODO delete when encrypt works.
       free(key);
-
-    static const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCHES] = {
-      //                                                 Encryption key offsets.
-      [ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf, 0xaf, 0xaf, 0xaf, 0xaf},
-      [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce, 0xce, 0xce, 0xce, 0xce}
-    };
-
-    if (load_stage_buffer(arch, out_stage1, out_stage1_size, STAGE_1)) {
-      return (ERR_LOAD_STAGE);
-    }
-
     // Update patch #1: total size after decryption includes decrypted buffer layout
-    stage1_patches[1].b8 = *out_stage1_size + prefix_size + encrypted_size;
+    /* stage1_patches[1].b8 = *out_stage1_size + prefix_size + encrypted_size; */
 
     apply_patches_to_buffer(*out_stage1, stage1_patch_offsets[arch],
   			  stage1_patches, 6, value_size);
@@ -476,7 +482,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
     if (!combined_payload_stage2)
       return (ERR_ALLOC);
     size_t full_image_size;
-    char *full_image = buffer_join(&full_image_size, combined_payload_stage2,
+    char *full_image = alloc_concat_buffers(&full_image_size, combined_payload_stage2,
   				 combined_len, elf_mmap, elf_size);
     free(combined_payload_stage2);
     if (!full_image)
@@ -500,7 +506,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
         free(encrypted_payload);
         return (ERR_LOAD_STAGE);
       }
-    ,*payload_ptr = buffer_join(payload_size, stage1_buffer, stage1_size,
+    ,*payload_ptr = alloc_concat_buffers(payload_size, stage1_buffer, stage1_size,
   			     encrypted_payload, encrypted_size);
     free(stage1_buffer);
     free(encrypted_payload);
@@ -523,7 +529,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   {
     ssize_t ehdr_len = elf_get_struct_size_elf_header((char *)ehdr->elf32);
 
-    ,*new_phnum = 2 + elf_is_gnu_stack_phdr(ehdr, class, phnum);// if is a PHDR PT_GNU_STACK
+    ,*new_phnum = 2 + (0 != elf_get_gnu_stack_phdr_ndx(ehdr, class, phnum));// if is a PHDR PT_GNU_STACK
     elf_ehdr_set_entry(ehdr, new_phdr_vaddr + ehdr_len + elf_get_elfh_phentsize(ehdr) * *new_phnum, class);
     elf_ehdr_set_phnum(ehdr, *new_phnum, class);
     elf_ehdr_set_shoff(ehdr, 0, class);
@@ -576,7 +582,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
     p_flags = PF_R | PF_X;
     p_vaddr = new_phdr_vaddr;
     p_paddr = p_vaddr;
-    p_memsz = payload_size + ehdr_struct_size + phdr_struct_size * (2 + elf_is_gnu_stack_phdr(ehdr, class, phnum));
+    p_memsz = payload_size + ehdr_struct_size + phdr_struct_size * (2 + (0 != elf_get_gnu_stack_phdr_ndx(ehdr, class, phnum)));
 
     p_filesz = p_memsz;
     elf_phdr_set_filesz(&phdr, p_filesz, class);
@@ -586,13 +592,13 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
     elf_phdr_set_flags(&phdr, p_flags, class);
     if (write(packed, phdr.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
       return (ERR_WRITE_PHDR);
-    if (elf_is_gnu_stack_phdr(ehdr, class, phnum))
-      {
-        ndx_ph = elf_get_gnu_stack_phdr_ndx(ehdr, class, phnum);
-        phdr = elf_get_program_header(ehdr, ndx_ph);
-        if (write(packed, phdr.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
-  	return (ERR_WRITE_PHDR);
-      }
+    ndx_ph = elf_get_gnu_stack_phdr_ndx(ehdr, class, phnum);
+    if (ndx_ph)
+    {
+      phdr = elf_get_program_header(ehdr, ndx_ph);
+      if (write(packed, phdr.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
+        return (ERR_WRITE_PHDR);
+    }
     return (0);
   }
 
@@ -730,3 +736,4 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
     return (arr_size);// if arr_size == 0 False
   }
 #+end_src
+* How much time i use in leave it clean
