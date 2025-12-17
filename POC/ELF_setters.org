@@ -117,8 +117,8 @@
 #+end_src
 
 #+begin_src c :tangle "include/elf_setters_ehdr.h" :mkdirp yes
-  # define ELF_SETTERS_EHDR_H
   #ifndef ELF_SETTERS_EHDR_H
+  # define ELF_SETTERS_EHDR_H
   # include "format_elf.h"//t_elf_h
 
   void elf_ehdr_set_shoff(t_elf_h *ehdr, uint64_t value, unsigned char class);

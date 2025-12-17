@@ -68,7 +68,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   }
 
   //cmn/math.c
-  uint64_t get_alignment_effective_addr(uint64_t alignment, uint64_t size)
+  uint64_t align_up(uint64_t size, uint64_t alignment)
   {
       return (((size + alignment - 1) / alignment) * alignment);
   }
@@ -161,7 +161,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
   size_t elf_get_highest_loadable_vaddr_avalaible(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
   {
-      return (get_alignment_effective_addr(0x1000, elf_get_highest_used_vaddr_avalaible(ehdr, class, phnum)));
+    return (align_up(elf_get_highest_used_vaddr_avalaible(ehdr, class, phnum), 0x1000));
   }
 
   static uint64_t elf_get_closest_higher_p_offset(const t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t p_offset)
@@ -354,7 +354,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   		    continue;
   		}
   	    cur_vaddr_top = elf_get_program_header_vaddr(phdr, class) + elf_get_program_header_memsz(phdr, class);
-  	    top_vaddr = get_alignment_effective_addr(0x1000, cur_vaddr_top);
+  	    top_vaddr = align_up(cur_vaddr_top, 0x1000);
   	    avalaible_vaddr = top_vaddr - cur_vaddr_top;
   	    if (avalaible_vaddr < gap_size)
   		{
