@@ -277,54 +277,44 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       }
   };
 
-
-  int load_stage_buffer(t_arch arch, char **stage_buffer, size_t *stage_fd_size, t_bin_type bin_type)
+  // change stage_buffer and fd_size for return.
+  t_buffer	load_stage_buffer(t_arch arch, t_bin_type bin_type)
   {
       int stage_fd;
       t_buffer stage;
 
-      // Validate input parameters
-      if (!stage_buffer || !stage_fd_size)
-  	return (1);
-      // Initialize output parameters
-      ,*stage_buffer = NULL;
-      ,*stage_fd_size = 0;
+  	ft_bzero(&stage, sizeof(stage));
       stage_fd = open(g_binary_paths[arch][bin_type], O_RDONLY);
       if (stage_fd < 0 || get_file_size(stage_fd, (off_t *)&stage.len) || !stage.len)
       {
-  	if (stage_fd >= 0)
-  	    close(stage_fd);
-  	return (1);
+  		if (stage_fd >= 0)
+  			close(stage_fd);
+  		return (stage);
       }
       stage.data = malloc(stage.len);
       if (!stage.data)
       {
-  	close(stage_fd);
-  	return (5);
+  		close(stage_fd);
+  		return (stage);
       }
-
-      ,*stage_fd_size = stage.len;
-      ,*stage_buffer = stage.data;
       bool invalid = invalid_read(stage_fd, stage.data, stage.len);
       close(stage_fd);
       if (invalid)
       {
-  	free(stage.data);
-  	,*stage_buffer = NULL;
-  	close(stage_fd);
-  	return (5);
+  		free(stage.data);
+  		ft_bzero(&stage, sizeof(stage));
       }
-      return (0);
+      return (stage);
   }
 
-  static t_buffer load_and_apply_patches_to_buffer(t_arch arch, t_bin_type bin_type, t_patch_set *patch)
+  static t_buffer load_and_apply_patches_to_buffer(t_arch arch, t_bin_type bin_type, const t_patch_set *patch)
   {
     t_buffer binary;
 
     ft_bzero(&binary, sizeof(binary));
-    if (load_stage_buffer(arch, (char **)&binary.data, &binary.len, bin_type))
-        return (binary);
-    apply_patches_to_buffer(binary.data, patch);
+    binary = load_stage_buffer(arch, bin_type);
+    if (!invalid_buffer(&binary))
+  	  apply_patches_to_buffer(binary.data, patch);
     return (binary); // Success
   }
 
@@ -365,61 +355,63 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   	return (crypt);
   }
 
-  //return t_compress_encrypt
+  //help improve var names
   static t_compress_encrypt compress_encrypt_with_header(t_buffer *input, size_t value_size)
   {
   	t_compress_encrypt compress_encrypt;
-      t_buffer encrypted;
-      t_buffer compressed_with_header;
+      t_buffer head_compress;
 
       ft_bzero(&compress_encrypt, sizeof(compress_encrypt));
-      compressed_with_header = lz77_get_headed_buffer(input, value_size);
-      if (!compressed_with_header.data)
+      head_compress = lz77_get_headed_buffer(input, value_size);
+      if (invalid_buffer(&head_compress))
   		return (compress_encrypt);
-  	compress_encrypt.head_compress_len = compressed_with_header.len;
-      if (invalid_buffer(&compressed_with_header))
-  		return (compress_encrypt);
-  	t_encrypt cipher = wrapper_encrypt(&compressed_with_header);
-  	encrypted = cipher.buffer;
-      if (encrypted.data != compressed_with_header.data)
-  		free(compressed_with_header.data);
-      if (invalid_buffer(&encrypted))
-  		free(encrypted.data);
-  	compress_encrypt.encrypt = cipher;
+  	compress_encrypt.head_compress_len = head_compress.len;
+  	compress_encrypt.encrypt = wrapper_encrypt(&head_compress);
+      if (compress_encrypt.encrypt.buffer.data != head_compress.data)
+  		free(head_compress.data);
+      if (invalid_buffer(&compress_encrypt.encrypt.buffer))
+  		free(compress_encrypt.encrypt.buffer.data);
       return (compress_encrypt);
   }
 
   // payload/stage2
-  static t_buffer build_stage2_buffer(t_arch arch, size_t elf_size,
-  				    uint64_t s3_vaddr, size_t *payload_raw_size)
+  t_patch_set init_patch_stage2(t_arch arch, size_t elf_size, uint64_t s3_vaddr)
   {
-    static const size_t stage2_patch_offsets[NUM_ARCHS][2] = {
-      [ARCH_X86] = { 0x5B, 0x98 },
-      [ARCH_X64] = { 0x6E, 0xD7 }
-    };
-    const t_type patches[2] = {{.b8 = elf_size}, {.b8 = s3_vaddr}};
-    t_buffer out;
-    t_buffer stage2;
-    t_buffer raw_payload;
-    t_patch_set patch = ft_init_patch_set(stage2_patch_offsets[arch], patches, 2,
-  		(size_t)ft_ternary(arch, (void *)sizeof(uint64_t), (void *)sizeof(uint32_t)));
+  	static const size_t stage2_patch_offsets[NUM_ARCHS][2] = {
+  		[ARCH_X86] = { 0x5B, 0x98 },
+  		[ARCH_X64] = { 0x6E, 0xD7 }
+  	};
+  	static t_type patches[2];
 
-    ft_bzero(&out, sizeof(out));
-    stage2 = load_and_apply_patches_to_buffer(arch, STAGE_2, &patch);
-    if (invalid_buffer(&stage2))
-      return (out);
-    if (load_stage_buffer(arch, (char **)&raw_payload.data, &raw_payload.len, PAYLOAD_BIN))
-    {
-      free(stage2.data);
-      return (out);
-    }
-    ,*payload_raw_size = raw_payload.len;
-    out = alloc_concat_buffers(&raw_payload, &stage2);
-    free(raw_payload.data);
-    free(stage2.data);
-    if (invalid_buffer(&out))
-      return (out);
-    return (out);
+  	patches[1].b8 = s3_vaddr;
+  	patches[0].b8 = elf_size;
+  	return (ft_init_patch_set(stage2_patch_offsets[arch], patches, 2,
+  							  (size_t)ft_ternary(arch, (char *)sizeof(uint64_t),
+  												 (void *)sizeof(uint32_t))));
+  }
+
+  static t_stage2_result build_stage2_buffer(t_arch arch, size_t elf_size, uint64_t s3_vaddr)
+  {
+  	const t_patch_set patch = init_patch_stage2(arch, elf_size, s3_vaddr);
+  	t_stage2_result out;
+  	t_buffer stage2;
+  	t_buffer raw_payload;
+
+  	ft_bzero(&out, sizeof(out));
+  	stage2 = load_and_apply_patches_to_buffer(arch, STAGE_2, &patch);
+  	if (invalid_buffer(&stage2))
+  		return (out);
+  	raw_payload =load_stage_buffer(arch, PAYLOAD_BIN);
+  	if (invalid_buffer(&raw_payload))
+  	{
+  		free(stage2.data);
+  		return (out);
+  	}
+  	out.payload_raw_size = raw_payload.len;
+  	out.buffer = alloc_concat_buffers(&raw_payload, &stage2);
+  	free(raw_payload.data);
+  	free(stage2.data);
+  	return (out);
   }
 
   //elf/inject
@@ -475,27 +467,29 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   {
       const uint64_t phnum = elf_get_elfh_phnum(ehdr);
       t_elf_ph phdr;
-      off_t stage3_fd_size;
-      char *stage3_buffer;
+  	t_buffer stage3;
       uint64_t free_off;
       t_arch arch = class == ELFCLASS64;
 
-      if (load_stage_buffer(arch, &stage3_buffer, (size_t *)&stage3_fd_size, STAGE_3))
-  	return (ERR_LOAD_STAGE);
+      stage3 = load_stage_buffer(arch, STAGE_3);
+  	if (invalid_buffer(&stage3))
+  		return (ERR_LOAD_STAGE);
       //fine
-      if (!elf_set_s3_get_info(ehdr, class, phnum, stage3_fd_size, free_va, &free_off, &phdr))
+      if (!elf_set_s3_get_info(ehdr, class, phnum, stage3.len, free_va, &free_off, &phdr))
   	{
-  	    free(stage3_buffer);
+  	    free(stage3.data);
   	    ,*free_va = 0;
   	    return (ERR_SUCCESS);
   	}
-      ft_memcpy(elf + free_off, stage3_buffer, stage3_fd_size);
-      free(stage3_buffer);
-      elf_phdr_set_filesz(&phdr, elf_get_program_header_filesz(&phdr, class) + stage3_fd_size, class);
-      elf_phdr_set_memsz(&phdr, elf_get_program_header_memsz(&phdr, class) + stage3_fd_size, class);
+      ft_memcpy(elf + free_off, stage3.data, stage3.len);
+      free(stage3.data);
+      elf_phdr_set_filesz(&phdr, elf_get_program_header_filesz(&phdr, class) + stage3.len, class);
+      elf_phdr_set_memsz(&phdr, elf_get_program_header_memsz(&phdr, class) + stage3.len, class);
       return (ERR_SUCCESS);
   }
 
+  //TODO t_stage2_result generate_stage1() {};
+  //TODO use a struct to pass args.
   //TODO use a ENUM
   #define STAGE1_PATCHES 10
   static t_buffer build_stage1_patched(unsigned char class, t_elf_h *ehdr,
@@ -523,9 +517,9 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   	[ARCH_X64] = { 0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce, 0xce, 0xce, 0xce, 0xce}
       };
 
-      if (load_stage_buffer(arch, (char **)&stage1.data, &stage1.len, STAGE_1))
-  	return (stage1);
-
+      stage1 = load_stage_buffer(arch, STAGE_1);
+  	if (invalid_buffer(&stage1))
+  		return (stage1);
       t_type stage1_patches[STAGE1_PATCHES] = {
   	{.b8 = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum) + prefix_size + 5 + (!arch * 0x72)},
   	{.b8 = stage1.len + prefix_size + encrypted_size},  // Will update after load
@@ -545,29 +539,41 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return (stage1);
   }
 
+  t_stage2_result generate_stage2(t_arch arch, t_buffer *elf)
+  {
+  	t_stage2_result stage2;
+  	t_elf_h elf_header;
+  	uint64_t s3_va;
+  	const unsigned char class = elf_get_elfh_e_ident_class(elf->data);
+
+  	elf_header = (t_elf_h){.elf32 = elf->data};
+  	ft_bzero(&stage2, sizeof(stage2));
+  	if (elf_inject_s3(elf->data, &elf_header, class, &s3_va) != ERR_SUCCESS)
+  		return (stage2);
+  	stage2 = build_stage2_buffer(arch, elf->len, s3_va);
+  	return (stage2);
+  }
+
+
   t_buffer generate_payload(t_buffer *elf)
   {
     const unsigned char class = elf_get_elfh_e_ident_class(elf->data);
     const t_arch arch = (class == ELFCLASS64) ? ARCH_X64 : ARCH_X86;
     const size_t value_size = arch ? sizeof(uint64_t) : sizeof(uint32_t);
-    t_elf_h elf_header = { .elf32 = elf->data };
+    t_elf_h elf_header = (t_elf_h){ .elf32 = elf->data };
     t_compress_encrypt com_cypher;
-    uint64_t injected_s3_vaddr = 0;
     t_buffer payload;
+    t_stage2_result payload_stage2;
     t_buffer stage1;
-    size_t payload_size_raw;
-    t_buffer payload_stage2;
     t_buffer payload_stage2_elf;
 
 
     ft_bzero(&payload, sizeof(payload));
-    if (elf_inject_s3(elf->data, &elf_header, class, &injected_s3_vaddr) != ERR_SUCCESS)
+    payload_stage2 = generate_stage2(arch, elf);
+    if (invalid_buffer(&payload_stage2.buffer))
       return (payload);
-    payload_stage2 = build_stage2_buffer(arch, elf->len, injected_s3_vaddr, &payload_size_raw);
-    if (invalid_buffer(&payload_stage2))
-      return (payload);
-    payload_stage2_elf = alloc_concat_buffers(&payload_stage2, elf);
-    free(payload_stage2.data);
+    payload_stage2_elf = alloc_concat_buffers(&payload_stage2.buffer, elf);
+    free(payload_stage2.buffer.data);
     if (invalid_buffer(&payload_stage2_elf))
       return (payload);
     com_cypher = compress_encrypt_with_header(&payload_stage2_elf, value_size);
@@ -576,7 +582,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return (payload);
     stage1 = build_stage1_patched(class, &elf_header, payload_stage2_elf.len,
   				com_cypher.encrypt.buffer.len, com_cypher.head_compress_len,
-  								payload_size_raw, (char *)&com_cypher.encrypt.key);
+  								payload_stage2.payload_raw_size, (char *)&com_cypher.encrypt.key);
     if (invalid_buffer(&stage1))
     {
         free(com_cypher.encrypt.buffer.data);
@@ -586,14 +592,6 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
     free(stage1.data);
     free(com_cypher.encrypt.buffer.data);
     return (payload);
-  }
-
-
-  static int write_payload(int packed, void **payload, uint64_t payload_size)
-  {
-      if (invalid_write(packed, *payload, payload_size))
-  	return (ERR_WRITE_PAYLOAD);
-      return (ERR_SUCCESS);
   }
 
   // elf/write
@@ -676,7 +674,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   }
 
 
-  int generate_packed_file(void *elf_mmap, void *payload, size_t payload_size, int packed)
+  int generate_packed_file(void *elf_mmap, t_buffer *payload, int packed)
   {
       t_elf_h ehdr = (t_elf_h){.elf32 = elf_mmap};
       uint64_t shnum;
@@ -686,40 +684,40 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       uint64_t new_phnum;
 
       if (validate_elf_headers(&ehdr, &shnum, &phnum, &class))
-  	return (ERR_INVALID_ELF);
+  		return (ERR_INVALID_ELF);
       new_phdr_vaddr = elf_get_highest_loadable_vaddr_avalaible(&ehdr, class, phnum);
       if (write_ehdr(&ehdr, packed, class, new_phdr_vaddr, &new_phnum, phnum))
-  	return (ERR_WRITE_HEADER);
-      if (write_program_headers(&ehdr, packed, phnum, new_phdr_vaddr, class, payload_size))
-  	return (ERR_WRITE_PHDR);
-      if (write_payload(packed, &payload, payload_size))
-  	return (ERR_WRITE_PAYLOAD);
+  		return (ERR_WRITE_HEADER);
+      if (write_program_headers(&ehdr, packed, phnum, new_phdr_vaddr, class, payload->len))
+  		return (ERR_WRITE_PHDR);
+      if (invalid_write(packed, payload->data, payload->len))
+  		return (ERR_WRITE_PAYLOAD);
       /* ft_printf("Successfully packed\n"); */
       return (0);
   }
 
   //elf/packer/elf_packer.c
+  // may i create elf_packer_buffer(t_buffer *elf, const char *file_path)
   int elf_packer(void *elf_mmap, off_t file_size, const char *file_path)
   {
-      t_buffer elf = (t_buffer){.data=elf_mmap, .len=(size_t)file_size};
-      t_buffer payload = generate_payload(&elf);
+      t_buffer	elf = (t_buffer){.data=elf_mmap, .len=(size_t)file_size};
+      t_buffer	payload = generate_payload(&elf);
+  	int			packed;
+  	int			result;
+
       if (invalid_buffer(&payload))
-  	return (1);
-      // open the file where we gonna add the payload
-      int packed = open(file_path, O_CREAT | O_TRUNC | O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
+  		return (1);
+      packed = open(file_path, O_CREAT | O_TRUNC | O_RDWR, S_IRWXU | S_IRWXG | S_IRWXO);
       if (packed < 0)
       {
-  	free(payload.data);
-  	return (2);
+  		free(payload.data);
+  		return (2);
       }
-      if (generate_packed_file(elf_mmap, payload.data, payload.len, packed))
-      {
+      result = generate_packed_file(elf_mmap, &payload, packed);
   	free(payload.data);
   	close(packed);
-  	return (3);
-      }
-      free(payload.data);
-      close(packed);
+  	if (result)
+  		return (3);
       return (0);
   }
 #+end_src
@@ -808,6 +806,8 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 :ORDERED:  t
 :END:
 :LOGBOOK:
+CLOCK: [2025-12-18 Thu 11:46]--[2025-12-18 Thu 12:15] =>  0:29
+CLOCK: [2025-12-18 Thu 11:01]--[2025-12-18 Thu 11:22] =>  0:21
 CLOCK: [2025-12-18 Thu 10:27]--[2025-12-18 Thu 10:47] =>  0:20
 CLOCK: [2025-12-18 Thu 06:25]--[2025-12-18 Thu 07:31] =>  1:06
 CLOCK: [2025-12-18 Thu 05:49]--[2025-12-18 Thu 06:09] =>  0:20
