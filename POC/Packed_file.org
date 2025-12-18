@@ -58,11 +58,54 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   #include <sys/mman.h>
   #include <stdlib.h> //Malloc
 
-  typedef struct s_buffer
+  typedef struct	s_buffer
   {
-      void   *data;
-      size_t  len;
-  } t_buffer;
+      void	*data;
+      size_t	len;
+  }	t_buffer;
+
+  typedef struct	s_patch_set
+  {
+      const size_t	*offsets;
+      const t_type	*values;
+      const size_t	count;
+      const size_t	value_size;
+  }	t_patch_set;
+
+  typedef struct	s_stage2_result {
+      t_buffer	buffer;           // Stage2 buffer
+      size_t		payload_raw_size; // Size of raw payload used in concat
+  }	t_stage2_result;
+
+
+  typedef struct s_stage1_params {
+      size_t	stage2_total_size;
+      size_t	encrypted_size;
+      size_t	compressed_hdr_size;
+      size_t	payload_raw_size;
+      char	*key;
+  } t_stage1_params;
+
+  typedef struct	s_aes128_key {
+      uint32_t bytes[4];  // 128 bits
+  }	t_aes128_key;
+
+  typedef struct	s_encrypt {
+  	t_buffer buffer;
+  	t_aes128_key key;
+  }	t_encrypt;
+
+  typedef struct	s_compress_encrypt {
+  	t_encrypt encrypt;
+  	size_t head_compress_len;
+  }	t_compress_encrypt;
+
+  t_patch_set ft_init_patch_set(const size_t *off, const t_type *val, size_t count, size_t value_size)
+  {
+      t_patch_set patch = (t_patch_set){.offsets=off, .values=val, .count=count,
+  				      .value_size=value_size};
+      return (patch);
+  }
 
   // Encrypt.org
   void *encrypt(void *raw, size_t raw_size, size_t *ret_size, char **key)
@@ -81,7 +124,6 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   }
   // I leave it here
   //cmn/invalid.c
-
   bool invalid_read(int fd, void *ptr, size_t len)
   {
       return (read(fd, ptr, len) != (ssize_t)len);
@@ -99,7 +141,6 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   }
 
   //cmn/buffer.c
-
   t_buffer alloc_concat_buffers(const t_buffer *a, const t_buffer *b)
   {
     t_buffer concat;
@@ -113,14 +154,13 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
     return (concat);
   }
 
-  //
-  static void apply_patches_to_buffer(char *buffer, const size_t *offsets,
-  				    const t_type *values, size_t count, size_t data_size)
+  //t_patches_set
+  static void apply_patches_to_buffer(char *buffer, const t_patch_set *patch)
   {
     size_t i = 0;
-    while (i < count)
+    while (i < patch->count)
       {
-        ft_memcpy(buffer + offsets[i], &values[i].b8, data_size);
+        ft_memcpy(buffer + patch->offsets[i], &patch->values[i].b8, patch->value_size);
         i++;
       }
   }
@@ -277,57 +317,78 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return (0);
   }
 
-  static int load_and_apply_patches_to_buffer(t_arch arch, char **loaded_buffer, size_t *loaded_size,
-  					    t_bin_type bin_type, const size_t *patch_offsets, const t_type *patch_values, size_t patch_count)
+  static t_buffer load_and_apply_patches_to_buffer(t_arch arch, t_bin_type bin_type, t_patch_set *patch)
   {
     t_buffer binary;
 
+    ft_bzero(&binary, sizeof(binary));
     if (load_stage_buffer(arch, (char **)&binary.data, &binary.len, bin_type))
-      {
-        ,*loaded_buffer = NULL;
-        ,*loaded_size = 0;
-        return (5); // Load failed
-      }
-    ,*loaded_buffer = binary.data;
-    ,*loaded_size = binary.len;
-    // Step 2: Determine data size for patching (32 vs 64-bit pointers/values)
-    size_t value_size = (size_t)ft_ternary(arch, (void *)sizeof(uint64_t), (void *)sizeof(uint32_t));
-    // Step 3: Apply all patches
-    apply_patches_to_buffer(binary.data, patch_offsets, patch_values, patch_count, value_size);
-    return 0; // Success
+        return (binary);
+    apply_patches_to_buffer(binary.data, patch);
+    return (binary); // Success
   }
 
   //payload
+
+  t_buffer lz77_get_buffer(t_buffer *input)
+  {
+      t_list *compressed_list;
+      t_buffer compressed;
+
+      compressed_list  = lz77_compress_to_list((unsigned char *)input->data, input->len);
+      if (!compressed_list)
+  		return (compressed);
+      compressed.data = lz77_get_compress_arr(compressed_list, &compressed.len);
+      ft_lstclear(&compressed_list, free);
+  	return (compressed);
+  }
+
+  t_buffer lz77_get_headed_buffer(t_buffer *input, size_t value_size)
+  {
+  	t_buffer tmp = {.data=&input->len, .len=value_size};
+      t_buffer compressed;
+      t_buffer compressed_with_header;
+
+  	compressed = lz77_get_buffer(input);
+  	if (invalid_buffer(&compressed))
+  		return (compressed);
+  	compressed_with_header = alloc_concat_buffers(&tmp, &compressed);
+  	free(compressed.data);
+  	return (compressed_with_header);
+  }
+
+  t_encrypt wrapper_encrypt(t_buffer *raw)
+  {
+  	t_encrypt crypt;
+
+  	crypt.buffer.data = encrypt(raw->data, raw->len, &crypt.buffer.len, (char **)&crypt.key);
+  	return (crypt);
+  }
+
+  //return t_compress_encrypt
   static t_buffer compress_encrypt_with_header(t_buffer *input, size_t value_size,
   					     size_t *final_compressed_size, char **key)
   {
       t_buffer encrypted;
-      t_list *compressed_list = lz77_compress_to_list((unsigned char *)input->data, input->len);
-      t_buffer compressed;
+      t_buffer compressed_with_header;
 
       ft_bzero(&encrypted, sizeof(encrypted));
-      if (!compressed_list)
-  	return (encrypted);
-      compressed.data = lz77_get_compress_arr(compressed_list, &compressed.len);
-      ft_lstclear(&compressed_list, free);
-      if (!compressed.data)
-  	return (encrypted);
-      // Step 2: Prepend original size as header
-      t_buffer compressed_with_header;
-      t_buffer tmp = {.data=&input->len, .len=value_size};
-      compressed_with_header = alloc_concat_buffers(&tmp, &compressed);
+      compressed_with_header = lz77_get_headed_buffer(input, value_size);
+      if (!compressed_with_header.data)
+  		return (encrypted);
       ,*final_compressed_size = compressed_with_header.len;
-      free(compressed.data);
       if (invalid_buffer(&compressed_with_header))
-  	return (encrypted);
-
+  		return (encrypted);
       // Step 3: Encrypt
-      encrypted.data = encrypt(compressed_with_header.data, compressed_with_header.len, &encrypted.len, key);
-
+      // Create a wrapper for return t_buffer, char *key and send t_buffer.
+  	t_encrypt cipher = wrapper_encrypt(&compressed_with_header);
+      /* encrypted.data = encrypt(compressed_with_header.data, compressed_with_header.len, &encrypted.len, key); */
+  	encrypted = cipher.buffer;
       if (encrypted.data != compressed_with_header.data)
-  	free(compressed_with_header.data);
+  		free(compressed_with_header.data);
+  	,*key = (char *)&cipher.key;// Place holder.
       if (invalid_buffer(&encrypted))
-  	free(encrypted.data);
+  		free(encrypted.data);
       return (encrypted);
   }
 
@@ -335,20 +396,23 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   static t_buffer build_stage2_buffer(t_arch arch, size_t elf_size,
   				    uint64_t s3_vaddr, size_t *payload_raw_size)
   {
-    t_buffer out;
     static const size_t stage2_patch_offsets[NUM_ARCHS][2] = {
       [ARCH_X86] = { 0x5B, 0x98 },
       [ARCH_X64] = { 0x6E, 0xD7 }
     };
     const t_type patches[2] = {{.b8 = elf_size}, {.b8 = s3_vaddr}};
+    t_buffer out;
     t_buffer stage2;
     t_buffer raw_payload;
+    t_patch_set patch = ft_init_patch_set(stage2_patch_offsets[arch], patches, 2,
+  		(size_t)ft_ternary(arch, (void *)sizeof(uint64_t), (void *)sizeof(uint32_t)));
 
     ft_bzero(&out, sizeof(out));
-    if (load_and_apply_patches_to_buffer(arch, (char **)&stage2.data, &stage2.len, STAGE_2,
-  				       stage2_patch_offsets[arch], patches, 2))
+    stage2 = load_and_apply_patches_to_buffer(arch, STAGE_2, &patch);
+    if (invalid_buffer(&stage2))
       return (out);
-    if (load_stage_buffer(arch, (char **)&raw_payload.data, &raw_payload.len, PAYLOAD_BIN)) {
+    if (load_stage_buffer(arch, (char **)&raw_payload.data, &raw_payload.len, PAYLOAD_BIN))
+    {
       free(stage2.data);
       return (out);
     }
@@ -435,8 +499,8 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return (ERR_SUCCESS);
   }
 
-  //build_stage1_patched
-  #define STAGE1_PATCHES 10 //Should use a ENUM
+  //TODO use a ENUM
+  #define STAGE1_PATCHES 10
   static t_buffer build_stage1_patched(unsigned char class, t_elf_h *ehdr,
   				size_t stage2_elf_total_size,
   				size_t encrypted_size,
@@ -479,11 +543,8 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       };
       if (!key && (uint64_t)key != s2_entry_offset)// TODO delete when encrypt works.
   	free(key);
-      // Update patch #1: total size after decryption includes decrypted buffer layout
-      /* stage1_patches[1].b8 = *out_stage1_size + prefix_size + encrypted_size; */
-
-      apply_patches_to_buffer(stage1.data, stage1_patch_offsets[arch],
-  			    stage1_patches, 6, value_size);
+      t_patch_set patch = ft_init_patch_set(stage1_patch_offsets[arch], stage1_patches, 6, value_size);
+      apply_patches_to_buffer(stage1.data, &patch);
       return (stage1);
   }
 
@@ -753,6 +814,8 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 :ORDERED:  t
 :END:
 :LOGBOOK:
+CLOCK: [2025-12-18 Thu 07:11]--[2025-12-18 Thu 07:31] =>  0:20
+CLOCK: [2025-12-18 Thu 05:49]--[2025-12-18 Thu 06:09] =>  0:20
 CLOCK: [2025-12-18 Thu 05:21]--[2025-12-18 Thu 05:41] =>  0:20
 CLOCK: [2025-12-17 Wed 12:36]--[2025-12-17 Wed 13:09] =>  0:33
 CLOCK: [2025-12-17 Wed 11:03]--[2025-12-17 Wed 11:27] =>  0:24
