@@ -366,30 +366,27 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   }
 
   //return t_compress_encrypt
-  static t_buffer compress_encrypt_with_header(t_buffer *input, size_t value_size,
-  					     size_t *final_compressed_size, char **key)
+  static t_compress_encrypt compress_encrypt_with_header(t_buffer *input, size_t value_size)
   {
+  	t_compress_encrypt compress_encrypt;
       t_buffer encrypted;
       t_buffer compressed_with_header;
 
-      ft_bzero(&encrypted, sizeof(encrypted));
+      ft_bzero(&compress_encrypt, sizeof(compress_encrypt));
       compressed_with_header = lz77_get_headed_buffer(input, value_size);
       if (!compressed_with_header.data)
-  		return (encrypted);
-      ,*final_compressed_size = compressed_with_header.len;
+  		return (compress_encrypt);
+  	compress_encrypt.head_compress_len = compressed_with_header.len;
       if (invalid_buffer(&compressed_with_header))
-  		return (encrypted);
-      // Step 3: Encrypt
-      // Create a wrapper for return t_buffer, char *key and send t_buffer.
+  		return (compress_encrypt);
   	t_encrypt cipher = wrapper_encrypt(&compressed_with_header);
-      /* encrypted.data = encrypt(compressed_with_header.data, compressed_with_header.len, &encrypted.len, key); */
   	encrypted = cipher.buffer;
       if (encrypted.data != compressed_with_header.data)
   		free(compressed_with_header.data);
-  	,*key = (char *)&cipher.key;// Place holder.
       if (invalid_buffer(&encrypted))
   		free(encrypted.data);
-      return (encrypted);
+  	compress_encrypt.encrypt = cipher;
+      return (compress_encrypt);
   }
 
   // payload/stage2
@@ -554,43 +551,40 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
     const t_arch arch = (class == ELFCLASS64) ? ARCH_X64 : ARCH_X86;
     const size_t value_size = arch ? sizeof(uint64_t) : sizeof(uint32_t);
     t_elf_h elf_header = { .elf32 = elf->data };
+    t_compress_encrypt com_cypher;
     uint64_t injected_s3_vaddr = 0;
     t_buffer payload;
+    t_buffer stage1;
+    size_t payload_size_raw;
+    t_buffer payload_stage2;
+    t_buffer payload_stage2_elf;
+
 
     ft_bzero(&payload, sizeof(payload));
     if (elf_inject_s3(elf->data, &elf_header, class, &injected_s3_vaddr) != ERR_SUCCESS)
       return (payload);
-    size_t payload_size_raw;
-    t_buffer payload_stage2 = build_stage2_buffer(arch, elf->len, injected_s3_vaddr, &payload_size_raw);
+    payload_stage2 = build_stage2_buffer(arch, elf->len, injected_s3_vaddr, &payload_size_raw);
     if (invalid_buffer(&payload_stage2))
       return (payload);
-    t_buffer payload_stage2_elf;
     payload_stage2_elf = alloc_concat_buffers(&payload_stage2, elf);
     free(payload_stage2.data);
     if (invalid_buffer(&payload_stage2_elf))
       return (payload);
-    char *key = NULL;
-    size_t compressed_with_header_size;
-    t_buffer encrypted;
-
-    encrypted = compress_encrypt_with_header(&payload_stage2_elf, value_size,
-  					   &compressed_with_header_size, &key);
+    com_cypher = compress_encrypt_with_header(&payload_stage2_elf, value_size);
     free(payload_stage2_elf.data);
-    if (invalid_buffer(&encrypted))
+    if (invalid_buffer(&com_cypher.encrypt.buffer))
       return (payload);
-
-    t_buffer stage1;
     stage1 = build_stage1_patched(class, &elf_header, payload_stage2_elf.len,
-  				encrypted.len, compressed_with_header_size,
-  				payload_size_raw, key);
+  				com_cypher.encrypt.buffer.len, com_cypher.head_compress_len,
+  								payload_size_raw, (char *)&com_cypher.encrypt.key);
     if (invalid_buffer(&stage1))
     {
-        free(encrypted.data);
+        free(com_cypher.encrypt.buffer.data);
         return (payload);
     }
-    payload = alloc_concat_buffers(&stage1, &encrypted);
+    payload = alloc_concat_buffers(&stage1, &com_cypher.encrypt.buffer);
     free(stage1.data);
-    free(encrypted.data);
+    free(com_cypher.encrypt.buffer.data);
     return (payload);
   }
 
@@ -808,13 +802,14 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       arr_size--;
     return (arr_size);// if arr_size == 0 False
   }
-#+end_src
 * How much time i use in leave it clean
+#+end_src
 :PROPERTIES:
 :ORDERED:  t
 :END:
 :LOGBOOK:
-CLOCK: [2025-12-18 Thu 07:11]--[2025-12-18 Thu 07:31] =>  0:20
+CLOCK: [2025-12-18 Thu 10:27]--[2025-12-18 Thu 10:47] =>  0:20
+CLOCK: [2025-12-18 Thu 06:25]--[2025-12-18 Thu 07:31] =>  1:06
 CLOCK: [2025-12-18 Thu 05:49]--[2025-12-18 Thu 06:09] =>  0:20
 CLOCK: [2025-12-18 Thu 05:21]--[2025-12-18 Thu 05:41] =>  0:20
 CLOCK: [2025-12-17 Wed 12:36]--[2025-12-17 Wed 13:09] =>  0:33
