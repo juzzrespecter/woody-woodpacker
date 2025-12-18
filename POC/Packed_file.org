@@ -44,8 +44,8 @@ PIE == ~Elfh_type == ET_DYN~
   In case no aslr activate the ~diff == 0 and no real deal ~
 NOPIE = ~Elfh_type == ET_EXEC~
 ** SElinux
-* Packer
 Don't allow to got a mmap with Write and exec. First write then mprotect Read|EXEC
+* Packer
 #+begin_src c :tangle srcs/elf/packer/elf_packer.c :mkdirp yes
   #include <string.h>
   #include "woody.h"
@@ -298,50 +298,40 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   }
 
   //payload
-  //Delete output_size and change return type value for t_buffer.
-  static char *compress_encrypt_with_header(const void *input_data, size_t input_size,//Change with t_buffer
-  					  size_t value_size, size_t *output_size,					  size_t *final_compressed_size, char **key)
+  static t_buffer compress_encrypt_with_header(t_buffer *input, size_t value_size,
+  					     size_t *final_compressed_size, char **key)
   {
-      t_buffer input;
-
-      input.len=input_size;
-      input.data=(void *)input_data;
-      // Step 1: Compress
-      t_list *compressed_list = lz77_compress_to_list((unsigned char *)input.data, input.len);
-      if (!compressed_list)
-  	return NULL;
+      t_buffer encrypted;
+      t_list *compressed_list = lz77_compress_to_list((unsigned char *)input->data, input->len);
       t_buffer compressed;
 
+      ft_bzero(&encrypted, sizeof(encrypted));
+      if (!compressed_list)
+  	return (encrypted);
       compressed.data = lz77_get_compress_arr(compressed_list, &compressed.len);
       ft_lstclear(&compressed_list, free);
       if (!compressed.data)
-  	return NULL;
+  	return (encrypted);
       // Step 2: Prepend original size as header
       t_buffer compressed_with_header;
-      t_buffer tmp = {.data=&input.len, .len=value_size};
+      t_buffer tmp = {.data=&input->len, .len=value_size};
       compressed_with_header = alloc_concat_buffers(&tmp, &compressed);
       ,*final_compressed_size = compressed_with_header.len;
       free(compressed.data);
       if (invalid_buffer(&compressed_with_header))
-  	return NULL;
+  	return (encrypted);
 
       // Step 3: Encrypt
-      t_buffer encrypted;
       encrypted.data = encrypt(compressed_with_header.data, compressed_with_header.len, &encrypted.len, key);
 
       if (encrypted.data != compressed_with_header.data)
   	free(compressed_with_header.data);
-      ,*output_size = encrypted.len;
-      if (!encrypted.data || !encrypted.len)
-      {
+      if (invalid_buffer(&encrypted))
   	free(encrypted.data);
-  	return NULL;
-      }
-      return (encrypted.data);
+      return (encrypted);
   }
 
   // payload/stage2
-  // Change out_buffer, out_size and return that in a t_buffer.
   static t_buffer build_stage2_buffer(t_arch arch, size_t elf_size,
   				    uint64_t s3_vaddr, size_t *payload_raw_size)
   {
@@ -447,61 +437,56 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
   //build_stage1_patched
   #define STAGE1_PATCHES 10 //Should use a ENUM
-  // change return to t_buffer and delete out_stage1 and out_stage1_size.
-  static int build_stage1_patched(unsigned char class, t_elf_h *ehdr,
+  static t_buffer build_stage1_patched(unsigned char class, t_elf_h *ehdr,
   				size_t stage2_elf_total_size,
   				size_t encrypted_size,
   				size_t compressed_hdr_size,
-  				size_t payload_raw_size,
-  				char **out_stage1, size_t *out_stage1_size,
-  				char *key)
+  				size_t payload_raw_size, char *key)
   {
-    t_arch arch = (class == ELFCLASS64) ? ARCH_X64 : ARCH_X86;
-    size_t value_size = arch ? sizeof(uint64_t) : sizeof(uint32_t);
-    uint64_t phnum = elf_get_elfh_phnum(ehdr);
-    uint32_t prefix_size = elf_get_struct_size_elf_header((char *)ehdr->elf32) +
-      elf_get_elfh_phentsize(ehdr) *
-      (2 + (0 != elf_get_gnu_stack_phdr_ndx(ehdr, class, phnum)));
+      t_arch arch = (class == ELFCLASS64) ? ARCH_X64 : ARCH_X86;
+      size_t value_size = arch ? sizeof(uint64_t) : sizeof(uint32_t);
+      uint64_t phnum = elf_get_elfh_phnum(ehdr);
+      uint32_t prefix_size = elf_get_struct_size_elf_header((char *)ehdr->elf32) +
+  	elf_get_elfh_phentsize(ehdr) *
+  	(2 + (0 != elf_get_gnu_stack_phdr_ndx(ehdr, class, phnum)));
+      uint64_t s2_entry_offset = payload_raw_size + 0x12 + (arch ? 0x5 : 0);
+      t_buffer stage1;
 
-    uint64_t s2_entry_offset = payload_raw_size + 0x12 + (arch ? 0x5 : 0);
-    if (key != NULL)// TODO change as needed.
-      key = (char*)s2_entry_offset;
+      ft_bzero(&stage1, sizeof(stage1));
+      if (key != NULL)// TODO change as needed.
+  	key = (char*)s2_entry_offset;
 
-    static const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCHES] = {
-      //                                                 Encryption key offsets.
-      [ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf, 0xaf, 0xaf, 0xaf, 0xaf},
-      [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce, 0xce, 0xce, 0xce, 0xce}
-    };
-    t_buffer stage1;
+      static const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCHES] = {
+  	//                                                 Encryption key offsets.
+  	[ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf, 0xaf, 0xaf, 0xaf, 0xaf},
+  	[ARCH_X64] = { 0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce, 0xce, 0xce, 0xce, 0xce}
+      };
 
-    if (load_stage_buffer(arch, (char **)&stage1.data, &stage1.len, STAGE_1))
-      return (ERR_LOAD_STAGE);
+      if (load_stage_buffer(arch, (char **)&stage1.data, &stage1.len, STAGE_1))
+  	return (stage1);
 
-    t_type stage1_patches[STAGE1_PATCHES] = {
-      {.b8 = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum) + prefix_size + 5 + (!arch * 0x72)},
-      {.b8 = stage1.len + prefix_size + encrypted_size},  // Will update after load
-      {.b8 = stage2_elf_total_size},
-      {.b8 = encrypted_size},
-      {.b8 = compressed_hdr_size},
-      {.b8 = s2_entry_offset},
-      {.b8 = (uint64_t)key},//Encryption key in case x86 use 32b
-      {.b8 = (uint64_t)key},//In x64 overwrite some off with eq val
-      {.b8 = (uint64_t)key},
-      {.b8 = (uint64_t)key}
-    };
-    if (!key && (uint64_t)key != s2_entry_offset)// TODO delete when encrypt works.
-      free(key);
-    // Update patch #1: total size after decryption includes decrypted buffer layout
-    /* stage1_patches[1].b8 = *out_stage1_size + prefix_size + encrypted_size; */
+      t_type stage1_patches[STAGE1_PATCHES] = {
+  	{.b8 = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum) + prefix_size + 5 + (!arch * 0x72)},
+  	{.b8 = stage1.len + prefix_size + encrypted_size},  // Will update after load
+  	{.b8 = stage2_elf_total_size},
+  	{.b8 = encrypted_size},
+  	{.b8 = compressed_hdr_size},
+  	{.b8 = s2_entry_offset},
+  	{.b8 = (uint64_t)key},//Encryption key in case x86 use 32b
+  	{.b8 = (uint64_t)key},//In x64 overwrite some off with eq val
+  	{.b8 = (uint64_t)key},
+  	{.b8 = (uint64_t)key}
+      };
+      if (!key && (uint64_t)key != s2_entry_offset)// TODO delete when encrypt works.
+  	free(key);
+      // Update patch #1: total size after decryption includes decrypted buffer layout
+      /* stage1_patches[1].b8 = *out_stage1_size + prefix_size + encrypted_size; */
 
-    apply_patches_to_buffer(stage1.data, stage1_patch_offsets[arch],
-  			  stage1_patches, 6, value_size);
-    ,*out_stage1 = stage1.data;
-    ,*out_stage1_size = stage1.len;
-    return (ERR_SUCCESS);
+      apply_patches_to_buffer(stage1.data, stage1_patch_offsets[arch],
+  			    stage1_patches, 6, value_size);
+      return (stage1);
   }
 
-  //build_stage2_buffer,compress_encrypt_with_header, build_stage1_patched
   t_buffer generate_payload(t_buffer *elf)
   {
     const unsigned char class = elf_get_elfh_e_ident_class(elf->data);
@@ -523,21 +508,21 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
     free(payload_stage2.data);
     if (invalid_buffer(&payload_stage2_elf))
       return (payload);
-    /* size_t encrypted_size; */
     char *key = NULL;
     size_t compressed_with_header_size;
     t_buffer encrypted;
 
-    encrypted.data = compress_encrypt_with_header(payload_stage2_elf.data, payload_stage2_elf.len, value_size,
-  							 &encrypted.len, &compressed_with_header_size, &key);
+    encrypted = compress_encrypt_with_header(&payload_stage2_elf, value_size,
+  					   &compressed_with_header_size, &key);
     free(payload_stage2_elf.data);
     if (invalid_buffer(&encrypted))
       return (payload);
 
     t_buffer stage1;
-    if (build_stage1_patched(class, &elf_header, payload_stage2_elf.len, encrypted.len,
-  			   compressed_with_header_size, payload_size_raw,
-  			   (char **)&stage1.data, &stage1.len, key))
+    stage1 = build_stage1_patched(class, &elf_header, payload_stage2_elf.len,
+  				encrypted.len, compressed_with_header_size,
+  				payload_size_raw, key);
+    if (invalid_buffer(&stage1))
     {
         free(encrypted.data);
         return (payload);
@@ -731,8 +716,8 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
         dyn->elf32->d_un.d_val = value;
         printf("elf64 dyn set d_val\n");
       }
-  }
 
+  }
 
   static t_elf_sh get_dynamic_section(t_elf_h *ehdr, uint64_t shnum, unsigned char class)
   {
@@ -764,8 +749,11 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   }
 #+end_src
 * How much time i use in leave it clean
-
+:PROPERTIES:
+:ORDERED:  t
+:END:
 :LOGBOOK:
+CLOCK: [2025-12-18 Thu 05:21]--[2025-12-18 Thu 05:41] =>  0:20
 CLOCK: [2025-12-17 Wed 12:36]--[2025-12-17 Wed 13:09] =>  0:33
 CLOCK: [2025-12-17 Wed 11:03]--[2025-12-17 Wed 11:27] =>  0:24
 CLOCK: [2025-12-17 Wed 07:25]--[2025-12-17 Wed 07:47] =>  0:22
