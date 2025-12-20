@@ -64,8 +64,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       size_t	len;
   }	t_buffer;
 
-  typedef struct	s_patch_set
-  {
+  typedef struct	s_patch_set {
       const size_t	*offsets;
       const t_type	*values;
       const size_t	count;
@@ -78,13 +77,6 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   }	t_stage2_result;
 
 
-  typedef struct s_stage1_params {
-      size_t	stage2_total_size;
-      size_t	encrypted_size;
-      size_t	compressed_hdr_size;
-      size_t	payload_raw_size;
-      char	*key;
-  } t_stage1_params;
 
   typedef struct	s_aes128_key {
       uint32_t bytes[4];  // 128 bits
@@ -94,6 +86,14 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   	t_buffer buffer;
   	t_aes128_key key;
   }	t_encrypt;
+
+  typedef struct s_stage1_params {
+  	size_t			stage2_total_size;
+  	size_t			encrypted_size;
+  	size_t			compressed_hdr_size;
+  	size_t			payload_raw_size;
+  	t_aes128_key	*key;
+  }	t_stage1_params;
 
   typedef struct	s_compress_encrypt {
   	t_encrypt encrypt;
@@ -488,15 +488,13 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return (ERR_SUCCESS);
   }
 
-  //TODO t_stage2_result generate_stage1() {};
-  //TODO use a struct to pass args.
   //TODO use a ENUM
   #define STAGE1_PATCHES 10
+
+  //TODO t_stage2_result generate_stage1() {};
+  //TODO use a struct to pass args.
   static t_buffer build_stage1_patched(unsigned char class, t_elf_h *ehdr,
-  				size_t stage2_elf_total_size,
-  				size_t encrypted_size,
-  				size_t compressed_hdr_size,
-  				size_t payload_raw_size, char *key)
+  									 t_stage1_params *params)
   {
       t_arch arch = (class == ELFCLASS64) ? ARCH_X64 : ARCH_X86;
       size_t value_size = arch ? sizeof(uint64_t) : sizeof(uint32_t);
@@ -504,36 +502,32 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       uint32_t prefix_size = elf_get_struct_size_elf_header((char *)ehdr->elf32) +
   	elf_get_elfh_phentsize(ehdr) *
   	(2 + (0 != elf_get_gnu_stack_phdr_ndx(ehdr, class, phnum)));
-      uint64_t s2_entry_offset = payload_raw_size + 0x12 + (arch ? 0x5 : 0);
+      uint64_t s2_entry_offset = params->payload_raw_size + 0x12 + (arch ? 0x5 : 0);
       t_buffer stage1;
-
-      ft_bzero(&stage1, sizeof(stage1));
-      if (key != NULL)// TODO change as needed.
-  	key = (char*)s2_entry_offset;
-
       static const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCHES] = {
-  	//                                                 Encryption key offsets.
-  	[ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf, 0xaf, 0xaf, 0xaf, 0xaf},
-  	[ARCH_X64] = { 0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce, 0xce, 0xce, 0xce, 0xce}
+  		//                                                 Encryption key offsets.
+  		[ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf, 0xaf, 0xaf, 0xaf, 0xaf},
+  		[ARCH_X64] = { 0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce, 0xce, 0xce, 0xce, 0xce}
       };
 
+      ft_bzero(&stage1, sizeof(stage1));
       stage1 = load_stage_buffer(arch, STAGE_1);
   	if (invalid_buffer(&stage1))
   		return (stage1);
+      if (params->key != NULL)
+  		params->key = (t_aes128_key *)s2_entry_offset;
       t_type stage1_patches[STAGE1_PATCHES] = {
-  	{.b8 = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum) + prefix_size + 5 + (!arch * 0x72)},
-  	{.b8 = stage1.len + prefix_size + encrypted_size},  // Will update after load
-  	{.b8 = stage2_elf_total_size},
-  	{.b8 = encrypted_size},
-  	{.b8 = compressed_hdr_size},
-  	{.b8 = s2_entry_offset},
-  	{.b8 = (uint64_t)key},//Encryption key in case x86 use 32b
-  	{.b8 = (uint64_t)key},//In x64 overwrite some off with eq val
-  	{.b8 = (uint64_t)key},
-  	{.b8 = (uint64_t)key}
+  		{.b8 = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum) + prefix_size + 5 + (!arch * 0x72)}, // Calc aslr
+  		{.b8 = stage1.len + prefix_size + params->encrypted_size}, // Calc size s1.
+  		{.b8 = params->stage2_total_size}, // Calc size s2
+  		{.b8 = params->encrypted_size},        // Calc size decrypt
+  		{.b8 = params->compressed_hdr_size},   // Calc size compress
+  		{.b8 = s2_entry_offset},       // s2 offset.
+  		{.b8 = (uint64_t)params->key},//Encryption key in case x86 use 32b
+  		{.b8 = (uint64_t)params->key},//In x64 overwrite some off with eq val
+  		{.b8 = (uint64_t)params->key},
+  		{.b8 = (uint64_t)params->key}
       };
-      if (!key && (uint64_t)key != s2_entry_offset)// TODO delete when encrypt works.
-  	free(key);
       t_patch_set patch = ft_init_patch_set(stage1_patch_offsets[arch], stage1_patches, 6, value_size);
       apply_patches_to_buffer(stage1.data, &patch);
       return (stage1);
@@ -580,9 +574,15 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
     free(payload_stage2_elf.data);
     if (invalid_buffer(&com_cypher.encrypt.buffer))
       return (payload);
-    stage1 = build_stage1_patched(class, &elf_header, payload_stage2_elf.len,
-  				com_cypher.encrypt.buffer.len, com_cypher.head_compress_len,
-  								payload_stage2.payload_raw_size, (char *)&com_cypher.encrypt.key);
+    t_stage1_params params;
+
+    params.stage2_total_size=payload_stage2_elf.len;
+    params.encrypted_size = com_cypher.encrypt.buffer.len;
+    params.compressed_hdr_size = com_cypher.head_compress_len;
+    params.payload_raw_size = payload_stage2.payload_raw_size;
+    params.key = &com_cypher.encrypt.key;
+
+    stage1 = build_stage1_patched(class, &elf_header, &params);
     if (invalid_buffer(&stage1))
     {
         free(com_cypher.encrypt.buffer.data);
@@ -800,12 +800,14 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       arr_size--;
     return (arr_size);// if arr_size == 0 False
   }
-* How much time i use in leave it clean
 #+end_src
+
+* How much time i use in leave it clean
 :PROPERTIES:
 :ORDERED:  t
 :END:
 :LOGBOOK:
+CLOCK: [2025-12-20 Sat 06:36]--[2025-12-20 Sat 06:56] =>  0:20
 CLOCK: [2025-12-18 Thu 11:46]--[2025-12-18 Thu 12:15] =>  0:29
 CLOCK: [2025-12-18 Thu 11:01]--[2025-12-18 Thu 11:22] =>  0:21
 CLOCK: [2025-12-18 Thu 10:27]--[2025-12-18 Thu 10:47] =>  0:20
@@ -817,3 +819,35 @@ CLOCK: [2025-12-17 Wed 11:03]--[2025-12-17 Wed 11:27] =>  0:24
 CLOCK: [2025-12-17 Wed 07:25]--[2025-12-17 Wed 07:47] =>  0:22
 CLOCK: [2025-12-17 Wed 07:49]--[2025-12-17 Wed 08:35] =>  0:46
 :END:
+
+* Documentation:
+:LOGBOOK:
+CLOCK: [2025-12-20 Sat 07:10]
+:END:
+#+begin_quote
+I develop a packer single stage.
+I decrypt and decompress the whole payload in one run no by pieces that is what does a multistage not really different just put again routine of decompress and decypher and call in the differents stages that need to decypher and decompress.
+
+s1 Tasks:
+Aslr calculation, mmap s2, decrypt and decompress the data in the mmap, open "/proc/self/exe", jmp s2.
+Data i pass to s2:
+s1 va, s1 len, aslr offset, [fd "/proc/self/exe"](This i'm going to move it to stage2.)
+
+s2  Tasks:
+mmap(first 0x1000 of fd as Readonly) {to preserve the reference "/proc/self/exe"}
+close fd
+munmap s1
+load  target_elf(update dyn if needed)
+load target .INTERP
+update_auxv.
+
+Data pass to s3:
+s2_va,
+s2_len,
+target_entrypoint.
+
+s3 Tasks:
+munmap s2
+r/edx = 0
+jmp target/interp_entrypoint.
+#+end_quote
