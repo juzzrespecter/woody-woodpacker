@@ -58,8 +58,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   #include <sys/mman.h>
   #include <stdlib.h> //Malloc
 
-  typedef struct	s_buffer
-  {
+  typedef struct	s_buffer {
       void	*data;
       size_t	len;
   }	t_buffer;
@@ -76,10 +75,8 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       size_t		payload_raw_size; // Size of raw payload used in concat
   }	t_stage2_result;
 
-
-
   typedef struct	s_aes128_key {
-      uint32_t bytes[4];  // 128 bits
+      uint32_t ints[4];  // 128 bits
   }	t_aes128_key;
 
   typedef struct	s_encrypt {
@@ -89,16 +86,44 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
   typedef struct s_stage1_params {
   	size_t			stage2_total_size;
-  	size_t			encrypted_size;
+  	t_buffer		encrypted;
   	size_t			compressed_hdr_size;
   	size_t			payload_raw_size;
-  	t_aes128_key	*key;
+  	t_aes128_key	key;
   }	t_stage1_params;
 
   typedef struct	s_compress_encrypt {
   	t_encrypt encrypt;
   	size_t head_compress_len;
   }	t_compress_encrypt;
+
+  typedef struct	s_payload_prereq {
+      t_buffer        stage1;
+      t_buffer        encrypted_payload;
+      t_stage1_params stage1_params;
+  }	t_payload_prereq;
+
+  typedef struct	s_phdr_layout {
+      uint64_t offset;
+      uint64_t vaddr;
+      uint64_t paddr;
+      uint64_t filesz;
+      uint64_t memsz;
+      uint64_t align;
+      uint64_t type;
+      uint64_t flags;
+  }	t_phdr_layout;
+
+  typedef struct	s_elf_write_ctx {
+  	t_elf_h		   *ehdr;
+  	int				fd;
+  	unsigned char	class;
+
+  	uint64_t		phnum;
+  	uint64_t		new_phdr_vaddr;
+  	uint64_t		payload_size;
+  }	t_elf_write_ctx;
+
 
   t_patch_set ft_init_patch_set(const size_t *off, const t_type *val, size_t count, size_t value_size)
   {
@@ -108,12 +133,12 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   }
 
   // Encrypt.org
-  void *encrypt(void *raw, size_t raw_size, size_t *ret_size, char **key)
+  void *encrypt(void *raw, size_t raw_size, size_t *ret_size, int *key)
   {
       if (raw_size)
-  	,*ret_size = raw_size;
-      if (!*key)
-  	,*key = NULL;
+  		,*ret_size = raw_size;
+      if (key && !*key)
+  		,*key = NULL;
       return (raw);
   }
 
@@ -128,7 +153,6 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   {
       return (read(fd, ptr, len) != (ssize_t)len);
   }
-
 
   bool invalid_write(int fd, void *ptr, size_t len)
   {
@@ -182,7 +206,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return  (0);
   }
 
-  size_t elf_get_gnu_stack_phdr_ndx(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
+  size_t elf_get_gnu_stack_phdr_ndx(const t_elf_h *ehdr, unsigned char class, uint64_t phnum)
   {
       t_elf_ph phdr;
       uint64_t i;
@@ -198,13 +222,12 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return  (0);
   }
 
-  size_t elf_get_highest_used_vaddr_avalaible(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
+  size_t elf_get_highest_used_vaddr_avalaible(const t_elf_h *ehdr, unsigned char class, uint64_t phnum)
   {
       t_elf_ph phdr;
       uint64_t i;
       size_t p_vaddr;
       size_t p_end_vaddr;
-      size_t p_memsz;
       size_t highest_used_addr = 0;
 
       i = 0;
@@ -217,16 +240,15 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   		    continue ;
   		}
   	    p_vaddr = elf_get_program_header_vaddr(&phdr, class);
-  	    p_memsz = elf_get_program_header_memsz(&phdr, class);
-  	    p_end_vaddr = p_vaddr + p_memsz;
+  	    p_end_vaddr = p_vaddr + elf_get_program_header_memsz(&phdr, class);
   	    if (highest_used_addr <= p_end_vaddr)
-  		highest_used_addr = p_end_vaddr;
+  			highest_used_addr = p_end_vaddr;
   	    i++;
   	}
       return  (highest_used_addr);
   }
 
-  size_t elf_get_highest_loadable_vaddr_avalaible(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
+  size_t elf_get_highest_loadable_vaddr_avalaible(const t_elf_h *ehdr, unsigned char class, uint64_t phnum)
   {
     return (align_up(elf_get_highest_used_vaddr_avalaible(ehdr, class, phnum), 0x1000));
   }
@@ -249,14 +271,11 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return (closest_offset);
   }
 
-  static int validate_elf_headers(t_elf_h *ehdr, uint64_t *shnum, uint64_t *phnum, unsigned char *class)
+  static int set_elf_headers(t_elf_h *ehdr, uint64_t *shnum, uint64_t *phnum, unsigned char *class)
   {
     ,*shnum = elf_get_elfh_shnum(ehdr);
     ,*phnum = elf_get_elfh_phnum(ehdr);
     ,*class = elf_get_elfh_e_ident_class((unsigned char *)ehdr->elf32);
-
-    if (*phnum == 0)
-      return (ERR_INVALID_ELF);
     return (ERR_SUCCESS);
   }
 
@@ -280,31 +299,28 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   // change stage_buffer and fd_size for return.
   t_buffer	load_stage_buffer(t_arch arch, t_bin_type bin_type)
   {
-      int stage_fd;
-      t_buffer stage;
+      int			stage_fd;
+      t_buffer	stage;
 
-  	ft_bzero(&stage, sizeof(stage));
       stage_fd = open(g_binary_paths[arch][bin_type], O_RDONLY);
       if (stage_fd < 0 || get_file_size(stage_fd, (off_t *)&stage.len) || !stage.len)
       {
   		if (stage_fd >= 0)
   			close(stage_fd);
-  		return (stage);
+  		return ((t_buffer){0});
       }
       stage.data = malloc(stage.len);
       if (!stage.data)
       {
   		close(stage_fd);
-  		return (stage);
+  		return ((t_buffer){0});
       }
       bool invalid = invalid_read(stage_fd, stage.data, stage.len);
       close(stage_fd);
-      if (invalid)
-      {
-  		free(stage.data);
-  		ft_bzero(&stage, sizeof(stage));
-      }
-      return (stage);
+      if (!invalid)
+  		return (stage);
+  	free(stage.data);
+  	return ((t_buffer){0});
   }
 
   static t_buffer load_and_apply_patches_to_buffer(t_arch arch, t_bin_type bin_type, const t_patch_set *patch)
@@ -351,7 +367,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   {
   	t_encrypt crypt;
 
-  	crypt.buffer.data = encrypt(raw->data, raw->len, &crypt.buffer.len, (char **)&crypt.key);
+  	crypt.buffer.data = encrypt(raw->data, raw->len, &crypt.buffer.len, (int *)&crypt.key.ints[0]);
   	return (crypt);
   }
 
@@ -414,6 +430,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   	return (out);
   }
 
+  //TODO Refactor
   //elf/inject
   static bool elf_set_s3_get_info(const t_elf_h *ehdr, unsigned char class, uint64_t phnum, size_t gap_size, uint64_t *ret_vaddr, uint64_t *ret_offset, t_elf_ph *phdr)
   {
@@ -490,10 +507,8 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
   //TODO use a ENUM
   #define STAGE1_PATCHES 10
-
-  //TODO t_stage2_result generate_stage1() {};
-  //TODO use a struct to pass args.
-  static t_buffer build_stage1_patched(unsigned char class, t_elf_h *ehdr,
+  //TODO Refactor
+  static t_buffer build_stage1_patched(unsigned char class, const t_elf_h *ehdr,
   									 t_stage1_params *params)
   {
       t_arch arch = (class == ELFCLASS64) ? ARCH_X64 : ARCH_X86;
@@ -518,9 +533,9 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   		params->key = (t_aes128_key *)s2_entry_offset;
       t_type stage1_patches[STAGE1_PATCHES] = {
   		{.b8 = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum) + prefix_size + 5 + (!arch * 0x72)}, // Calc aslr
-  		{.b8 = stage1.len + prefix_size + params->encrypted_size}, // Calc size s1.
+  		{.b8 = stage1.len + prefix_size + params->encrypted.len}, // Calc size s1.
   		{.b8 = params->stage2_total_size}, // Calc size s2
-  		{.b8 = params->encrypted_size},        // Calc size decrypt
+  		{.b8 = params->encrypted.len},        // Calc size decrypt
   		{.b8 = params->compressed_hdr_size},   // Calc size compress
   		{.b8 = s2_entry_offset},       // s2 offset.
   		{.b8 = (uint64_t)params->key},//Encryption key in case x86 use 32b
@@ -548,131 +563,176 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   	return (stage2);
   }
 
+  t_stage1_params	prepare_stage1_prereq(unsigned char class, t_buffer *elf)
+  {
+  	const t_arch arch = (class == ELFCLASS64) ? ARCH_X64 : ARCH_X86;
+  	const size_t value_size = arch ? sizeof(uint64_t) : sizeof(uint32_t);
+  	t_compress_encrypt com_cypher;
+  	t_stage2_result payload_stage2;
+  	t_buffer payload_stage2_elf;
+
+  	payload_stage2 = generate_stage2(arch, elf);
+  	if (invalid_buffer(&payload_stage2.buffer))
+  		return ((t_stage1_params){0});
+  	payload_stage2_elf = alloc_concat_buffers(&payload_stage2.buffer, elf);
+  	free(payload_stage2.buffer.data);
+  	if (invalid_buffer(&payload_stage2_elf))
+  		return ((t_stage1_params){0});
+  	com_cypher = compress_encrypt_with_header(&payload_stage2_elf, value_size);
+  	free(payload_stage2_elf.data);
+  	if (invalid_buffer(&com_cypher.encrypt.buffer))
+  		return ((t_stage1_params){0});
+
+  	return ((t_stage1_params){.stage2_total_size=payload_stage2_elf.len,
+  				.encrypted=com_cypher.encrypt.buffer,
+  				.compressed_hdr_size = com_cypher.head_compress_len,
+  				.payload_raw_size = payload_stage2.payload_raw_size, .key = com_cypher.encrypt.key});
+  }
+
+  bool invalid_s1_params(t_stage1_params *val)
+  {
+  	return (val->stage2_total_size == 0 || val->encrypted.len == 0
+  			|| val->compressed_hdr_size == 0 || val->key == NULL);
+  }
+
+  t_buffer *prepare_payload_prerequisites(t_buffer *elf)
+  {
+  	const unsigned char class = elf_get_elfh_e_ident_class(elf->data);
+  	const t_elf_h elf_header = { .elf32 = elf->data};
+  	t_stage1_params params = prepare_stage1_prereq(class, elf);
+  	t_buffer *result;
+
+  	if (invalid_s1_params(&params))
+  	{
+  		free(params.encrypted.data);
+  		return (NULL);
+  	}
+  	result = malloc(sizeof(*result) * 2);
+  	if (result == NULL)
+  		return (result);
+  	result[0] = build_stage1_patched(class, &elf_header, &params);
+  	if (invalid_buffer(&result[0]))
+  	{
+  		free(params.encrypted.data);
+  		return (NULL);
+  	}
+  	result[1] = params.encrypted;
+  	return (result);
+  }
 
   t_buffer generate_payload(t_buffer *elf)
   {
-    const unsigned char class = elf_get_elfh_e_ident_class(elf->data);
-    const t_arch arch = (class == ELFCLASS64) ? ARCH_X64 : ARCH_X86;
-    const size_t value_size = arch ? sizeof(uint64_t) : sizeof(uint32_t);
-    t_elf_h elf_header = (t_elf_h){ .elf32 = elf->data };
-    t_compress_encrypt com_cypher;
     t_buffer payload;
-    t_stage2_result payload_stage2;
-    t_buffer stage1;
-    t_buffer payload_stage2_elf;
-
+    t_buffer *payload_prereq;
 
     ft_bzero(&payload, sizeof(payload));
-    payload_stage2 = generate_stage2(arch, elf);
-    if (invalid_buffer(&payload_stage2.buffer))
-      return (payload);
-    payload_stage2_elf = alloc_concat_buffers(&payload_stage2.buffer, elf);
-    free(payload_stage2.buffer.data);
-    if (invalid_buffer(&payload_stage2_elf))
-      return (payload);
-    com_cypher = compress_encrypt_with_header(&payload_stage2_elf, value_size);
-    free(payload_stage2_elf.data);
-    if (invalid_buffer(&com_cypher.encrypt.buffer))
-      return (payload);
-    t_stage1_params params;
-
-    params.stage2_total_size=payload_stage2_elf.len;
-    params.encrypted_size = com_cypher.encrypt.buffer.len;
-    params.compressed_hdr_size = com_cypher.head_compress_len;
-    params.payload_raw_size = payload_stage2.payload_raw_size;
-    params.key = &com_cypher.encrypt.key;
-
-    stage1 = build_stage1_patched(class, &elf_header, &params);
-    if (invalid_buffer(&stage1))
-    {
-        free(com_cypher.encrypt.buffer.data);
-        return (payload);
-    }
-    payload = alloc_concat_buffers(&stage1, &com_cypher.encrypt.buffer);
-    free(stage1.data);
-    free(com_cypher.encrypt.buffer.data);
+    payload_prereq = prepare_payload_prerequisites(elf);
+    if (payload_prereq == NULL)
+  	  return (payload);
+    payload = alloc_concat_buffers(&payload_prereq[0], &payload_prereq[1]);
+    free(payload_prereq[0].data);
+    free(payload_prereq[1].data);
     return (payload);
   }
 
   // elf/write
-  static int write_ehdr(t_elf_h *ehdr, int packed, unsigned char class,
-  		      uint64_t new_phdr_vaddr, uint64_t *new_phnum ,uint64_t phnum)
+  //t_elf_write_ctx
+  static int write_ehdr(t_elf_write_ctx *ctx)
   {
-    ssize_t ehdr_len = elf_get_struct_size_elf_header((char *)ehdr->elf32);
+    size_t ehdr_len = elf_get_struct_size_elf_header((char *)ctx->ehdr->elf32);
+    const uint64_t new_phnum = 2 + (0 != elf_get_gnu_stack_phdr_ndx(ctx->ehdr,
+  																  ctx->class,
+  																  ctx->phnum));
 
-    ,*new_phnum = 2 + (0 != elf_get_gnu_stack_phdr_ndx(ehdr, class, phnum));// if is a PHDR PT_GNU_STACK
-    elf_ehdr_set_entry(ehdr, new_phdr_vaddr + ehdr_len + elf_get_elfh_phentsize(ehdr) * *new_phnum, class);
-    elf_ehdr_set_phnum(ehdr, *new_phnum, class);
-    elf_ehdr_set_shoff(ehdr, 0, class);
-    elf_ehdr_set_shnum(ehdr, 0, class);
-    elf_ehdr_set_shentsize(ehdr, 0, class);
-    elf_ehdr_set_shstrndx(ehdr, 0, class);
-    if (write(packed, ehdr->elf32, ehdr_len) != ehdr_len)
+    elf_ehdr_set_entry(ctx->ehdr, ctx->new_phdr_vaddr + ehdr_len
+  					 + elf_get_elfh_phentsize(ctx->ehdr) * new_phnum,
+  					 ctx->class);
+    elf_ehdr_set_phnum(ctx->ehdr, new_phnum, ctx->class);
+    elf_ehdr_set_shoff(ctx->ehdr, 0, ctx->class);
+    elf_ehdr_set_shnum(ctx->ehdr, 0, ctx->class);
+    elf_ehdr_set_shentsize(ctx->ehdr, 0, ctx->class);
+    elf_ehdr_set_shstrndx(ctx->ehdr, 0, ctx->class);
+    if (invalid_write(ctx->fd, ctx->ehdr->elf32, ehdr_len))
       return (ERR_WRITE_HEADER);
     return (ERR_SUCCESS);
   }
 
-  static int write_program_headers(t_elf_h *ehdr, int packed, uint64_t phnum, uint64_t new_phdr_vaddr,
-                                   unsigned char class, uint64_t payload_size)
+  void apply_phdr_layout(t_elf_ph *phdr, const t_phdr_layout *l,
+  					   unsigned char class)
   {
-    const uint64_t ehdr_struct_size = elf_get_struct_size_elf_header((char *)ehdr->elf32);
-    const uint64_t phdr_struct_size = elf_get_struct_size_elf_ph(class);
-    t_elf_ph phdr;
-    uint64_t ndx_ph;
-    uint64_t p_offset;
-    uint64_t p_filesz;
-    uint64_t p_memsz;
-    uint64_t p_align;
-    uint64_t p_vaddr;
-    uint64_t p_paddr;
-    uint64_t p_type;
-    uint64_t p_flags;
-
-    ndx_ph = 0;
-    phdr = elf_get_program_header(ehdr, ndx_ph);
-
-    p_align = 0x1000;
-    p_filesz = p_align;
-    p_memsz = elf_get_highest_used_vaddr_avalaible(ehdr, class, phnum);
-    p_offset = 0;
-    p_vaddr = elf_get_program_header_vaddr(&phdr, class) & ~(p_align - 1);
-    p_memsz -= p_vaddr;
-    p_paddr = elf_get_program_header_paddr(&phdr, class) & ~(p_align - 1);
-    p_type = PT_LOAD;
-    p_flags = PF_R | PF_W;
-    elf_phdr_set_filesz(&phdr, p_filesz, class);
-    elf_phdr_set_memsz(&phdr, p_memsz, class);
-    elf_phdr_set_offset(&phdr, p_offset, class);
-    elf_phdr_set_vaddr(&phdr, p_vaddr, class);
-    elf_phdr_set_paddr(&phdr, p_paddr, class);
-    elf_phdr_set_type(&phdr, p_type, class);
-    elf_phdr_set_flags(&phdr, p_flags, class);
-    elf_phdr_set_align(&phdr, p_align, class);
-    if (write(packed, phdr.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
-      return (ERR_WRITE_PHDR);
-    p_flags = PF_R | PF_X;
-    p_vaddr = new_phdr_vaddr;
-    p_paddr = p_vaddr;
-    p_memsz = payload_size + ehdr_struct_size + phdr_struct_size * (2 + (0 != elf_get_gnu_stack_phdr_ndx(ehdr, class, phnum)));
-
-    p_filesz = p_memsz;
-    elf_phdr_set_filesz(&phdr, p_filesz, class);
-    elf_phdr_set_memsz(&phdr, p_memsz, class);
-    elf_phdr_set_vaddr(&phdr, p_vaddr, class);
-    elf_phdr_set_paddr(&phdr, p_paddr, class);
-    elf_phdr_set_flags(&phdr, p_flags, class);
-    if (write(packed, phdr.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
-      return (ERR_WRITE_PHDR);
-    ndx_ph = elf_get_gnu_stack_phdr_ndx(ehdr, class, phnum);
-    if (ndx_ph)
-    {
-      phdr = elf_get_program_header(ehdr, ndx_ph);
-      if (write(packed, phdr.elf32, phdr_struct_size) != (ssize_t)phdr_struct_size)
-        return (ERR_WRITE_PHDR);
-    }
-    return (0);
+      elf_phdr_set_offset(phdr, l->offset, class);
+      elf_phdr_set_vaddr(phdr,  l->vaddr,  class);
+      elf_phdr_set_paddr(phdr,  l->paddr,  class);
+      elf_phdr_set_filesz(phdr, l->filesz, class);
+      elf_phdr_set_memsz(phdr,  l->memsz,  class);
+      elf_phdr_set_align(phdr,  l->align,  class);
+      elf_phdr_set_type(phdr,   l->type,   class);
+      elf_phdr_set_flags(phdr,  l->flags,  class);
   }
 
+  t_phdr_layout phdr_rw_layout(const t_elf_h *ehdr, unsigned char class,
+  							 uint64_t phnum)
+  {
+      const uint64_t align = 0x1000;
+      t_phdr_layout l;
+  	t_elf_ph phdr;
+
+      l.align  = align;
+      l.offset = 0;
+      l.type   = PT_LOAD;
+      l.flags  = PF_R | PF_W;
+  	phdr = elf_get_program_header(ehdr, 0);
+      l.vaddr = elf_get_program_header_vaddr(&phdr, class) & ~(align - 1);
+      l.paddr = l.vaddr;
+      l.memsz = elf_get_highest_used_vaddr_avalaible(ehdr, class, phnum) - l.vaddr;
+      l.filesz = align;
+      return l;
+  }
+
+  //t_elf_write_ctx
+  t_phdr_layout phdr_rx_layout(const t_elf_write_ctx *ctx)
+  {
+      const uint64_t ehdr_sz = elf_get_struct_size_elf_header((char *)ctx->ehdr->elf32);
+      const uint64_t phdr_sz = elf_get_struct_size_elf_ph(ctx->class);
+      const uint64_t ph_count =
+          2 + (0 != elf_get_gnu_stack_phdr_ndx(ctx->ehdr, ctx->class, ctx->phnum));
+      t_phdr_layout l;
+
+      l.align  = 0x1000;
+      l.offset = 0;
+      l.type   = PT_LOAD;
+      l.flags  = PF_R | PF_X;
+      l.vaddr  = ctx->new_phdr_vaddr;
+      l.paddr  = ctx->new_phdr_vaddr;
+      l.memsz  = ctx->payload_size + ehdr_sz + phdr_sz * ph_count;
+      l.filesz = l.memsz;
+      return l;
+  }
+
+  static int write_program_headers(t_elf_write_ctx *ctx)
+  {
+  	const uint64_t		phdr_struct_size = elf_get_struct_size_elf_ph(ctx->class);
+  	const uint64_t		ndx = elf_get_gnu_stack_phdr_ndx(ctx->ehdr, ctx->class, ctx->phnum);
+  	const t_phdr_layout	rw = phdr_rw_layout(ctx->ehdr, ctx->class, ctx->phnum);
+  	const t_phdr_layout	rx = phdr_rx_layout(ctx);
+  	t_elf_ph			phdr;
+
+  	phdr = elf_get_program_header(ctx->ehdr, 0);
+  	apply_phdr_layout(&phdr, &rw, ctx->class);
+      if (invalid_write(ctx->fd, phdr.elf32, phdr_struct_size))
+  	{
+          return (ERR_WRITE_PHDR);
+  	}
+  	apply_phdr_layout(&phdr, &rx, ctx->class);
+      if (invalid_write(ctx->fd, phdr.elf32, phdr_struct_size))
+          return (ERR_WRITE_PHDR);
+      if (!ndx)
+  		return (ndx);
+  	phdr = elf_get_program_header(ctx->ehdr, ndx);
+  	if (invalid_write(ctx->fd, phdr.elf32, phdr_struct_size))
+  		return (ERR_WRITE_PHDR);
+  	return (0);
+  }
 
   int generate_packed_file(void *elf_mmap, t_buffer *payload, int packed)
   {
@@ -681,14 +741,15 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       uint64_t phnum;
       unsigned char class;
       uint64_t new_phdr_vaddr;
-      uint64_t new_phnum;
 
-      if (validate_elf_headers(&ehdr, &shnum, &phnum, &class))
-  		return (ERR_INVALID_ELF);
+  	set_elf_headers(&ehdr, &shnum, &phnum, &class);
       new_phdr_vaddr = elf_get_highest_loadable_vaddr_avalaible(&ehdr, class, phnum);
-      if (write_ehdr(&ehdr, packed, class, new_phdr_vaddr, &new_phnum, phnum))
+  	t_elf_write_ctx ctx = {.ehdr = &ehdr, .fd = packed, .class = class,
+  						   .phnum = phnum, .new_phdr_vaddr = new_phdr_vaddr,
+  						   .payload_size = payload->len};
+      if (write_ehdr(&ctx))
   		return (ERR_WRITE_HEADER);
-      if (write_program_headers(&ehdr, packed, phnum, new_phdr_vaddr, class, payload->len))
+      if (write_program_headers(&ctx))
   		return (ERR_WRITE_PHDR);
       if (invalid_write(packed, payload->data, payload->len))
   		return (ERR_WRITE_PAYLOAD);
@@ -807,6 +868,9 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 :ORDERED:  t
 :END:
 :LOGBOOK:
+CLOCK: [2025-12-20 Sat 12:16]--[2025-12-20 Sat 12:50] =>  0:34
+CLOCK: [2025-12-20 Sat 11:40]--[2025-12-20 Sat 12:00] =>  0:20
+CLOCK: [2025-12-20 Sat 10:15]--[2025-12-20 Sat 10:35] =>  0:20
 CLOCK: [2025-12-20 Sat 06:36]--[2025-12-20 Sat 06:56] =>  0:20
 CLOCK: [2025-12-18 Thu 11:46]--[2025-12-18 Thu 12:15] =>  0:29
 CLOCK: [2025-12-18 Thu 11:01]--[2025-12-18 Thu 11:22] =>  0:21
@@ -822,7 +886,7 @@ CLOCK: [2025-12-17 Wed 07:49]--[2025-12-17 Wed 08:35] =>  0:46
 
 * Documentation:
 :LOGBOOK:
-CLOCK: [2025-12-20 Sat 07:10]
+CLOCK: [2025-12-20 Sat 07:10]--[2025-12-20 Sat 07:31] =>  0:21
 :END:
 #+begin_quote
 I develop a packer single stage.
