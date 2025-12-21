@@ -138,7 +138,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       if (raw_size)
   		,*ret_size = raw_size;
       if (key && !*key)
-  		,*key = NULL;
+  		ft_bzero(key, 128/8);
       return (raw);
   }
 
@@ -162,6 +162,17 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   bool invalid_buffer(t_buffer *buf)
   {
       return (!buf->data || !buf->len);
+  }
+
+  bool invalid_aes(t_aes128_key *key)
+  {
+  	const int max_ndx = (sizeof(key->ints) / sizeof(*key->ints));
+  	int	i;
+
+  	i = 0;
+  	while (i < max_ndx && key->ints[i] == 0)
+  		i++;
+  	return (max_ndx == i);
   }
 
   //cmn/buffer.c
@@ -430,51 +441,65 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   	return (out);
   }
 
-  //TODO Refactor
-  //elf/inject
+  static inline bool is_exec_load_phdr(t_elf_ph *phdr, unsigned char class)
+  {
+  	return (PT_LOAD == elf_get_program_header_type(phdr, class) && PF_X & elf_get_program_header_flags(phdr, class));
+  }
+
+
+  static uint64_t get_vaddr_gap_fits(const t_elf_ph *phdr, unsigned char class,
+  								   size_t gap_size)
+  {
+      const uint64_t	cur_top = elf_get_program_header_vaddr(phdr, class)
+  		                  + elf_get_program_header_memsz(phdr, class);
+      const uint64_t aligned_top = align_up(cur_top, 0x1000);
+
+      if ((aligned_top - cur_top) < gap_size)
+          return (0);
+      return (cur_top);
+  }
+
+
+  static uint64_t get_offset_gap_fits(const t_elf_h *ehdr, const t_elf_ph *phdr,
+                              unsigned char class, uint64_t phnum,
+                              size_t gap_size)
+  {
+      const uint64_t cur_top = elf_get_program_header_offset(phdr, class)
+  						+ elf_get_program_header_memsz(phdr, class);
+      uint64_t next;
+
+  	next = elf_get_closest_higher_p_offset(ehdr, class, phnum, cur_top);
+      if (next == (uint64_t)-1)
+          next = elf_get_elfh_shoff(ehdr);
+
+      if ((next - cur_top) < gap_size)
+          return (0);
+      return (cur_top);
+  }
+
   static bool elf_set_s3_get_info(const t_elf_h *ehdr, unsigned char class, uint64_t phnum, size_t gap_size, uint64_t *ret_vaddr, uint64_t *ret_offset, t_elf_ph *phdr)
   {
-      if (!ehdr || !phnum)
-  	return (false);
-      if (!gap_size)
-  	return (true);
-      uint64_t ph_ndx;
-      uint64_t cur_vaddr_top;//cur
-      uint64_t cur_offset_top;//cur
-      uint64_t top_vaddr;
-      uint64_t top_offset;//get closest higher offset.
+  	uint64_t ph_ndx;
       uint64_t avalaible_vaddr;
       uint64_t avalaible_offset;
 
+      if (!ehdr || !phnum || ! gap_size)
+  		return (false);
       ph_ndx = 0;
       while (ph_ndx < phnum)
   	{
-  	    ,*phdr = elf_get_program_header(ehdr, ph_ndx);
-  	    if (!(PT_LOAD == elf_get_program_header_type(phdr, class) && PF_X & elf_get_program_header_flags(phdr, class)))
-  		{
-  		    ph_ndx++;
+  	    ,*phdr = elf_get_program_header(ehdr, ph_ndx++);
+  	    if (!is_exec_load_phdr(phdr, class))
   		    continue;
-  		}
-  	    cur_vaddr_top = elf_get_program_header_vaddr(phdr, class) + elf_get_program_header_memsz(phdr, class);
-  	    top_vaddr = align_up(cur_vaddr_top, 0x1000);
-  	    avalaible_vaddr = top_vaddr - cur_vaddr_top;
-  	    if (avalaible_vaddr < gap_size)
-  		{
-  		    ph_ndx++;
+  	    avalaible_vaddr = get_vaddr_gap_fits(phdr, class, gap_size);
+  	    if (avalaible_vaddr == 0)
   		    continue;
-  		}
-  	    cur_offset_top = elf_get_program_header_offset(phdr, class) + elf_get_program_header_memsz(phdr, class);
-  	    top_offset = elf_get_closest_higher_p_offset(ehdr, class, phnum, cur_offset_top);
-  	    if (top_offset == (uint64_t) -1)
-  		top_offset = elf_get_elfh_shoff(ehdr);
-  	    avalaible_offset = top_offset - cur_offset_top;
-  	    if (avalaible_offset >= gap_size)
-  		{
-  		    ,*ret_offset = cur_offset_top;
-  		    ,*ret_vaddr = cur_vaddr_top;
-  		    return (true);
-  		}
-  	    ph_ndx++;
+  	    avalaible_offset = get_offset_gap_fits(ehdr, phdr, class, phnum, gap_size);
+  	    if (avalaible_offset < gap_size)
+  			continue;
+  		,*ret_offset = avalaible_offset;
+  		,*ret_vaddr = avalaible_vaddr;
+  		return (true);
   	}
       return (false);
   }
@@ -529,8 +554,9 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       stage1 = load_stage_buffer(arch, STAGE_1);
   	if (invalid_buffer(&stage1))
   		return (stage1);
-      if (params->key != NULL)
-  		params->key = (t_aes128_key *)s2_entry_offset;
+      if (invalid_aes(&params->key))
+  		ft_memset(params->key.ints, s2_entry_offset,
+  				  sizeof(params->key.ints)/sizeof(*params->key.ints));
       t_type stage1_patches[STAGE1_PATCHES] = {
   		{.b8 = elf_get_highest_loadable_vaddr_avalaible(ehdr, class, phnum) + prefix_size + 5 + (!arch * 0x72)}, // Calc aslr
   		{.b8 = stage1.len + prefix_size + params->encrypted.len}, // Calc size s1.
@@ -538,10 +564,10 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   		{.b8 = params->encrypted.len},        // Calc size decrypt
   		{.b8 = params->compressed_hdr_size},   // Calc size compress
   		{.b8 = s2_entry_offset},       // s2 offset.
-  		{.b8 = (uint64_t)params->key},//Encryption key in case x86 use 32b
-  		{.b8 = (uint64_t)params->key},//In x64 overwrite some off with eq val
-  		{.b8 = (uint64_t)params->key},
-  		{.b8 = (uint64_t)params->key}
+  		{.b8 = (uint64_t)params->key.ints[0]},//Encryption key in case x86 use 32b
+  		{.b8 = (uint64_t)params->key.ints[0]},//In x64 overwrite some off with eq val
+  		{.b8 = (uint64_t)params->key.ints[0]},
+  		{.b8 = (uint64_t)params->key.ints[0]}
       };
       t_patch_set patch = ft_init_patch_set(stage1_patch_offsets[arch], stage1_patches, 6, value_size);
       apply_patches_to_buffer(stage1.data, &patch);
@@ -592,7 +618,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   bool invalid_s1_params(t_stage1_params *val)
   {
   	return (val->stage2_total_size == 0 || val->encrypted.len == 0
-  			|| val->compressed_hdr_size == 0 || val->key == NULL);
+  			|| val->compressed_hdr_size == 0 || invalid_aes(&val->key));
   }
 
   t_buffer *prepare_payload_prerequisites(t_buffer *elf)
@@ -868,6 +894,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 :ORDERED:  t
 :END:
 :LOGBOOK:
+CLOCK: [2025-12-21 Sun 13:01]--[2025-12-21 Sun 13:21] =>  0:20
 CLOCK: [2025-12-20 Sat 12:16]--[2025-12-20 Sat 12:50] =>  0:34
 CLOCK: [2025-12-20 Sat 11:40]--[2025-12-20 Sat 12:00] =>  0:20
 CLOCK: [2025-12-20 Sat 10:15]--[2025-12-20 Sat 10:35] =>  0:20
