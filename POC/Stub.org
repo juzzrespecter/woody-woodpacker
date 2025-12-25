@@ -17,7 +17,7 @@
   {
       ,*min_vaddr = -1;
       ,*max_vaddr = 0;
-      
+
       while (phnum--) {
           if (phdr[phnum].p_type == PT_LOAD) {
               if (phdr[phnum].p_vaddr < *min_vaddr)
@@ -27,7 +27,7 @@
                   ,*max_vaddr = seg_end;
           }
       }
-      
+
       // Align to page boundaries
       ,*min_vaddr &= ~(PAGE_SIZE - 1);
       /* *max_vaddr = (*max_vaddr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1); */
@@ -43,7 +43,7 @@
       // Align offset and size to page boundaries
       uint64_t page_offset = phdr->p_offset & ~(PAGE_SIZE - 1);
       uint64_t page_vaddr = phdr->p_vaddr & ~(PAGE_SIZE - 1);
-      
+
       // Map at the correct address with MAP_FIXED
       int prot = PROT_READ;
       int flags = MAP_FIXED | MAP_PRIVATE;
@@ -51,7 +51,7 @@
         prot |= PROT_WRITE;
       if (phdr->p_flags & PF_X)
         prot |= PROT_EXEC;
-      
+
       uint64_t map_end = phdr->p_offset + phdr->p_filesz;
       if (fd == -1)
         {
@@ -63,7 +63,7 @@
 
       size_t map_size = map_end - page_offset;
       void *map_addr = (char *)base + (page_vaddr - min_vaddr);
-      void *result = mmap(map_addr, map_size, prot, 
+      void *result = mmap(map_addr, map_size, prot,
   			flags, fd, page_offset);
       if (result <= -0xfff)/* == MAP_FAILED) */
         return (-1);
@@ -88,7 +88,7 @@
   	  {
   	    uint64_t bss_map_size = va_bss_end - va_bss_start_align;
   	    void * vaddr_bss_start_in_segment_align = result + va_bss_start_align;
-  	    void *bss_result = mmap(vaddr_bss_start_in_segment_align, bss_map_size, prot, 
+  	    void *bss_result = mmap(vaddr_bss_start_in_segment_align, bss_map_size, prot,
   				MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   	    if (bss_result <= -0xfff)
   	      exit (0);
@@ -106,14 +106,14 @@
   {
       Elf64_Ehdr *elf = (Elf64_Ehdr *)ptr;
       Elf64_Phdr *elf_ph = (Elf64_Phdr *)((char *)ptr + elf->e_phoff);
-      
+
       uint64_t min_vaddr, max_vaddr;
-      
+
       // Calculate memory range needed
       calculate_elf_memory_range(elf_ph, elf->e_phnum, &min_vaddr, &max_vaddr);
       uint64_t total_size = max_vaddr - min_vaddr;
       uint64_t map_flags = MAP_PRIVATE | MAP_ANONYMOUS;
-      
+
       // Reserve entire address space with PROT_NONE
       void *target_vaddr = 0;
       void *base_addr;
@@ -122,12 +122,12 @@
   	target_vaddr = min_vaddr + aslr_offset;
   	map_flags |= MAP_FIXED;
         }
-      base_addr = mmap(target_vaddr, total_size, 
+      base_addr = mmap(target_vaddr, total_size,
                           PROT_NONE, map_flags, -1, 0);
-      
+
       if (base_addr <= -0xfff)
         exit(0);
-      
+
       // Load each segment
       for (int i = 0; i < elf->e_phnum; i++) {
           if (load_elf_segment(base_addr, ptr, &elf_ph[i], min_vaddr, fd) < 0)
@@ -135,7 +135,7 @@
       }
       if (fd == -1)
   	write_dyn(base_addr, aslr_offset);
-      
+
       uint64_t entrypoint = (uint64_t)base_addr + (elf->e_entry - min_vaddr);
       return entrypoint;
   }
@@ -157,7 +157,7 @@
     }
     if (!dyn_phdr)
       return (0); // No se encontró el segmento dinámico
-      
+
     // Obtener la sección dinámica
     Elf64_Dyn *dynamic_section = (Elf64_Dyn *)((char *)ptr + dyn_phdr->p_offset);
     uint64_t entry_count = dyn_phdr->p_filesz / sizeof(Elf64_Dyn);
@@ -166,7 +166,7 @@
       {
         Elf64_Dyn *dyn = &dynamic_section[i];
         uint64_t d_tag = dyn->d_tag;
-                  
+
         // Check if this entry contains a virtual address that needs updating
         switch(d_tag) {
         case DT_INIT:
@@ -187,7 +187,7 @@
         default:
   	ndx_dyn++;
         }
-      } 
+      }
     return (0);
   }
   // r/eax -1 error, 0 no interp, != 0 && != -1 entrypoint to jmp.
@@ -200,25 +200,25 @@
       char *interp_str;
       int interp_fd;
       char interp_elfh[1024];
-      
+
       // Find PT_INTERP segment
       while (ndx_ph < elf->e_phnum && elf_ph[ndx_ph].p_type != PT_INTERP)
           ndx_ph++;
-      
+
       if (ndx_ph == elf->e_phnum)
           return 0;  // No interpreter found
-      
+
       interp_str = (char *)ptr + elf_ph[ndx_ph].p_offset;
       interp_fd = open(interp_str, O_RDONLY);
       if (interp_fd < 0)
         exit(0);
-      
+
       if (read(interp_fd, &interp_elfh[0], 1024) < 1024)
         exit(0);
-      
+
       // Use the generic unpacker for the interpreter
       uint64_t result = load_elf_generic(&interp_elfh[0], 0, 0, interp_fd);
-      
+
       close(interp_fd);
       return result;
   }
@@ -249,13 +249,13 @@
 
       // Copy match data
       if (len && dist && dist <= pos) {
-        if (len > orig_size - pos) 
+        if (len > orig_size - pos)
   	len = orig_size - pos;
-    	  
+
         unsigned char *dst = out + pos;
         unsigned char *src = out + (pos - dist);
-    	  
-        while (len--) 
+
+        while (len--)
   	,*dst++ = *src++;
         pos += (dst - (out + pos));  // Update pos
       }
@@ -294,7 +294,7 @@
   	push rsi			;[rsp] = (len, vaddr) s1
   	call .open
   .proc_self_exec:
-  	times 15 ret ; "/proc/self/exe" 
+  	times 15 ret ; "/proc/self/exe"
   .open:
   	xor esi, esi
   	pop rdi
@@ -339,7 +339,7 @@
   	pop rdi		; src
   	mov rsi, 0xfefffffffffff000
   	call lz77_decompress
-  	pop rdx			;size_buffer_decrypt [rsp] 
+  	pop rdx			;size_buffer_decrypt [rsp]
   	add rsp, rdx ;Restore stack [rsp] size_s2_elf, fd, size_s1, vaddr_s1
   	test rax, rax
   	jnz _exit
@@ -347,7 +347,7 @@
   .mprotect_stage_2:
   	push r13
   	pop rdi			;vaddr
-  	push 0x5 
+  	push 0x5
   	pop rdx			;prot R-X
   	pop rsi			;size_s2_elf [rsp] fd_s1, size_s1, vaddr_s1
   	push r13		;[rsp] vaddr_s2_elf, fd_s1, size_s1, vaddr_s1
@@ -366,7 +366,7 @@
   	;; push r13;[rsp] (entry ,size,va) s2, fd_s1, size_s1, vaddr s1
   	ret;		 ;(pop rip va s2[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
 
-  _exit:	
+  _exit:
   	xor edi, edi
       push 60
       pop rax
@@ -507,7 +507,7 @@
         xor r9, r9		; offset
         pop r8			;fd_s1 [rsp] size_s1, vaddr s1
         xor edi, edi		;addr
-        push 0x1000		
+        push 0x1000
         pop rsi			;size
         push 1
         pop rdx			;perm
@@ -533,7 +533,7 @@
         test rax, rax
         jnz _exit
         push r13
-        push r14		; [rsp] size_s2_elf, vaddr_s2_elf	
+        push r14		; [rsp] size_s2_elf, vaddr_s2_elf
         jmp end_of_stage_2
         .return_ehdr_ptr:;[rsp] ehdr_ptr size_s2, size_s2_elf, vaddr s2
         pop rdi		; ehdr_ptr [rsp] size_s2_elf, vaddr_s2_elf
@@ -549,7 +549,7 @@
         add    rdi, QWORD [rdi+0x20] ; rdi = e_phoff
         lea    rdx, [rsp]          ; rdx = stack space for result min
         lea    rcx, [rsp+0x8]          ; rcx = stack space for result max
-        call   calculate_elf_memory_range;0x1d7 
+        call   calculate_elf_memory_range;0x1d7
         mov rdx, QWORD [rsp]		     ;base
         push rbx
         pop rdi			;pop  ehdr;[rsp] size_s2, vaddr s2
@@ -574,7 +574,7 @@
         pop r11			;entrypoint interp
         push rdi
         pop r12			;base interp
-        ;; This should 
+        ;; This should
         lea rdi, [rsp + 0x10]	;[rsp] size_s2, vaddr s2
         call set_auxv		;0x17B
         mov r14, 0xfeffffffffffffff
@@ -593,7 +593,7 @@
         push -1
         pop r8			;fd
         xor edi, edi		;addr
-        push 0x1000		
+        push 0x1000
         pop rsi			;size
         push 3			;RW
         pop rdx			;perm
@@ -627,7 +627,7 @@
         pop rax
         push rdi		;[rsp]vaddr_s3 size_s2, vaddr s2
         push r11		;[rsp]interp_vaddr, vaddr_s3, size, vaddr s2
-        syscall			
+        syscall
         test rax, rax
         jnz _exit
         pop r11			;interp_vaddr[rsp] vaddr_s3, size, vaddr s2
@@ -637,7 +637,7 @@
         push QWORD [rsp + 0x18]	;vaddr s2
         ret
 
-  _exit:	
+  _exit:
         push 0
         pop rdi
         push 60
@@ -662,7 +662,7 @@
         ;; r15 aslr
         ;; r14 ehdr ptr in the correct mmap
         ;; r13 entrypoint
-        ;; r12 base interp 
+        ;; r12 base interp
         ;; Modified reg rdi, rsi, r/ecx
   set_auxv:
           xor ecx, ecx		; counter for detect end argv, envp.
@@ -678,7 +678,7 @@
 
         .auxv_loop:
           add rdi, 8		;First case NULL, next field of auxv,rest value -> field.
-          mov rsi, qword [rdi]	
+          mov rsi, qword [rdi]
           test rsi, rsi
         jz .end
           add rdi, 8		;Advance to value
@@ -786,7 +786,7 @@
       sbb    eax, eax                 ; Set eax to 0xffffffff if PF_W is set, 0 otherwise
       add    r13, QWORD  [rdx+0x20] ; r13 = p_offset + p_filesz
       and    eax, 0xfffffffe          ; Mask eax (0xfffffffe if PF_W, 0 otherwise)
-      add    eax, 0x3                 ; eax = (1{R--}|| 3{RW-}) 
+      add    eax, 0x3                 ; eax = (1{R--}|| 3{RW-})
 
       ; Check if fd == -1
       cmp    r8d, 0xffffffff           ; Check if fd == -1
@@ -878,7 +878,7 @@
       ; Handle .bss section
         lea rdi, [rdx + rcx]
         push rcx
-        pop rax 
+        pop rax
         add rcx, 0xfff
         and    rcx, 0xfffffffffffff000   ; Align bss_start
         push rcx
@@ -1184,7 +1184,7 @@
 #+end_src
 
 * x32
- 
+
 #+begin_src c :tangle payload/x32/all_in.c :mkdirp yes
   #include <elf.h>
   #include <sys/mman.h>
@@ -1229,7 +1229,7 @@
       const unsigned int offset_dif = phdr->p_offset - page_offset;
       const unsigned int page_vaddr = phdr->p_vaddr & ~(PAGE_SIZE - 1);
       const unsigned int va_dif = page_vaddr - min_vaddr;
-      const int bss_len = phdr->p_memsz - phdr->p_filesz; 
+      const int bss_len = phdr->p_memsz - phdr->p_filesz;
       unsigned int map_len;
       int prot;
       int prot_bk;
@@ -1265,7 +1265,7 @@
       else if (bss_len > 0)
         {
   	unsigned int len_bss_start_align = ((unsigned int)(len_fs + PAGE_SIZE - 1)) & ~(PAGE_SIZE -1);
-  	memset(result + len_fs, 0, len_bss_start_align - len_fs); 
+  	memset(result + len_fs, 0, len_bss_start_align - len_fs);
   	unsigned int len_bss_end = len_fs + bss_len;
   	unsigned int bss_map_len = len_bss_end - len_bss_start_align;
   	if (bss_map_len > 0)
@@ -1318,7 +1318,7 @@
   	int flags = MAP_PRIVATE | MAP_ANONYMOUS;
   	mmap_va = NULL;
 
-  	mmap_va = sys_mmap(mmap_va, total_size, 
+  	mmap_va = sys_mmap(mmap_va, total_size,
   			   PROT_NONE, flags, -1, 0);
   	if ((uint32_t)mmap_va <= -0xfff)
   	  goto exit;
@@ -1389,10 +1389,10 @@
   	push edx	;[esp] (vaddr) s2, padding,(len,buffer) decrypt , (len, vaddr) s2.
 
   	push 0xfeffffff		; len
-  	push eax 	;[esp] (vaddr, len) c_s2, (vaddr) s2, padding,(len,buffer) decrypt , (len, vaddr) s2. 
-  	push edx	;[esp] ((dst) s2, (vaddr, len) c_s2) func params, (vaddr) s2, padding,(len,buffer) decrypt , (len, vaddr) s2. 
+  	push eax 	;[esp] (vaddr, len) c_s2, (vaddr) s2, padding,(len,buffer) decrypt , (len, vaddr) s2.
+  	push edx	;[esp] ((dst) s2, (vaddr, len) c_s2) func params, (vaddr) s2, padding,(len,buffer) decrypt , (len, vaddr) s2.
   	call lz77_decompress
-  	pop ebx	; (vaddr)s2 [esp](len) c_s2, (vaddr) s2, padding,(len,buffer) decrypt , (len, vaddr) s2. 
+  	pop ebx	; (vaddr)s2 [esp](len) c_s2, (vaddr) s2, padding,(len,buffer) decrypt , (len, vaddr) s2.
   	add esp, 0x10		;[esp]
   	pop edx			;(len) decrypt [esp] (buffer) decrypt, (len, vaddr) s2
   	add esp, edx ;Restore stack [esp] (len, vaddr) s2
@@ -1443,7 +1443,7 @@
   	push edx ;; push (vaddr) s2
   	ret;		 ;(pop rip [rsp] -> vaddr_s2_elf)[rsp] (fd, len, va) s1, aslr, (len, va) s2
 
-  _exit:	
+  _exit:
   	xor ebx, ebx		;
   	push 1
   	pop eax
@@ -1470,7 +1470,7 @@
       push   esi
       push   ebx
       sub    esp, 0x1c           ; Allocate local variables (0x1c = 28 bytes)
-      
+
       ; Load and validate parameters
       mov    edi, DWORD  [ebp+0xc]  ; edi = input_size
       mov    esi, DWORD  [ebp+0x8]  ; esi = input_buffer
@@ -1482,31 +1482,31 @@
       jz     _exit; Jump if input_buffer is NULL
       cmp    DWORD  [ebp+0x10], 0x0 ; Check if output_buffer is NULL
       je    _exit; Jump if validation failed (input_size <= 3 or output_buffer == NULL)
-      
-      
+
+
       ; Load original (expected) decompressed size from input buffer
       mov    eax, DWORD  [esi] ; eax = *(uint32_t *)input_buffer (original size)
       mov    DWORD  [ebp-0x1c], eax ; Save original_size to local variable
       test   eax, eax            ; Test if original_size is 0
       jz     _exit; Jump if original_size is 0
-      
+
       ; Initialize loop variables
       lea    eax, [esi+0x7]      ; eax = input_buffer + 7 (skip 4-byte size + 3-byte first token)
       mov    DWORD  [ebp-0x20], eax ; Save current_input_ptr to local variable
       lea    ecx, [esi+edi*1]    ; ecx = input_buffer + input_size (end of input)
       mov    DWORD  [ebp-0x24], ecx ; Save end_of_input_ptr to local variable
-      
+
       ; Check if we have enough data to process
       cmp    eax, ecx            ; Compare current_input_ptr with end_of_input_ptr
       mov    ecx, eax            ; ecx = current_input_ptr (prepare for loop)
       ja     .check_completion   ; Jump if current_input_ptr > end_of_input_ptr (no data to process)
-      
+
       ; Main decompression loop
   .loop_init:
       xor    eax, eax            ; eax = 0 (output_position counter)
       cmp    eax, DWORD  [ebp-0x1c] ; Compare output_position with original_size
       jnc    .check_completion   ; Jump if output_position >= original_size (done)
-      
+
   .loop_start:
       ; Process LZ77 token
       mov    ecx, DWORD  [ebp-0x20] ; ecx = current_input_ptr
@@ -1514,7 +1514,7 @@
       mov    edx, edi            ; edx = di (copy token)
       and    dx, 0xf             ; dx = di & 0xf (extract length bits 0-3)
       jz     .copy_literal       ; Jump if length is 0 (copy literal byte only)
-      
+
       ; Process match (length > 0)
       shr    di, 0x4             ; di = di >> 4 (shift to get distance bits 4-15)
       movzx  edi, di             ; edi = di (zero extend to 32 bits)
@@ -1522,7 +1522,7 @@
       jz     .copy_literal       ; Jump if distance is 0 (copy literal byte only)
       cmp    edi, eax            ; Compare distance with output_position
       ja     .copy_literal       ; Jump if distance > output_position (invalid, copy literal)
-      
+
   .copy_match:
       ; Copy match data from previously decompressed output
       mov    esi, eax            ; esi = output_position (destination index)
@@ -1543,14 +1543,14 @@
       je     .copy_literal_after_match ; Jump if equal (length 0, copy literal)
       movsb
       jmp    .copy_match_loop    ; Jump if not equal (continue copying)
-      
+
   .copy_literal_after_match:
       ; Update output position after copying match
       sub    edx, ecx            ; edx = adjusted length
       add    eax, edx            ; eax = output_position + adjusted length
       cmp    DWORD  [ebp-0x1c], eax ; Compare original_size with output_position
       jbe    .advance_input      ; Jump if original_size <= output_position (done with this iteration)
-      
+
   .copy_literal:
       ; Copy literal byte from input to output
       mov    ecx, DWORD  [ebp-0x20] ; ecx = current_input_ptr
@@ -1558,14 +1558,14 @@
       mov    dl, BYTE  [ecx-0x1] ; dl = *(current_input_ptr - 1) (literal byte)
       mov    BYTE  [edi+eax*1], dl ; *(output_buffer + output_position) = literal byte
       inc    eax                 ; Increment output_position
-      
+
   .advance_input:
       ; Advance input pointer by 3 bytes (token size + literal byte)
       add    DWORD  [ebp-0x20], 0x3 ; current_input_ptr += 3
       mov    ecx, DWORD  [ebp-0x20] ; ecx = current_input_ptr
       cmp    ecx, DWORD  [ebp-0x24] ; Compare current_input_ptr with end_of_input_ptr
       jbe    .loop_start; Jump if current_input_ptr <= end_of_input_ptr (continue loop)
-      
+
   .check_completion:
       ; Check if decompression completed successfully
       cmp    eax, DWORD  [ebp-0x1c] ; Compare final output_position with original_size
@@ -1587,22 +1587,22 @@
   	call _start.return_crypt_compress_addr
 #+end_src
 
- 
+
 #+begin_src asm :tangle payload/x32/payload.s :mkdirp yes
   payload:
-          call .woody_write	;; 
+          call .woody_write	;;
   	times 14 ret
-          .woody_write:   	
+          .woody_write:
   	push 1
   	pop ebx			;fd
   	pop ecx			;buffer
   	push 0xe		;len
-          pop    edx		
+          pop    edx
   	push 0x4		;write sysnbr
   	pop eax
   	int 0x80
 #+end_src
- 
+
 #+begin_src asm :tangle payload/x32/stage2.s :mkdirp yes
    global _start:
         ;; Cheatsheet mmap
@@ -1614,19 +1614,19 @@
         ;; ebp offset/0x1000
         ;; eax 192
    ;[esp] (fd, len, vaddr) s1, aslr, (len, vaddr) s2 Fine
-  jmp_pad_s3:	
+  jmp_pad_s3:
         pop edx 		;Entry interp;[esp] (e) elf, (va) s3, (len, va) s2;
-        pop esi			;Entry elf; [esp] (va) s3, (len, va) s2; 
+        pop esi			;Entry elf; [esp] (va) s3, (len, va) s2;
         pop edi			;(va) s3 [esp] (len, va) s2
         ;; munmap
            pop ecx 		;(len)
-           pop ebx			;(va) 
+           pop ebx			;(va)
            push 91			;munmap
-        pop eax			
+        pop eax
         test edx, edx		;if interp
         cmovnz esi, edx		; modify entrypoint
         push esi	; entrypoint (interp || elf)
-        push 0		; reset edx 
+        push 0		; reset edx
         push edi	; va s3
         ret
 
@@ -1666,11 +1666,11 @@
         pop edi			;[esp] aslr, (len, va) s2 -> Fine
         push edi		; [esp] ehdr, aslr, (len, vaddr)s2 -> Fine
         mov esi, 0xfeffffff	; Modify in C. ->Fine
-        .get_base:		;[X] 
+        .get_base:		;[X]
         mov    edx, DWORD  [edi+0x1c] ; eax = e_phoff
         add edx, edi      ; PHDR
         pop eax	       ;ehdr  [esp] aslr, (len, vaddr)s2.
-        pop ebx	       ;aslr [esp] (len, vaddr) s2; 
+        pop ebx	       ;aslr [esp] (len, vaddr) s2;
         push ebx       ;[esp] aslr, (len, vaddr) s2;
         push -1	       ;[esp] (fd) args, aslr, (len, vaddr) s2;
 
@@ -1698,8 +1698,8 @@
         lea edi, [esp + 28]
    ;; set_auxv([ignored]entry interp, va interp, entry elf, va elf, aslr); I break stack and set_auxv segfault.
         call set_auxv		; Working fine.
-        pop ebx			;entry interp [esp] (va) interp ,(entry, va) elf, aslr, (len, va)s2; 
-        pop ecx			;Discard (va) interp [esp] (entry, va) elf, aslr, (len, va)s2; 
+        pop ebx			;entry interp [esp] (va) interp ,(entry, va) elf, aslr, (len, va)s2;
+        pop ecx			;Discard (va) interp [esp] (entry, va) elf, aslr, (len, va)s2;
         pop ecx			;elf entry [esp] (va) elf, aslr, (len, va) s2 ;
         pop edx			;elf va Discard (va) elf [esp] aslr, (len, va) s2 ;
         pop edx			;aslr [esp] (len, va) s2 ;
@@ -1710,7 +1710,7 @@
         cmovne esi, edi
         push esi;[esp] va s3, (len, va) s2
         push ecx;[esp] (elf) entry, ...
-        push ebx;[esp] (interp, elf) entry; 
+        push ebx;[esp] (interp, elf) entry;
         test esi, esi
         jnz .payload
         ;; Create s3
@@ -1760,20 +1760,20 @@
         ret
         .jmp_s3:
         pop edx 		;Entry interp;[esp] (e) elf, (va) s3, (len, va) s2;
-        pop esi			;Entry elf; [esp] (va) s3, (len, va) s2; 
+        pop esi			;Entry elf; [esp] (va) s3, (len, va) s2;
         pop edi			;(va) s3 [esp] (len, va) s2
         ;; munmap
            pop ecx 		;(len)
-           pop ebx			;(va) 
+           pop ebx			;(va)
            push 91			;munmap
-        pop eax			
+        pop eax
         ;; int 0x80	I was choping the va that i was executing Segfault error deserved.
         ;; test eax, eax
         ;; jnz _exit
         test edx, edx		;if interp
         cmovnz esi, edx		; modify entrypoint
         push esi	; entrypoint (interp || elf)
-        push 0		; reset edx 
+        push 0		; reset edx
         push edi	; va s3
         ret
                 ; jmp s3 int 0x80, reset edx, jmp entry
@@ -1802,7 +1802,7 @@
 
         .auxv_loop:
            add edi, 4		;First case NULL, next field of auxv,rest value -> field.
-           mov esi, dword [edi]	
+           mov esi, dword [edi]
            test esi, esi
         jz .end
            add edi, 4		;Advance to value
@@ -1829,7 +1829,7 @@
 
         .set_phnum:
         mov eax, [esp + 0x4 * 4]     ; ehdr
-        movzx  eax,WORD  [eax+0x2c] ; 
+        movzx  eax,WORD  [eax+0x2c] ;
            mov dword [edi], eax
            jmp .auxv_loop
 
@@ -1999,7 +1999,7 @@
    .setup_mprotect:
        mov edx ,  DWORD  [ebp-0x10]
        mov ecx ,  DWORD  [ebp-0xc]
-       mov ebx ,  DWORD  [ebp-0x38] 
+       mov ebx ,  DWORD  [ebp-0x38]
         push 125
         pop eax
         int 0x80
@@ -2116,7 +2116,7 @@
        sub    eax, 0x3            ; Subtract 3
        cmp    eax, 0x17           ; Compare with 0x17
        ja     .next_inner         ; If > 0x17, skip
-       jmp    .adjust_address     ; 
+       jmp    .adjust_address     ;
 
    .check_large_tags:
        ; Check specific large tags that need address adjustment
@@ -2146,7 +2146,7 @@
 
    ; void* load_elf(void *ptr, uint32_t aslr_offset, int fd)
    ;   [ebp+0x8] = ptr ehdr
-   ;   [ebp+0xc] = aslr 
+   ;   [ebp+0xc] = aslr
    ;   [ebp+0x10] = fd
    ; Function: load_elf
    ; Purpose: Loads an ELF file into memory, handling segments, mapping memory, and dynamic linking.
@@ -2258,7 +2258,7 @@
    skip_alignment_adjustment:
 
    ; Call mmap to allocate memory
-        push -1		   
+        push -1
         pop edi		   ;fd
    mov esi,   DWORD [ebp-0x18]      ; Protection flags (MAP_PRIVATE | MAP_ANONYMOUS)
    xor   edx, edx                       ; PROT_NONE
@@ -2417,7 +2417,7 @@
        ret                       ; Return
 
 
-   _exit:	
+   _exit:
         xor ebx, ebx
         push 1
         pop eax
@@ -2435,12 +2435,6 @@
 
 * How to:
 **  Improve:
-- [-] Reduce bytecode.
-  - [X] rep, movsb, stosb, enter, leave
-  - [ ] Erase function just used once. (set_auxv, get_at interp, write_dyn, ...)
-  - [ ] Refactor the code for don't need to got the setup for syscalls (mmap/2, mproctect) more than once.
-  - [ ] Try use loop beside test/cmp jcc .loop_start_pos.
-- [ ] Improve performance.
 ** Get bytecode:
 Compile asm
 ~nasm -f elf{64,32} path.s~
@@ -2453,16 +2447,26 @@ Section Headers:
 using off for skip and size for count.
 ~dd if=path.o of=dst skip=$((0x180)) bs=1 count=$((0x1B7))~
 
-* Working on it 
-** DONE Easy to modify payload.
-CLOSED: [2025-10-30 Thu 08:29]
-*** DONE Change payload pos, and update s1 & s2.
-CLOSED: [2025-10-30 Thu 08:29]
-**** DONE x86
-***** DONE s1
-***** DONE s2
-**** DONE x64
-CLOSED: [2025-10-29 Wed 06:00]
-***** DONE s1
-CLOSED: [2025-10-29 Wed 06:00]
-***** DONE s2
+* Working on it
+:LOGBOOK:
+CLOCK: [2025-12-25 Thu 13:18]
+:END:
+** Pass the key to encryption algorythm.
+Require modify  patch, offsets, asm code and patch for aes_key.
+#+begin_src asm :tangle no
+  .set_aeskey:
+  	call .pass_aeskey
+  	times 16 ret;[Placeholder aeskey]
+  .pass_aeskey:
+  	pop r/eax
+  	movdqu xmm0, [r/eax]	;movdqu unaligned memory  if movdqa should be aligned.
+#+end_src
+*** x86
+*** x64
+** Homogenious
+Require modify asm code, offsets and patchs.
+*** x64
+** Move open /proc/self/exe to s2.
+Require modify asm code and offsets.
+*** x86
+*** x64

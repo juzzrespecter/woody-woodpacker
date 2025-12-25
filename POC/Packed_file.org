@@ -983,7 +983,7 @@ I develop a packer single stage.
 I decrypt and decompress the whole payload in one run no by pieces that is what does a multistage not really different just put again routine of decompress and decypher and call in the differents stages that need to decypher and decompress.
 
 s1 Tasks:
-Aslr calculation, mmap s2, decrypt and decompress the data in the mmap, open "/proc/self/exe", jmp s2.
+Aslr calculation, mmap s2, decrypt and decompress the data in the mmap, [open "/proc/self/exe"], jmp s2.
 Data i pass to s2:
 s1 va, s1 len, aslr offset, [fd "/proc/self/exe"](This i'm going to move it to stage2.)
 
