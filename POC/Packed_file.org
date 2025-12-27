@@ -427,7 +427,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   {
   	static const size_t stage2_patch_offsets[NUM_ARCHS][2] = {
   		[ARCH_X86] = { 0x5B, 0x98 },
-  		[ARCH_X64] = { 0x6E, 0xD7 }
+  		[ARCH_X64] = { 0x6E, 0xD7 - 0x22 }
   	};
   	static t_type patches[2];
 
