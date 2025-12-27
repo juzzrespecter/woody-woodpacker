@@ -153,11 +153,12 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   }
 
   // Encrypt.org
+  // if (!*key)the condition for key depends of undefined var.
   void *encrypt(void *raw, size_t raw_size, size_t *ret_size, int *key)
   {
       if (raw_size)
   		,*ret_size = raw_size;
-      if (key && !*key)
+  	if (key)
   		ft_bzero(key, 128/8);
       return (raw);
   }
@@ -717,6 +718,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   	payload = alloc_concat_buffers(&payload_prereq[0], &payload_prereq[1]);
   	free(payload_prereq[0].data);
   	free(payload_prereq[1].data);
+  	free(payload_prereq);
   	return (payload);
   }
 
@@ -954,7 +956,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 :ORDERED:  t
 :END:
 :LOGBOOK:
-CLOCK: [2025-12-24 Wed 13:41]--[2025-12-24 Wed 13:42] =>  0:01
+CLOCK: [2025-12-24 Wed 13:30]--[2025-12-24 Wed 13:50] =>  0:20
 CLOCK: [2025-12-24 Wed 13:19]--[2025-12-24 Wed 13:39] =>  0:20
 CLOCK: [2025-12-22 Mon 13:40]--[2025-12-22 Mon 14:24] =>  0:44
 CLOCK: [2025-12-21 Sun 13:01]--[2025-12-21 Sun 13:21] =>  0:20
@@ -973,6 +975,100 @@ CLOCK: [2025-12-17 Wed 11:03]--[2025-12-17 Wed 11:27] =>  0:24
 CLOCK: [2025-12-17 Wed 07:25]--[2025-12-17 Wed 07:47] =>  0:22
 CLOCK: [2025-12-17 Wed 07:49]--[2025-12-17 Wed 08:35] =>  0:46
 :END:
+** Tasks
+*** DONE Check Leaks
+CLOSED: [2025-12-27 Sat 07:46]
+:LOGBOOK:
+CLOCK: [2025-12-27 Sat 07:46]--[2025-12-27 Sat 08:06] =>  0:20
+- State "DONE"       from              [2025-12-27 Sat 07:46]
+:END:
+**** Command used
+~valgrind --version~
+#+begin_src shell
+valgrind-3.25.0
+#+end_src
+~valgrind --tool=memcheck --show-leak-kinds=all --undef-value-errors=yes --leak-check=full ./woody_woodpacker ./a.out~
+#+begin_src shell
+==7102== Conditional jump or move depends on uninitialised value(s)
+==7102==    at 0x402DC8: encrypt (elf_packer.c:111)
+==7102==    by 0x403556: wrapper_encrypt (elf_packer.c:352)
+==7102==    by 0x403625: compress_encrypt_with_header (elf_packer.c:367)
+==7102==    by 0x404316: prepare_stage1_prereq (elf_packer.c:616)
+==7102==    by 0x40447F: prepare_payload_prerequisites (elf_packer.c:638)
+==7102==    by 0x404547: generate_payload (elf_packer.c:665)
+==7102==    by 0x404D28: elf_packer (elf_packer.c:803)
+==7102==    by 0x40139E: main (main.c:44)
+==7102==
+==7102== Conditional jump or move depends on uninitialised value(s)
+==7102==    at 0x402EDF: invalid_aes (elf_packer.c:144)
+==7102==    by 0x40442B: invalid_s1_params (elf_packer.c:631)
+==7102==    by 0x40448B: prepare_payload_prerequisites (elf_packer.c:641)
+==7102==    by 0x404547: generate_payload (elf_packer.c:665)
+==7102==    by 0x404D28: elf_packer (elf_packer.c:803)
+==7102==    by 0x40139E: main (main.c:44)
+#+end_src
+
+#+begin_src shell
+valgrind --show-leak-kinds=all --undef-value-errors=yes --leak-check=full ./woody_woodpacker ./a.out
+==7202== Memcheck, a memory error detector
+==7202== Copyright (C) 2002-2024, and GNU GPL'd, by Julian Seward et al.
+==7202== Using Valgrind-3.25.0 and LibVEX; rerun with -h for copyright info
+==7202== Command: ./woody_woodpacker ./a.out
+==7202==
+==7202==
+==7202== HEAP SUMMARY:
+==7202==     in use at exit: 0 bytes in 0 blocks
+==7202==   total heap usage: 5,587 allocs, 5,587 frees, 89,435 bytes allocated
+==7202==
+==7202== All heap blocks were freed -- no leaks are possible
+==7202==
+==7202== For lists of detected and suppressed errors, rerun with: -s
+==7202== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+
+#+end_src
+
+Fix
+#+begin_src c :tangle no
+  void *encrypt(void *raw, size_t raw_size, size_t *ret_size, int *key)
+  {
+      if (raw_size)
+  		,*ret_size = raw_size;
+  	if (key)// && !*key) This depends of an uninitializated value.
+  		ft_bzero(key, 128/8);
+      return (raw);
+  }
+#+end_src
+*** Modify ASM
+**** x64
+***** DONE delete target_va load_generic_elf # Check x64.
+CLOSED: [2025-12-27 Sat 08:28]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-12-27 Sat 08:28]
+:END:
+****** TODO del the pass of the param, Update offsets and values in C # Check x86 & x64 & valgrind.
+******* DONE in interp
+CLOSED: [2025-12-27 Sat 09:11]
+:LOGBOOK:
+- State "DONE"       from              [2025-12-27 Sat 09:11]
+:END:
+******* TODO prev to load_elf from memory delete call calculate_min_max_va and all the
+Update offsets and values in C # Check x86 & x64 & valgrind.
+
+***** NEXT Move the open to the end of asm, Update offsets and values in C. # Check x86 & x64 & Valgrind.
+***** HOLD When s1 is fine modify s2 # Check x86 & x64 & Valgrind.
+**** x86 & x64
+***** PLAN Set correctly the aes key.
+***** PLAN Move open to s2.
+***** PLAN Used only once functions integrated on caller
+****** _open
+****** _read
+****** _close
+****** calculate_max_min
+****** set_auxv
+****** get_at_interp
+****** lz77_decompress
+****** write_dyn
+****** decypher
 
 * Documentation:
 :LOGBOOK:

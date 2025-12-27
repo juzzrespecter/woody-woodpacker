@@ -550,14 +550,14 @@
         lea    rdx, [rsp]          ; rdx = stack space for result min
         lea    rcx, [rsp+0x8]          ; rcx = stack space for result max
         call   calculate_elf_memory_range;0x1d7
-        mov rdx, QWORD [rsp]		     ;base
+        mov rdx, QWORD [rsp]		     ;rdx target_va base
         push rbx
-        pop rdi			;pop  ehdr;[rsp] size_s2, vaddr s2
+        pop rdi			;pop  ehdr rdi ehdr/ptr ;[rsp] size_s2, vaddr s2
         push r15		;aslr
         pop rsi			;rsi aslr_offset
         push -1
         pop rcx			;rcx fd
-        call load_elf_generic	;397
+        call load_elf_generic	;397 ;rdi ptr, rsi aslr,[rdx target_va], rcx fd
         cmp rax, -1		;rax entrypoint
         je _exit
         add rsp, 0x10		;restore rsp
@@ -944,6 +944,7 @@
 
       ; Get results from stack
       mov    r13, QWORD  [rsp+0x10]  ; r13 = min_vaddr
+      mov    r10, r13		   ; r10 target_va = min_va
       mov    rsi, QWORD  [rsp+0x18] ; rsi = max_vaddr
       mov    ecx, 0x22             ; ecx = MAP_PRIVATE | MAP_ANONYMOUS ; push pop
 
@@ -1149,7 +1150,7 @@
         .process_interpreter:
         mov    rdi, rsp                ; rdi = &interp_elfh[0] (buffer address)
         mov    ecx, ebp                ; ecx = interp_fd
-        xor    edx, edx                ; edx = 0 (target_vaddr = 0)
+  ;      xor    edx, edx                ; edx = 0 (target_vaddr = 0)
         xor    esi, esi                ; esi = 0 (aslr_offset = 0)
         call   load_elf_generic  ; .purpose: Call load_elf_generic for interpreter
         push rdi		     ;Base of elf.
@@ -2448,9 +2449,6 @@ using off for skip and size for count.
 ~dd if=path.o of=dst skip=$((0x180)) bs=1 count=$((0x1B7))~
 
 * Working on it
-:LOGBOOK:
-CLOCK: [2025-12-25 Thu 13:18]
-:END:
 ** Pass the key to encryption algorythm.
 Require modify  patch, offsets, asm code and patch for aes_key.
 #+begin_src asm :tangle no
