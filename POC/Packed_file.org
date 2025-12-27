@@ -583,7 +583,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   {
       patches[0].b8 =
           elf_get_highest_loadable_vaddr_avalaible(ehdr, class, ctx->phnum)
-          + ctx->prefix_size + 5 + (!ctx->arch * 0x72);
+          + ctx->prefix_size + 0x77 + (ctx->arch * 0xa);
 
       patches[1].b8 = stage1->len + ctx->prefix_size + params->encrypted.len;
       patches[2].b8 = params->stage2_total_size;
@@ -613,7 +613,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   {
   	const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCHES] = {
           [ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf, 0xaf, 0xaf, 0xaf, 0xaf },
-          [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce, 0xce, 0xce, 0xce, 0xce }
+          [ARCH_X64] = { 0x08+0x7c, 0x1f+0x7c, 0x60-0x4e, 0x81-0x4e, 0xa0-0x4e, 0xce, 0xce, 0xce, 0xce, 0xce }
       };
       const t_stage1_ctx ctx = stage1_compute_ctx(class, ehdr, params);
       t_type patches[STAGE1_PATCHES];
@@ -1045,7 +1045,11 @@ CLOSED: [2025-12-27 Sat 08:28]
 :LOGBOOK:
 - State "DONE"       from "TODO"       [2025-12-27 Sat 08:28]
 :END:
-****** TODO del the pass of the param, Update offsets and values in C # Check x86 & x64 & valgrind.
+****** DONE del the pass of the param, Update offsets and values in C # Check x86 & x64 & valgrind.
+CLOSED: [2025-12-27 Sat 12:36]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-12-27 Sat 12:36]
+:END:
 ******* DONE in interp
 CLOSED: [2025-12-27 Sat 09:11]
 :LOGBOOK:
@@ -1054,10 +1058,40 @@ CLOSED: [2025-12-27 Sat 09:11]
 ******* TODO prev to load_elf from memory delete call calculate_min_max_va and all the
 Update offsets and values in C # Check x86 & x64 & valgrind.
 
-***** NEXT Move the open to the end of asm, Update offsets and values in C. # Check x86 & x64 & Valgrind.
-***** HOLD When s1 is fine modify s2 # Check x86 & x64 & Valgrind.
+***** DONE Move the open to the end of asm, Update offsets and values in C. # Check x86 & x64 & Valgrind.
+CLOSED: [2025-12-27 Sat 15:18]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-12-27 Sat 15:18]
+:END:
+****** DONE Test Valgrind.
+CLOSED: [2025-12-27 Sat 13:53]
+:LOGBOOK:
+- State "DONE"       from              [2025-12-27 Sat 13:53]
+:END:
+****** DONE Test in x64
+CLOSED: [2025-12-27 Sat 13:53]
+:LOGBOOK:
+- State "DONE"       from              [2025-12-27 Sat 13:53]
+:END:
+
+****** DONE Test in 86.
+CLOSED: [2025-12-27 Sat 15:18]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-12-27 Sat 15:18]
+:END:
+#+begin_src shell :tangle no
+    #how to use gcc -m32 in guix without multilib
+  guix shell --system=i686-linux gcc-toolchain -- gcc -o dyn_link_x86 target/entrypoint.c
+
+  guix shell --system=i686-linux gcc-toolchain -- ./dyn_link_x86
+
+  ./woody_woodpacker ./dyn_link_x86
+
+  guix shell --system=i686-linux gcc-toolchain -- ./woody
+#+end_src
+***** TODO When s1 is fine modify s2 # Check x86 & x64 & Valgrind.
 **** x86 & x64
-***** PLAN Set correctly the aes key.
+***** NEXT Set correctly the aes key.
 ***** PLAN Move open to s2.
 ***** PLAN Used only once functions integrated on caller
 ****** _open

