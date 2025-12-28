@@ -325,7 +325,10 @@
   	jmp end_of_stage1
   .return_crypt_compress_addr:
   	pop rsi		;src;;[rsp] size_s2_elf, fd, size_stage1, vaddr stage1
-  	mov rdx, 	0xfefffffffffff000	;[rsp] size_s2_elf, fd, size_stage1, vaddr stage1
+  	pop rdx
+  	push rdx
+  	; times 8 nop
+  				; mov rdx, 	0xfefffffffffff000	;[rsp] size_s2_elf, fd, size_stage1, vaddr stage1
   	sub rsp, rdx
   	push rsp		;dest
   	pop rdi

@@ -587,7 +587,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
       patches[1].b8 = stage1->len + ctx->prefix_size + params->encrypted.len;
       patches[2].b8 = params->stage2_total_size;
-      patches[3].b8 = params->encrypted.len;
+      patches[3].b8 = params->stage2_total_size;//params->encrypted.len;
       patches[4].b8 = params->compressed_hdr_size;
       patches[5].b8 = ctx->s2_entry_offset;
   #define STAGE1_KEY_PATCH_START 6
@@ -613,7 +613,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   {
   	const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCHES] = {
           [ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf, 0xaf, 0xaf, 0xaf, 0xaf },
-          [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x81, 0xa0, 0xce - 2, 0xce - 2, 0xce - 2, 0xce - 2, 0xce - 2 }
+          [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x60, 0xa0 - 8, 0xce - 10, 0xce - 10, 0xce - 10, 0xce - 10, 0xce - 10 }
       };
       const t_stage1_ctx ctx = stage1_compute_ctx(class, ehdr, params);
       t_type patches[STAGE1_PATCHES];
