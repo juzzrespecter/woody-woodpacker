@@ -2448,22 +2448,3 @@ using off for skip and size for count.
 ~dd if=path.o of=dst skip=$((0x180)) bs=1 count=$((0x1B7))~
 
 * Working on it
-** Pass the key to encryption algorythm.
-Require modify  patch, offsets, asm code and patch for aes_key.
-#+begin_src asm :tangle no
-  .set_aeskey:
-  	call .pass_aeskey
-  	times 16 ret;[Placeholder aeskey]
-  .pass_aeskey:
-  	pop r/eax
-  	movdqu xmm0, [r/eax]	;movdqu unaligned memory  if movdqa should be aligned.
-#+end_src
-*** x86
-*** x64
-** Homogenious
-Require modify asm code, offsets and patchs.
-*** x64
-** Move open /proc/self/exe to s2.
-Require modify asm code and offsets.
-*** x86
-*** x64

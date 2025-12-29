@@ -16,6 +16,17 @@
 [X] use tool  as {peda, gef,pwndbg}
 ** Reduce Bytecode
 [X] For reduce Bytecode use loop, rep stosb, rep movsb, leave, xor reg, reg 2B< 3B mov reg, 0,  "push > 0x7f| pop reg " 6B > 5B "mov reg,  >0x7f", "push <= 0x7f, pop reg" 3B < [5,6]B "mov reg, <=0x7f",  "mov reg, <=0x7fffffff" 6B > 5B "mov 32bitsreg, <= 0x7fffffff", Try to use cmovcc for avoid "jmp" 5B, use loop/cc for loops.
+** Change bytecode with strings
+#+begin_src shell
+  a=$(echo -en "/proc/self/exe\x00" | hexdump -v -e '1/1 "%02x"')
+  woody=$(echo "....WOODY...." | hexdump -v -e '1/1 "%02x"')
+  arch=32|64
+  stage=stage1|stage2|payload
+   xxd -p bytecode/x32/stage1.bin | sed "s/\(c3\)\{15\}/$a/g" | xxd -r -p > output_bin
+   xxd -p bytecode/x32/payload.bin | sed "s/\(c3\)\{14\}/$woody/g" | xxd -r -p > output_bin
+
+
+#+end_src
 
 * Implementation:
 ** Scheme view of the struct of our packed file
@@ -1022,12 +1033,25 @@ CLOSED: [2025-12-29 Mon 09:17]
 :END:
 
 ***** TODO Set correctly the aes key.
-
+Require modify  patch, offsets, asm code and patch for aes_key.
+#+begin_src asm :tangle no
+.set_aeskey:
+  	call .pass_aeskey
+  	times 16 ret;[Placeholder aeskey]
+.pass_aeskey:
+  	pop r/eax
+         ;movdqu unaligned memory if movdqa should be aligned.
+  	movdqu xmm0, [r/eax]
+#+end_src
+****** x64
+****** x86
 ***** NEXT Move to the end s1 open
 ****** x64
 ****** x86
 ***** PLAN When s1 fine pass to s2 open
-***** PLAN Don't create Functions if just one call or less than 5 B excluded ret instruction.
+****** x64
+****** x86
+***** HOLD Don't create Functions if just one call or less than 5 B excluded ret instruction.
 ****** _write
 ******* x86
 ******* x64
