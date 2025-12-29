@@ -427,7 +427,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   {
   	static const size_t stage2_patch_offsets[NUM_ARCHS][2] = {
   		[ARCH_X86] = { 0x5B, 0x98 },
-  		[ARCH_X64] = { 0x6E, 0xD7 - 0x22 }
+  		[ARCH_X64] = { 0xD7 - 0x22, 0xD7 - 0x22 }
   	};
   	static t_type patches[2];
 
@@ -980,7 +980,22 @@ CLOCK: [2025-12-17 Wed 07:49]--[2025-12-17 Wed 08:35] =>  0:46
 *** Modify ASM
 **** x86 & x64
 ***** TODO Delete unused patch
+
 ****** Previous to decrypt s1.
+
+******* DONE x64
+CLOSED: [2025-12-29 Mon 07:59]
+:LOGBOOK:
+- State "DONE"       from              [2025-12-29 Mon 07:59]
+:END:
+
+******* NEXT x86
+
+****** Previous to get_base s2.
+
+******* TODO x64
+******* PLAN x86
+
 ***** NEXT Set correctly the aes key.
 * Documentation:
 :LOGBOOK:

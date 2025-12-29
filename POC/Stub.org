@@ -540,7 +540,8 @@
         .return_ehdr_ptr:;[rsp] ehdr_ptr size_s2, size_s2_elf, vaddr s2
         pop rdi		; ehdr_ptr [rsp] size_s2_elf, vaddr_s2_elf
         push rdi	; ;[rsp] ehdr_ptr size_s2, vaddr s2
-        mov rsi, 0xfeffffffffffffff		; Unused
+  	;; mov rsi, 0xfeffffffffffffff ; Unused
+  	times 10 nop
         pop rbx 	;ehdr_ptr [rsp] size_s2, vaddr s2
 
         .get_base:
