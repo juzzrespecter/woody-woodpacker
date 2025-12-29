@@ -426,7 +426,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   t_patch_set init_patch_stage2(t_arch arch, size_t elf_size, uint64_t s3_vaddr)
   {
   	static const size_t stage2_patch_offsets[NUM_ARCHS][2] = {
-  		[ARCH_X86] = { 0x5B, 0x98 },
+  		[ARCH_X86] = { 0x98, 0x98 },
   		[ARCH_X64] = { 0xD7 - (0x22 + 10), 0xD7 - (0x22 + 10) }
   	};
   	static t_type patches[2];
@@ -980,9 +980,17 @@ CLOCK: [2025-12-17 Wed 07:49]--[2025-12-17 Wed 08:35] =>  0:46
 ** Tasks
 *** Modify ASM
 **** x86 & x64
-***** TODO Delete unused patch
+***** DONE Delete unused patch
+CLOSED: [2025-12-29 Mon 09:17]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-12-29 Mon 09:17]
+:END:
 
-****** Previous to decrypt s1.
+****** DONE Previous to decrypt s1.
+CLOSED: [2025-12-29 Mon 09:17]
+:LOGBOOK:
+- State "DONE"       from              [2025-12-29 Mon 09:17]
+:END:
 
 ******* DONE x64
 CLOSED: [2025-12-29 Mon 07:59]
@@ -990,14 +998,37 @@ CLOSED: [2025-12-29 Mon 07:59]
 - State "DONE"       from              [2025-12-29 Mon 07:59]
 :END:
 
-******* NEXT x86
+******* DONE x86
+CLOSED: [2025-12-29 Mon 09:14]
+:LOGBOOK:
+- State "DONE"       from "NEXT"       [2025-12-29 Mon 09:14]
+:END:
 
-****** Previous to get_base s2.
+****** DONE Previous to get_base s2.
+CLOSED: [2025-12-29 Mon 09:17]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-12-29 Mon 09:17]
+:END:
 
-******* TODO x64
-******* PLAN x86
+******* DONE x64
+CLOSED: [2025-12-29 Mon 09:14]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-12-29 Mon 09:14]
+:END:
+******* DONE x86
+CLOSED: [2025-12-29 Mon 09:17]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-12-29 Mon 09:17]
+:END:
 
-***** NEXT Set correctly the aes key.
+***** TODO Set correctly the aes key.
+
+***** NEXT Move to the end s1 open
+
+****** x64
+
+****** x86
+
 * Documentation:
 :LOGBOOK:
 CLOCK: [2025-12-20 Sat 07:10]--[2025-12-20 Sat 07:31] =>  0:21
