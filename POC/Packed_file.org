@@ -427,7 +427,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   {
   	static const size_t stage2_patch_offsets[NUM_ARCHS][2] = {
   		[ARCH_X86] = { 0x5B, 0x98 },
-  		[ARCH_X64] = { 0xD7 - 0x22, 0xD7 - 0x22 }
+  		[ARCH_X64] = { 0xD7 - (0x22 + 10), 0xD7 - (0x22 + 10) }
   	};
   	static t_type patches[2];
 
@@ -612,7 +612,8 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   							  t_stage1_params *params)
   {
   	const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCHES] = {
-          [ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0x2f, 0x4e, 0xaf, 0xaf, 0xaf, 0xaf, 0xaf },
+  		//                               0x2f
+          [ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0xaf, 0x4e, 0xaf, 0xaf, 0xaf, 0xaf, 0xaf },
           [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x60, 0xa0 - 8, 0xce - 10, 0xce - 10, 0xce - 10, 0xce - 10, 0xce - 10 }
       };
       const t_stage1_ctx ctx = stage1_compute_ctx(class, ehdr, params);
