@@ -426,7 +426,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   t_patch_set init_patch_stage2(t_arch arch, size_t elf_size, uint64_t s3_vaddr)
   {
   	static const size_t stage2_patch_offsets[NUM_ARCHS][2] = {
-  		[ARCH_X86] = { 0x98, 0x98 },
+  		[ARCH_X86] = { 0x98 - 5, 0x98 - 5},
   		[ARCH_X64] = { 0xD7 - (0x22 + 10), 0xD7 - (0x22 + 10) }
   	};
   	static t_type patches[2];

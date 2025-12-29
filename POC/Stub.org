@@ -1671,7 +1671,7 @@ _start:
         pop edi			;[esp] aslr, (len, va) s2 -> Fine
         push edi		; [esp] ehdr, aslr, (len, vaddr)s2 -> Fine
   	;; mov esi, 0xfeffffff	; Modify in C. ->Fine
-  	times 5 nop
+  	;; times 5 nop		    ;
         .get_base:		;[X]
         mov    edx, DWORD  [edi+0x1c] ; eax = e_phoff
         add edx, edi      ; PHDR
