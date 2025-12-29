@@ -583,7 +583,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   {
       patches[0].b8 =
           elf_get_highest_loadable_vaddr_avalaible(ehdr, class, ctx->phnum)
-          + ctx->prefix_size + 0x5 + (!ctx->arch * 0x77);
+          + ctx->prefix_size + 0x5 + (!ctx->arch * 0x72);
 
       patches[1].b8 = stage1->len + ctx->prefix_size + params->encrypted.len;
       patches[2].b8 = params->stage2_total_size;
