@@ -1024,10 +1024,44 @@ CLOSED: [2025-12-29 Mon 09:17]
 ***** TODO Set correctly the aes key.
 
 ***** NEXT Move to the end s1 open
-
 ****** x64
-
 ****** x86
+***** PLAN When s1 fine pass to s2 open
+***** PLAN Don't create Functions if just one call or less than 5 B excluded ret instruction.
+****** _write
+******* x86
+******* x64
+****** _read
+******* x86
+******* x64
+****** _close
+******* x86
+******* x64
+****** set_auxv
+******* x86
+******* x64
+****** lz77_decompress
+******* x86
+******* x64
+****** get_interp
+******* x86
+******* x64
+****** write_dyn
+******* x86
+******* x64
+****** set_auxv
+******* x86
+******* x64
+****** load_elf_segment
+******* x86
+******* x64
+****** calculate_elf_memory_range
+******* DONE x86
+CLOSED: [2025-12-29 Mon 10:03]
+:LOGBOOK:
+- State "DONE"       from              [2025-12-29 Mon 10:03]
+:END:
+******* x64
 
 * Documentation:
 :LOGBOOK:
