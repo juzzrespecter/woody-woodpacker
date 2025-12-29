@@ -538,8 +538,6 @@
         .return_ehdr_ptr:;[rsp] ehdr_ptr size_s2, size_s2_elf, vaddr s2
         pop rdi		; ehdr_ptr [rsp] size_s2_elf, vaddr_s2_elf
         push rdi	; ;[rsp] ehdr_ptr size_s2, vaddr s2
-  	;; mov rsi, 0xfeffffffffffffff ; Unused
-  	;; times 10 nop		;
         pop rbx 	;ehdr_ptr [rsp] size_s2, vaddr s2
 
         .get_base:
@@ -1375,8 +1373,6 @@ _start:
   	;;
   	pop edx
   	push edx
-  	times 3 nop
-  	;; mov edx, 	0xfeffffff	; (len) cc_s2 input_len
         	sub esp, edx
         	mov edi, esp	 ;edi = buffer out; edx = len out;esi -> in; edx in_len
         	push edx	;[esp] (len, buffer) decrypt, (len, vaddr) s2
@@ -1670,8 +1666,6 @@ _start:
    return_ehdr_ptr: 		;[X] Fine Stack
         pop edi			;[esp] aslr, (len, va) s2 -> Fine
         push edi		; [esp] ehdr, aslr, (len, vaddr)s2 -> Fine
-  	;; mov esi, 0xfeffffff	; Modify in C. ->Fine
-  	;; times 5 nop		    ;
         .get_base:		;[X]
         mov    edx, DWORD  [edi+0x1c] ; eax = e_phoff
         add edx, edi      ; PHDR
@@ -2020,7 +2014,7 @@ _start:
        add    ecx, 0xfff
        and    ecx, 0xfffff000
        mov    DWORD  [ebp-0x3c], ecx
-       sub    ecx, DWORD  [ebp-0x2c] ;times
+       sub    ecx, DWORD  [ebp-0x2c]
        mov    edi, DWORD  [ebp-0x38]
        add    edi, DWORD  [ebp-0x2c]
         xor eax, eax

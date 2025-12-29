@@ -583,7 +583,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   {
       patches[0].b8 =
           elf_get_highest_loadable_vaddr_avalaible(ehdr, class, ctx->phnum)
-          + ctx->prefix_size + 0x5 + (!ctx->arch * 0x72);
+          + ctx->prefix_size + 0x5 + (!ctx->arch * (0x72 - 3));
 
       patches[1].b8 = stage1->len + ctx->prefix_size + params->encrypted.len;
       patches[2].b8 = params->stage2_total_size;
@@ -612,8 +612,8 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   							  t_stage1_params *params)
   {
   	const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCHES] = {
-  		//                               0x2f
-          [ARCH_X86] = { 0x8a, 0x9c, 0x0c, 0xaf, 0x4e, 0xaf, 0xaf, 0xaf, 0xaf, 0xaf },
+  		//                                       0x2f
+          [ARCH_X86] = { 0x8a - 3, 0x9c - 3, 0x0c, 0xaf - 3, 0x4e - 3, 0xaf - 3, 0xaf - 3, 0xaf - 3, 0xaf - 3, 0xaf - 3 },
           [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x60, 0xa0 - 8, 0xce - 10, 0xce - 10, 0xce - 10, 0xce - 10, 0xce - 10 }
       };
       const t_stage1_ctx ctx = stage1_compute_ctx(class, ehdr, params);
