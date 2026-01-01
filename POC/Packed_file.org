@@ -625,7 +625,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   	const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCHES] = {
   		//                                       0x2f
           [ARCH_X86] = { 0x8a - 3, 0x9c - 3, 0x0c, 0xaf - 3, 0x4e - 3, 0xaf - 3, 0xaf - 3, 0xaf - 3, 0xaf - 3, 0xaf - 3 },
-          [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x60, 0xa0 + 0x1a - 8, 0xce + 0x1a - 10, 0xce + 0x1a - 10, 0xce - 10, 0xce - 10, 0xce - 10 }
+          [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x60, 0xa0 + 0x1a - 8, 0xce + 0x1a - 10, 0x8c, 0xce - 10, 0xce - 10, 0xce - 10 }
       };
       const t_stage1_ctx ctx = stage1_compute_ctx(class, ehdr, params);
       t_type patches[STAGE1_PATCHES];
@@ -642,6 +642,8 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       t_patch_set patch = ft_init_patch_set(stage1_patch_offsets[ctx.arch],
   										  patches, 6, ctx.value_size);
       apply_patches_to_buffer(stage1.data, &patch);
+      if (ctx.arch == ARCH_X64)
+        ft_memcpy(stage1.data + patch.offsets[6], &params->key.ints[0], sizeof(params->key.ints));
       return (stage1);
   }
 
