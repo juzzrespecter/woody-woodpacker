@@ -35,7 +35,7 @@
 - phdr -> one phdr that use all memsz of og bin, a new one for s1(stage 1) and if exist a gnu_stack.
 - s1 + crypt_compress_s2 + elf_file
   - s1: get aslr offset,  [(va, size) s1, open /proc/self/exe], mmap s2 RW-, decrypt, decompress in s2, mprotect s2, jmp s2.
-  - s2: [open  /proc/self/exe] mmap with fd, close fd, munmap s1[(va, size) s1], load elf, load interp, set auxv, jmp payload, and s3. 
+  - s2: [open  /proc/self/exe] mmap with fd, close fd, munmap s1[(va, size) s1], load elf, load interp, set auxv, jmp payload, and s3.
     - s3: munmap s2, reset r/edx, jmp to entrypoint(interpe or elf).  if couldn't append to one phdr R-X of the elf file s2 create one.
 **  Not update AT_EXECFN (auxv)
 The dynamic linker needs the executable path for the AT_EXECFN entry in the auxiliary vector:
@@ -594,7 +594,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   {
       patches[0].b8 =
           elf_get_highest_loadable_vaddr_avalaible(ehdr, class, ctx->phnum)
-          + ctx->prefix_size + 0x5 + (!ctx->arch * (0x72 - 3));
+          + ctx->prefix_size + 0x5 + (!ctx->arch * (0x72 + 0x1a - 3));
 
       patches[1].b8 = stage1->len + ctx->prefix_size + params->encrypted.len;
       patches[2].b8 = params->stage2_total_size;
@@ -623,8 +623,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   							  t_stage1_params *params)
   {
   	const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCHES] = {
-  		//                                       0x2f
-          [ARCH_X86] = { 0x8a - 3, 0x9c - 3, 0x0c, 0xaf - 3, 0x4e - 3, 0xaf - 3, 0xaf - 3, 0xaf - 3, 0xaf - 3, 0xaf - 3 },
+          [ARCH_X86] = { 0x8a + 0x1a - 3, 0x9c + 0x1a - 3, 0x0c, 0xaf + 0x1a - 3, 0x4e + 0x1a - 3, 0xaf + 0x1a - 3, 0x3f, 0xaf - 3, 0xaf - 3, 0xaf - 3 },
           [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x60, 0xa0 + 0x1a - 8, 0xce + 0x1a - 10, 0x8c, 0xce - 10, 0xce - 10, 0xce - 10 }
       };
       const t_stage1_ctx ctx = stage1_compute_ctx(class, ehdr, params);
@@ -642,7 +641,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       t_patch_set patch = ft_init_patch_set(stage1_patch_offsets[ctx.arch],
   										  patches, 6, ctx.value_size);
       apply_patches_to_buffer(stage1.data, &patch);
-      if (ctx.arch == ARCH_X64)
+      if (ctx.arch == ARCH_X64 || ctx.arch == ARCH_X86)
         ft_memcpy(stage1.data + patch.offsets[6], &params->key.ints[0], sizeof(params->key.ints));
       return (stage1);
   }
@@ -991,8 +990,8 @@ CLOCK: [2025-12-17 Wed 07:25]--[2025-12-17 Wed 07:47] =>  0:22
 CLOCK: [2025-12-17 Wed 07:49]--[2025-12-17 Wed 08:35] =>  0:46
 :END:
 ** Tasks
-*** Modify ASM
-**** x86 & x64
+*** TODO Modify ASM
+**** TODO x86 & x64
 ***** DONE Delete unused patch
 CLOSED: [2025-12-29 Mon 09:17]
 :LOGBOOK:
@@ -1034,7 +1033,8 @@ CLOSED: [2025-12-29 Mon 09:17]
 - State "DONE"       from "TODO"       [2025-12-29 Mon 09:17]
 :END:
 
-***** TODO Set correctly the aes key.
+***** DONE Set correctly the aes key.
+CLOSED: [2026-01-01 Thu 16:58]
 Require modify  patch, offsets, asm code and patch for aes_key.
 #+begin_src asm :tangle no
 .set_aeskey:
@@ -1045,8 +1045,17 @@ Require modify  patch, offsets, asm code and patch for aes_key.
          ;movdqu unaligned memory if movdqa should be aligned.
   	movdqu xmm0, [r/eax]
 #+end_src
-****** x64
-****** x86
+****** DONE x64
+CLOSED: [2026-01-01 Thu 16:31]
+****** DONE x86
+CLOSED: [2026-01-01 Thu 16:58]
+:PROPERTIES:
+:ORDERED:  t
+:END:
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2026-01-01 Thu 16:58]
+CLOCK: [2026-01-01 Thu 16:32]--[2026-01-01 Thu 16:54] => 0:22
+:END:
 ***** NEXT Move to the end s1 open
 ****** x64
 ****** x86
@@ -1122,7 +1131,7 @@ Better use stage1 map throught mprotect for allow read and write.
 **** x86
 ~https://asm-docs.microagi.org/x86/cpuid.html~
 ~https://asm-docs.microagi.org/x86/cpuid.html#fig-3-8~
-***** CPU  support SSE 
+***** CPU  support SSE
 #+begin_src c :tangle no
 #include <cpuid.h>
 
