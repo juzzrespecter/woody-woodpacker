@@ -1393,7 +1393,7 @@ _start:
         	push edx	;-> out_len
   .set_aes_key:
   	call  .param_aes_key
-  	times 16 ret
+  	times 16 nop
   .param_aes_key:
   	pop eax
   	movdqu xmm0, [eax]
