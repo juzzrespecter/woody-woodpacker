@@ -1056,9 +1056,11 @@ CLOSED: [2026-01-01 Thu 16:58]
 - State "DONE"       from "TODO"       [2026-01-01 Thu 16:58]
 CLOCK: [2026-01-01 Thu 16:32]--[2026-01-01 Thu 16:54] => 0:22
 :END:
-***** NEXT Move to the end s1 open
+***** TODO Move to the end s1 open
 ****** x64
 ****** x86
+***** TODO Don't use stack for for huge data per example decrypt.
+Better use stage1 map throught mprotect for allow read and write.
 ***** PLAN When s1 fine pass to s2 open
 ****** x64
 ****** x86
@@ -1114,18 +1116,6 @@ size_t vm_required = hi - lo;
 
   if (rl.rlim_cur != RLIM_INFINITY &&
       vm_required > rl.rlim_cur)
-      -> guaranteed failure
-#+end_src
-***** Don't use stack
-for huge data per example decrypt.
-Better use stage1 map throught mprotect for allow read and write.
-
-#+begin_src c :tangle no
-  stack_max_offset = N;
-  getrlimit(RLIMIT_STACK, &rl);
-
-  if (rl.rlim_cur != RLIM_INFINITY &&
-      stack_max_offset > rl.rlim_cur)
       -> guaranteed failure
 #+end_src
 **** x86
