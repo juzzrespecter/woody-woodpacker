@@ -625,7 +625,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   	const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCHES] = {
   		//                                       0x2f
           [ARCH_X86] = { 0x8a - 3, 0x9c - 3, 0x0c, 0xaf - 3, 0x4e - 3, 0xaf - 3, 0xaf - 3, 0xaf - 3, 0xaf - 3, 0xaf - 3 },
-          [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x60, 0xa0 - 8, 0xce - 10, 0xce - 10, 0xce - 10, 0xce - 10, 0xce - 10 }
+          [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x60, 0xa0 + 0x1a - 8, 0xce + 0x1a - 10, 0xce + 0x1a - 10, 0xce - 10, 0xce - 10, 0xce - 10 }
       };
       const t_stage1_ctx ctx = stage1_compute_ctx(class, ehdr, params);
       t_type patches[STAGE1_PATCHES];
@@ -1108,6 +1108,7 @@ size_t vm_required = hi - lo;
 ***** Don't use stack
 for huge data per example decrypt.
 Better use stage1 map throught mprotect for allow read and write.
+
 #+begin_src c :tangle no
   stack_max_offset = N;
   getrlimit(RLIMIT_STACK, &rl);
@@ -1157,8 +1158,6 @@ int cpu_has_aesni(void) {
       __get_cpuid(1, &eax, &ebx, &ecx, &edx);
       return (edx & (1 << 14)) != 0; // CMOV
   }
-
-
 #+end_src
 * Documentation:
 :LOGBOOK:

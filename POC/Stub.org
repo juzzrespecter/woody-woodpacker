@@ -1,6 +1,5 @@
 #+title: Stub
-#+startup: folded
-
+#+startup: fold
 * x64
 
 #+begin_src c :tangle payload/x64/all_in.c :mkdirp yes
@@ -316,7 +315,7 @@
     	pop rdx			; prot
     	xor    edi,edi 		;Vaddr
   	mov rsi, 0xfefffffffffff000	; (len) s2
-  	push rsi		;[rsp] (len) s2 (fd, len, vaddr) s1
+  	push rsi		;[rsp] (len) s2, (fd, len, vaddr) s1
   	push 0x9
   	pop rax
   	syscall
@@ -326,14 +325,23 @@
   	pop r13		;r13 vaddr stage 2, r15 aslr_offset.
   	jmp end_of_stage1
   .return_crypt_compress_addr:
-  	pop rsi		;src;;[rsp] size_s2_elf, fd, size_stage1, vaddr stage1
+  	pop rsi		;src;;[rsp](len) s2, (fd, len, vaddr) s1
   	pop rdx
   	push rdx
   	sub rsp, rdx
   	push rsp		;dest
   	pop rdi
-  	push rdx	;[rsp] size_buffer_decrypt, decrypt_buffer, size_s2_elf, fd, size_s1, vaddr_s1
-  	call decrypt; rsi in, rdx out_len, rdi out
+  	push rdx	;[rsp] (len|buffer_len) s2|decrypt, (buffer) decrypt, (len) s2, (fd, len, vaddr) s1
+
+  .set_aeskey:
+    	call .pass_aeskey
+    	times 16 ret;[Placeholder aeskey]
+  .pass_aeskey:
+    	pop rax
+           ;movdqu unaligned memory if movdqa should be aligned.
+    	movdqu xmm0, [rax]
+  .call_decrypt:
+  	call decrypt; rsi in, rdx in_len, rdi out, xmm0 key
   	test rax, rax
   	jz _exit
   	push r13
@@ -342,8 +350,8 @@
   	pop rdi		; src
   	mov rsi, 0xfefffffffffff000
   	call lz77_decompress
-  	pop rdx			;size_buffer_decrypt [rsp]
-  	add rsp, rdx ;Restore stack [rsp] size_s2_elf, fd, size_s1, vaddr_s1
+  	pop rdx			;(len) s2|buffer [rsp] (buffer)  decrypt, (len) s2, (fd, len, vaddr) s1
+  	add rsp, rdx ;Restore stack [rsp](len) s2, (fd, len, vaddr) s1
   	test rax, rax
   	jnz _exit
 
@@ -352,21 +360,21 @@
   	pop rdi			;vaddr
   	push 0x5
   	pop rdx			;prot R-X
-  	pop rsi			;size_s2_elf [rsp] fd_s1, size_s1, vaddr_s1
-  	push r13		;[rsp] vaddr_s2_elf, fd_s1, size_s1, vaddr_s1
-  	push rsi		;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr_s1
+  	pop rsi			;(len) s2 [rsp] (fd, len, vaddr) s1
+  	push r13		;[rsp] (va) s2,(fd, len, vaddr) s1
+  	push rsi		;[rsp] (len, va) s2, (fd, len, vaddr) s1
   	push 0xA
   	pop rax			;syscall mprotect 10
     	syscall
   	test rax, rax
     	jnz _exit
-  	.jmp_stage_2:
+  .jmp_stage_2:
   	;; pop rsi push rsi
   	mov rax, 0xfefffffffeffffff
   	add rax, r13
   	push rax
-  	;; push r13;[rsp] (entry ,size,va) s2, fd_s1, size_s1, vaddr s1
-  	ret;		 ;(pop rip va s2[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
+  	;; push r13;[rsp] (entry ,len,va) s2, (fd, len, va) s1
+  	ret;		 ;(pop rip va s2[rsp] (len, va) s2, (fd, len, va) s1
 
   _exit:
   	xor edi, edi
