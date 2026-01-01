@@ -1,4 +1,6 @@
 #+title: Stub
+#+startup: folded
+
 * x64
 
 #+begin_src c :tangle payload/x64/all_in.c :mkdirp yes
@@ -1587,7 +1589,6 @@ _start:
         end_of_stage1:
         	call _start.return_crypt_compress_addr
 #+end_src
-
 
 #+begin_src asm :tangle payload/x32/payload.s :mkdirp yes
   payload:

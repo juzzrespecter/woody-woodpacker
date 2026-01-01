@@ -32,11 +32,11 @@
 ** Scheme view of the struct of our packed file
 | ehdr | phdr | s1+crypt_compress_s2+elf_file | end |
 - ehdr -> modified {discard all shs data, modify phnum, entry}.
-- phdr -> one phdr that use all memsz of og bin, a new one for s1(stage 1), maybe a gnu_stack.
+- phdr -> one phdr that use all memsz of og bin, a new one for s1(stage 1) and if exist a gnu_stack.
 - s1 + crypt_compress_s2 + elf_file
-  - s1: get aslr, va, size s1, get fd of /proc/self/exe, mmap s2 RW-, decrypt, decompress in s2, mprotect s2, jmp s2.
-  - s2: mmap with fd, close fd, munmap s1, load elf, load interp, set auxv, jmp s3, payload.
-  - s3: munmap s2, reset r/edx, jmp to entrypoint(interpe or elf).  if couldn't append to one phdr R-X of the elf file s2 create one.
+  - s1: get aslr offset,  [(va, size) s1, open /proc/self/exe], mmap s2 RW-, decrypt, decompress in s2, mprotect s2, jmp s2.
+  - s2: [open  /proc/self/exe] mmap with fd, close fd, munmap s1[(va, size) s1], load elf, load interp, set auxv, jmp payload, and s3. 
+    - s3: munmap s2, reset r/edx, jmp to entrypoint(interpe or elf).  if couldn't append to one phdr R-X of the elf file s2 create one.
 **  Not update AT_EXECFN (auxv)
 The dynamic linker needs the executable path for the AT_EXECFN entry in the auxiliary vector:
     This entry must contain the full path to the executable
@@ -1086,19 +1086,92 @@ CLOSED: [2025-12-29 Mon 10:03]
 - State "DONE"       from              [2025-12-29 Mon 10:03]
 :END:
 ******* x64
+*** HOLD Modify C.
+**** x86 & x64
+***** Check address space limits:
+#+begin_src c :tangle no
+size_t lo = SIZE_MAX, hi = 0;
 
+for each PT_LOAD:
+    lo = min(lo, phdr.p_vaddr);
+    hi = max(hi, phdr.p_vaddr + phdr.p_memsz);
+
+size_t vm_required = hi - lo;
+
+  struct rlimit rl;
+  getrlimit(RLIMIT_AS, &rl);
+
+  if (rl.rlim_cur != RLIM_INFINITY &&
+      vm_required > rl.rlim_cur)
+      -> guaranteed failure
+#+end_src
+***** Don't use stack
+for huge data per example decrypt.
+Better use stage1 map throught mprotect for allow read and write.
+#+begin_src c :tangle no
+  stack_max_offset = N;
+  getrlimit(RLIMIT_STACK, &rl);
+
+  if (rl.rlim_cur != RLIM_INFINITY &&
+      stack_max_offset > rl.rlim_cur)
+      -> guaranteed failure
+#+end_src
+**** x86
+~https://asm-docs.microagi.org/x86/cpuid.html~
+~https://asm-docs.microagi.org/x86/cpuid.html#fig-3-8~
+***** CPU  support SSE 
+#+begin_src c :tangle no
+#include <cpuid.h>
+
+int cpu_has_sse(void) {
+    unsigned int eax, ebx, ecx, edx;
+    if (!__get_cpuid(1, &eax, &ebx, &ecx, &edx))
+        return 0;
+    return (edx & (1 << 25)) != 0;
+}
+#+end_src
+***** CPU support AES-NI
+#+begin_src c :tangle no
+#include <cpuid.h>
+
+int cpu_has_aesni(void) {
+    unsigned int eax, ebx, ecx, edx;
+    if (!__get_cpuid(1, &eax, &ebx, &ecx, &edx))
+        return 0;
+    return (ecx & (1 << 24)) != 0;
+}
+#+end_src
+***** OS supports savings  XMM state
+#+begin_src c :tangle no
+  int os_supports_xmm(void) {
+      unsigned int eax, ebx, ecx, edx;
+      __get_cpuid(1, &eax, &ebx, &ecx, &edx);
+      return (edx & (1 << 24)) != 0; // FXSR
+  }
+//! FXSR floating-point context fast save and restore.
+#+end_src
+***** CPU cmov enable
+#+begin_src c
+ int cpu_supports_cmov(void) {
+      unsigned int eax, ebx, ecx, edx;
+      __get_cpuid(1, &eax, &ebx, &ecx, &edx);
+      return (edx & (1 << 14)) != 0; // CMOV
+  }
+
+
+#+end_src
 * Documentation:
 :LOGBOOK:
 CLOCK: [2025-12-20 Sat 07:10]--[2025-12-20 Sat 07:31] =>  0:21
 :END:
 #+begin_quote
-I develop a packer single stage.
-I decrypt and decompress the whole payload in one run no by pieces that is what does a multistage not really different just put again routine of decompress and decypher and call in the differents stages that need to decypher and decompress.
+We develop a packer.
+We decrypt and decompress the whole payload in one run no by parts that is what does a multistage not really different just put again routine of decompress and decypher  in each part  that don't be last part and call it.
 
 s1 Tasks:
 Aslr calculation, mmap s2, decrypt and decompress the data in the mmap, [open "/proc/self/exe"], jmp s2.
 Data i pass to s2:
-s1 va, s1 len, aslr offset, [fd "/proc/self/exe"](This i'm going to move it to stage2.)
+s1 va, s1 len, aslr offset, [open "/proc/self/exe"](This i'm going to move it to stage2.)
 
 s2  Tasks:
 mmap(first 0x1000 of fd as Readonly) {to preserve the reference "/proc/self/exe"}

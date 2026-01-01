@@ -11,6 +11,21 @@
   }
 #+end_src
 
+#+begin_src c :tangle "target/relro_demo.c" :mkdirp yes
+  #include <stdio.h>
+
+  int main(void)
+  {
+    return (puts("Hello World!"));
+  }
+#+end_src
+#+begin_src shell :tangle no
+gcc target/relro_demo.c \
+    -Wl,-z,relro \
+    -Wl,-z,now \
+    -fPIE -pie \
+    -o relro_demo
+#+end_src
 #+begin_src c :tangle "target/entrypoint.c"
 #include <stdio.h>
 
