@@ -323,24 +323,28 @@
     	jae _exit
     	push rax
   	pop r13		;r13 vaddr stage 2, r15 aslr_offset.
+  	push 0x9
+  	pop rax
+  	syscall
+    	cmp rax, -4095		;Mmap error.
+    	jae _exit
+    	push rax
+  	pop r14		;r14 decrypt mmap, r13 vaddr stage 2, r15 aslr_offset.
+
   	jmp end_of_stage1
   .return_crypt_compress_addr:
   	pop rsi		;src;;[rsp](len) s2, (fd, len, vaddr) s1
-  	pop rdx
-  	push rdx
-  	sub rsp, rdx
-  	push rsp		;dest
-  	pop rdi
-  	push rdx	;[rsp] (len|buffer_len) s2|decrypt, (buffer) decrypt, (len) s2, (fd, len, vaddr) s1
-
   .set_aeskey:
     	call .pass_aeskey
-    	times 16 ret;[Placeholder aeskey]
+    	times 16 nop;[Placeholder aeskey]
   .pass_aeskey:
     	pop rax
            ;movdqu unaligned memory if movdqa should be aligned.
     	movdqu xmm0, [rax]
   .call_decrypt:
+  	pop rdx			;(len) s2 [rsp](fd, len, vaddr) s1
+
+  	push rdx	       ;[rsp](len) s2, (fd, len, vaddr) s1
   	call decrypt; rsi in, rdx in_len, rdi out, xmm0 key
   	test rax, rax
   	jz _exit
@@ -350,17 +354,21 @@
   	pop rdi		; src
   	mov rsi, 0xfefffffffffff000
   	call lz77_decompress
-  	pop rdx			;(len) s2|buffer [rsp] (buffer)  decrypt, (len) s2, (fd, len, vaddr) s1
-  	add rsp, rdx ;Restore stack [rsp](len) s2, (fd, len, vaddr) s1
   	test rax, rax
   	jnz _exit
+  .munmap_decrypt_mmap:
+  	pop rsi			;(len) s2 [rsp] (fd, len, vaddr) s1
 
+  	xchg rdi, r14
+  	push 0xb
+  	pop rax
+  	syscall
   .mprotect_stage_2:
   	push r13
   	pop rdi			;vaddr
   	push 0x5
   	pop rdx			;prot R-X
-  	pop rsi			;(len) s2 [rsp] (fd, len, vaddr) s1
+  	;; pop rsi			;(len) s2 [rsp] (fd, len, vaddr) s1
   	push r13		;[rsp] (va) s2,(fd, len, vaddr) s1
   	push rsi		;[rsp] (len, va) s2, (fd, len, vaddr) s1
   	push 0xA
@@ -534,7 +542,7 @@
         syscall
         test rax, rax
         jnz _exit
-        .unmmap_s1:
+  .unmmap_s1:
         pop rsi			;size_s1 [rsp]  vaddr_s1
         pop rdi			;vaddr_s1 [rsp]
         push 0xb		;munmap syscall

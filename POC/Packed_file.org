@@ -624,7 +624,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   {
   	const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCHES] = {
           [ARCH_X86] = { 0x8a + 0x1a - 3, 0x9c + 0x1a - 3, 0x0c, 0xaf + 0x1a - 3, 0x4e + 0x1a - 3, 0xaf + 0x1a - 3, 0x3f, 0xaf - 3, 0xaf - 3, 0xaf - 3 },
-          [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x60, 0xa0 + 0x1a - 8, 0xce + 0x1a - 10, 0x8c, 0xce - 10, 0xce - 10, 0xce - 10 }
+          [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x60, 0xc0, 0xf0, 0x98, 0xf0, 0xf0, 0xf0}
       };
       const t_stage1_ctx ctx = stage1_compute_ctx(class, ehdr, params);
       t_type patches[STAGE1_PATCHES];
@@ -1056,11 +1056,13 @@ CLOSED: [2026-01-01 Thu 16:58]
 - State "DONE"       from "TODO"       [2026-01-01 Thu 16:58]
 CLOCK: [2026-01-01 Thu 16:32]--[2026-01-01 Thu 16:54] => 0:22
 :END:
+***** TODO Don't use stack for for huge data per example decrypt.
+:LOGBOOK:
+CLOCK: [2026-01-02 Fri 11:51]
+:END:
 ***** TODO Move to the end s1 open
 ****** x64
 ****** x86
-***** TODO Don't use stack for for huge data per example decrypt.
-Better use stage1 map throught mprotect for allow read and write.
 ***** PLAN When s1 fine pass to s2 open
 ****** x64
 ****** x86
