@@ -18,12 +18,13 @@
 [X] For reduce Bytecode use loop, rep stosb, rep movsb, leave, xor reg, reg 2B< 3B mov reg, 0,  "push > 0x7f| pop reg " 6B > 5B "mov reg,  >0x7f", "push <= 0x7f, pop reg" 3B < [5,6]B "mov reg, <=0x7f",  "mov reg, <=0x7fffffff" 6B > 5B "mov 32bitsreg, <= 0x7fffffff", Try to use cmovcc for avoid "jmp" 5B, use loop/cc for loops.
 ** Change bytecode with strings
 #+begin_src shell
-  a=$(echo -en "/proc/self/exe\x00" | hexdump -v -e '1/1 "%02x"')
-  woody=$(echo "....WOODY...." | hexdump -v -e '1/1 "%02x"')
-  arch=32|64
-  stage=stage1|stage2|payload
-   xxd -p bytecode/x32/stage1.bin | sed "s/\(c3\)\{15\}/$a/g" | xxd -r -p > output_bin
-   xxd -p bytecode/x32/payload.bin | sed "s/\(c3\)\{14\}/$woody/g" | xxd -r -p > output_bin
+   a=$(echo -en "/proc/self/exe\x00" | hexdump -v -e '1/1 "%02x"')
+   woody=$(echo "....WOODY...." | hexdump -v -e '1/1 "%02x"')
+   arch=32|64
+   stage=stage1|stage2|payload
+  # -c 0 for avoid split newlines.
+  xxd -p -c 0  bytecode/x32/stage1.bin | sed "s/\(c3\)\{15\}/$a/g" | xxd -r -p > output_bin
+    xxd -p bytecode/x32/payload.bin | sed "s/\(c3\)\{14\}/$woody/g" | xxd -r -p > output.bin
 
 
 #+end_src
@@ -587,6 +588,23 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   		ft_memset(key->ints, fallback, sizeof(key->ints)/sizeof(*key->ints));
   }
 
+  /* #define STAGE1_KEY_PATCH_START 6 */
+  /* #define STAGE1_KEY_PATCH_COUNT 4 */
+  #define ENCRYPTION_WORKING false
+  /* for (int i = 0; i < STAGE1_KEY_PATCH_COUNT / (1 << ctx->arch); ++i) */
+  /* { */
+  /* 	if (ENCRYPTION_WORKING) */
+  /* 	{ */
+  /* 		if (!ctx->arch) */
+  /* 		{ */
+  /* 			i = i << 1; */
+  /* 			patches[i].b8 = *(uint64_t *) */
+  /* 				(&params->key.ints[STAGE1_KEY_PATCH_START + i]); */
+  /* 		} */
+  /* 	} */
+  /* 	patches[STAGE1_KEY_PATCH_START + i].b8 = params->key.ints[i]; */
+  /* } */
+
   void stage1_fill_patches(t_type patches[STAGE1_PATCHES],
   						 const t_stage1_ctx *ctx, const t_stage1_params *params,
   						 const t_elf_h *ehdr, unsigned char class,
@@ -594,37 +612,24 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   {
       patches[0].b8 =
           elf_get_highest_loadable_vaddr_avalaible(ehdr, class, ctx->phnum)
-          + ctx->prefix_size + 0x5 + (!ctx->arch * (0x72 + 0x1a - 3));
+          + ctx->prefix_size + 0x5 + (!ctx->arch * (0x89));
 
       patches[1].b8 = stage1->len + ctx->prefix_size + params->encrypted.len;
       patches[2].b8 = params->stage2_total_size;
       patches[3].b8 = params->stage2_total_size;//params->encrypted.len;
       patches[4].b8 = params->compressed_hdr_size;
       patches[5].b8 = ctx->s2_entry_offset;
-  #define STAGE1_KEY_PATCH_START 6
-  #define STAGE1_KEY_PATCH_COUNT 4
-  #define ENCRYPTION_WORKING false
-      for (int i = 0; i < STAGE1_KEY_PATCH_COUNT / (1 << ctx->arch); ++i)
-  	{
-  		if (ENCRYPTION_WORKING)
-  		{
-  			if (!ctx->arch)
-  			{
-  				i = i << 1;
-  				patches[i].b8 = *(uint64_t *)
-  					(&params->key.ints[STAGE1_KEY_PATCH_START + i]);
-  			}
-  		}
-  		patches[STAGE1_KEY_PATCH_START + i].b8 = params->key.ints[i];
-  	}
   }
 
   t_buffer build_stage1_patched(unsigned char class, const t_elf_h *ehdr,
   							  t_stage1_params *params)
   {
   	const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCHES] = {
-          [ARCH_X86] = { 0x8a + 0x1a - 3, 0x9c + 0x1a - 3, 0x0c, 0xaf + 0x1a - 3, 0x4e + 0x1a - 3, 0xaf + 0x1a - 3, 0x3f, 0xaf - 3, 0xaf - 3, 0xaf - 3 },
-          [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x60, 0xc0, 0xf0, 0x98, 0xf0, 0xf0, 0xf0}
+  		//Removable:              xxxxx,                       ,xxxx,xxxx,xxxx
+  		//Val:  expected va,s1len,s2len,s2len,c_len,offs2,aesky,
+  		//Index:          0,    1,    2,   3,    4,    5,    6, Unused
+          [ARCH_X86] = { 0xa1, 0xb3, 0x0c, 0x0c, 0x65, 0xc6, 0x3f, 0x0, 0x0, 0x0 },
+          [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x60, 0xc0, 0xf0, 0x98, 0x0, 0x0, 0x0}
       };
       const t_stage1_ctx ctx = stage1_compute_ctx(class, ehdr, params);
       t_type patches[STAGE1_PATCHES];
@@ -694,7 +699,6 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   			|| val->compressed_hdr_size == 0 );
   }
   //|| invalid_aes(&val->key)
-
   t_buffer *prepare_payload_prerequisites(t_buffer *elf)
   {
   	const unsigned char class = elf_get_elfh_e_ident_class(elf->data);
@@ -1056,10 +1060,13 @@ CLOSED: [2026-01-01 Thu 16:58]
 - State "DONE"       from "TODO"       [2026-01-01 Thu 16:58]
 CLOCK: [2026-01-01 Thu 16:32]--[2026-01-01 Thu 16:54] => 0:22
 :END:
-***** TODO Don't use stack for for huge data per example decrypt.
+***** TODO Use mmap for huge data.
 :LOGBOOK:
-CLOCK: [2026-01-02 Fri 11:51]
+CLOCK: [2026-01-03 Sat 15:56]--[2026-01-03 Sat 16:16] =>  0:20
+CLOCK: [2026-01-03 Sat 12:45]--[2026-01-03 Sat 13:05] =>  0:20
 :END:
+****** TODO x86
+
 ***** TODO Move to the end s1 open
 ****** x64
 ****** x86
