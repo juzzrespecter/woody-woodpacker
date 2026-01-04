@@ -1383,8 +1383,25 @@ _start:
          	cmp eax, -4095		;Mmap error.
          	jae _exit
         	pop ecx			; (len) s2 [esp]
-        	push eax		; [esp] (vaddr) s2
-        	push ecx		; [esp] (len, vaddr) s2
+        	push ecx		; [esp] (len) s2
+        	push eax		; [esp] (va, len) s2
+
+         	xor    ebp, ebp 	;offset
+         	push -1			;
+         	pop    edi		;fd
+        	push 0x22
+        	pop esi
+        	push 0x3		;RW-
+        	pop edx
+         	xor    ebx,ebx 		;Vaddr
+        	mov eax, 192
+        	int 0x80
+         	cmp eax, -4095		;Mmap error.
+         	jae _exit
+  	pop eax
+  	pop ecx
+  	push eax		;[esp] (va)s2
+  	push ecx		;[esp] (len, va) s2
         	jmp end_of_stage1
   .return_crypt_compress_addr:
         	pop esi		; -> input

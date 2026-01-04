@@ -157,6 +157,16 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       uint64_t  s2_entry_offset;
   }	t_stage1_ctx;
 
+  typedef enum e_stage1_patch_idx {
+      STAGE1_PATCH_EXPECTED_VADDR = 0,   // Highest loadable VA + prefix + ASLR adjustment
+      STAGE1_PATCH_S1_SIZE,             // Stage1 length + prefix + encrypted len
+      STAGE1_PATCH_STAGE2_SIZE,         // Stage2 total size
+      STAGE1_PATCH_COMPRESSED_HDR_SIZE, // Compressed header size
+      STAGE1_PATCH_S2_ENTRY_OFFSET,     // Stage2 entry offset
+      STAGE1_PATCH_AES_KEY,             // AES key overwrite
+      STAGE1_PATCH_COUNT                // Total number of valid patches
+  } t_stage1_patch_idx;
+
   t_patch_set ft_init_patch_set(const size_t *off, const t_type *val, size_t count, size_t value_size)
   {
       t_patch_set patch = (t_patch_set){.offsets=off, .values=val, .count=count,
@@ -340,7 +350,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       }
   };
 
-  // change stage_buffer and fd_size for return.
+
   t_buffer	load_stage_buffer(t_arch arch, t_bin_type bin_type)
   {
       int			stage_fd;
@@ -415,7 +425,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   	return (crypt);
   }
 
-  //help improve var names
+
   static t_compress_encrypt compress_encrypt_with_header(t_buffer *input, size_t value_size)
   {
   	t_compress_encrypt compress_encrypt;
@@ -562,9 +572,6 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return (res.vaddr);
   }
 
-  //TODO use a ENUM
-  #define STAGE1_PATCHES 10
-  //TODO Refactor
 
   t_stage1_ctx stage1_compute_ctx(unsigned char class, const t_elf_h *ehdr,
   								t_stage1_params *params)
@@ -582,57 +589,31 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   	return (ctx);
   }
 
-  void stage1_prepare_key(t_aes128_key *key, uint64_t fallback)
-  {
-      if (invalid_aes(key))
-  		ft_memset(key->ints, fallback, sizeof(key->ints)/sizeof(*key->ints));
-  }
 
-  /* #define STAGE1_KEY_PATCH_START 6 */
-  /* #define STAGE1_KEY_PATCH_COUNT 4 */
-  #define ENCRYPTION_WORKING false
-  /* for (int i = 0; i < STAGE1_KEY_PATCH_COUNT / (1 << ctx->arch); ++i) */
-  /* { */
-  /* 	if (ENCRYPTION_WORKING) */
-  /* 	{ */
-  /* 		if (!ctx->arch) */
-  /* 		{ */
-  /* 			i = i << 1; */
-  /* 			patches[i].b8 = *(uint64_t *) */
-  /* 				(&params->key.ints[STAGE1_KEY_PATCH_START + i]); */
-  /* 		} */
-  /* 	} */
-  /* 	patches[STAGE1_KEY_PATCH_START + i].b8 = params->key.ints[i]; */
-  /* } */
-
-  void stage1_fill_patches(t_type patches[STAGE1_PATCHES],
+  void stage1_fill_patches(t_type patches[STAGE1_PATCH_AES_KEY],
   						 const t_stage1_ctx *ctx, const t_stage1_params *params,
   						 const t_elf_h *ehdr, unsigned char class,
   						 const t_buffer *stage1)
   {
-      patches[0].b8 =
+      patches[STAGE1_PATCH_EXPECTED_VADDR].b8 =
           elf_get_highest_loadable_vaddr_avalaible(ehdr, class, ctx->phnum)
-          + ctx->prefix_size + 0x5 + (!ctx->arch * (0x89));
+          + ctx->prefix_size + 0x5 + (!ctx->arch * (0x89 + 35));
 
-      patches[1].b8 = stage1->len + ctx->prefix_size + params->encrypted.len;
-      patches[2].b8 = params->stage2_total_size;
-      patches[3].b8 = params->stage2_total_size;//params->encrypted.len;
-      patches[4].b8 = params->compressed_hdr_size;
-      patches[5].b8 = ctx->s2_entry_offset;
+      patches[STAGE1_PATCH_S1_SIZE].b8 = stage1->len + ctx->prefix_size + params->encrypted.len;
+      patches[STAGE1_PATCH_STAGE2_SIZE].b8 = params->stage2_total_size;
+      patches[STAGE1_PATCH_COMPRESSED_HDR_SIZE].b8 = params->compressed_hdr_size;
+      patches[STAGE1_PATCH_S2_ENTRY_OFFSET].b8 = ctx->s2_entry_offset;
   }
 
   t_buffer build_stage1_patched(unsigned char class, const t_elf_h *ehdr,
   							  t_stage1_params *params)
   {
-  	const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCHES] = {
-  		//Removable:              xxxxx,                       ,xxxx,xxxx,xxxx
-  		//Val:  expected va,s1len,s2len,s2len,c_len,offs2,aesky,
-  		//Index:          0,    1,    2,   3,    4,    5,    6, Unused
-          [ARCH_X86] = { 0xa1, 0xb3, 0x0c, 0x0c, 0x65, 0xc6, 0x3f, 0x0, 0x0, 0x0 },
-          [ARCH_X64] = { 0x08, 0x1f, 0x60, 0x60, 0xc0, 0xf0, 0x98, 0x0, 0x0, 0x0}
-      };
+  	const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCH_COUNT] = {
+  		[ARCH_X86] = { 0xa1 + 35, 0xb3 + 35, 0x0c, 0x65 + 35, 0xc6 + 35, 0x3f + 35 },
+  		[ARCH_X64] = { 0x08, 0x1f, 0x60, 0xc0, 0xf0, 0x98 }
+  	};
       const t_stage1_ctx ctx = stage1_compute_ctx(class, ehdr, params);
-      t_type patches[STAGE1_PATCHES];
+      t_type patches[STAGE1_PATCH_AES_KEY];
       t_buffer stage1;
 
   	stage1 = load_stage_buffer(ctx.arch, STAGE_1);
@@ -640,14 +621,14 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   	{
           return (stage1);
   	}
-  	if (ENCRYPTION_WORKING)
-  		stage1_prepare_key(&params->key, ctx.s2_entry_offset);// For testing purpose.
       stage1_fill_patches(patches, &ctx, params, ehdr, class, &stage1);
       t_patch_set patch = ft_init_patch_set(stage1_patch_offsets[ctx.arch],
-  										  patches, 6, ctx.value_size);
+  										  patches, STAGE1_PATCH_AES_KEY,
+  										  ctx.value_size);
       apply_patches_to_buffer(stage1.data, &patch);
       if (ctx.arch == ARCH_X64 || ctx.arch == ARCH_X86)
-        ft_memcpy(stage1.data + patch.offsets[6], &params->key.ints[0], sizeof(params->key.ints));
+        ft_memcpy(stage1.data + patch.offsets[STAGE1_PATCH_AES_KEY],
+  				&params->key.ints[0], sizeof(params->key.ints));
       return (stage1);
   }
 
@@ -1066,6 +1047,9 @@ CLOCK: [2026-01-03 Sat 15:56]--[2026-01-03 Sat 16:16] =>  0:20
 CLOCK: [2026-01-03 Sat 12:45]--[2026-01-03 Sat 13:05] =>  0:20
 :END:
 ****** TODO x86
+:LOGBOOK:
+CLOCK: [2026-01-04 Sun 11:39]--[2026-01-04 Sun 11:59] =>  0:20
+:END:
 
 ***** TODO Move to the end s1 open
 ****** x64

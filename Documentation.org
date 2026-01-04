@@ -93,7 +93,7 @@ https://developer.apple.com/library/archive/documentation/Performance/Conceptual
 
 * How to Get the Source Code.
 #+begin_quote
-Type C-c C-c
+Type ~C-c C-c~ or mark the region and type ~M-x eval-region~
 #+end_quote
 #+begin_src emacs-lisp
   (require 'org)
