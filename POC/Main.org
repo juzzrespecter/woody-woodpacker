@@ -230,7 +230,8 @@ Cause:  ELF, PE and Mach O got Magic number/Signature
        typedef enum	e_arch{
            ARCH_X86,
            ARCH_X64,
-           NUM_ARCHS
+           NUM_ARCHS,
+           ARCH_ALL=NUM_ARCHS
        }	t_arch;
 
        typedef enum {
