@@ -183,7 +183,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   }	t_patch_desc;
 
   size_t compute_patch_offset(t_arch arch, size_t base_offset,
-  							const t_patch_delta *deltas, size_t count)
+  	const t_patch_delta *deltas, size_t count)
   {
       size_t delta;
   	size_t i;
@@ -200,7 +200,8 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return (base_offset + delta);
   }
 
-  t_patch_set ft_init_patch_set(const size_t *off, const t_type *val, size_t count, size_t value_size)
+  t_patch_set ft_init_patch_set(const size_t *off,
+    const t_type *val, size_t count, size_t value_size)
   {
       t_patch_set patch = (t_patch_set){.offsets=off, .values=val, .count=count,
   									  .value_size=value_size};
@@ -629,25 +630,23 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   	(t_patch_delta){ .offset = 0xd, .len = 35, .arch = ARCH_X86, .sign = 1 },
   };
 
-  /* void apply_patches_to_buffer_with_insertions(t_buffer *stage1, */
-  /* 											 const t_arch arch, */
-  /* 											 const t_patch_desc *patches_desc, */
-  /* 											 size_t patch_count, */
-  /* 											 const t_patch_delta *deltas, */
-  /* 											 size_t delta_count) */
-  /* { */
-  /*     for (size_t i = 0; i < patch_count; ++i) */
-  /*     { */
-  /*         uint64_t final_off = compute_patch_offset(arch, */
-  /*                                                   (size_t)ft_ternary((arch == ARCH_X64), (void *)patches_desc[i].base_off_x64 */
-  /* 															 , (void *)patches_desc[i].base_off_x86), */
-  /*                                                   deltas, delta_count); */
+  void apply_patches_to_buffer_with_patch_desc(t_buffer *stage1,
+  	const t_arch arch,
+  	const t_patch_desc *patches_desc, size_t patch_count,
+  	const t_patch_delta *deltas, size_t delta_count)
+  {
+      for (size_t i = 0; i < patch_count; ++i)
+      {
+          uint64_t final_off = compute_patch_offset(arch,
+                                                    (size_t)ft_ternary((arch == ARCH_X64), (void *)patches_desc[i].base_off_x64
+  															 , (void *)patches_desc[i].base_off_x86),
+                                                    deltas, delta_count);
 
-  /*         size_t	len = (size_t)ft_ternary(arch == ARCH_X64, (void *)patches_desc[i].len_x64,(void *) patches_desc[i].len_x86); */
-  /*         if (patches_desc[i].value && len) */
-  /*             ft_memcpy(stage1->data + final_off, patches_desc[i].value, len); */
-  /*     } */
-  /* } */
+          size_t	len = (size_t)ft_ternary(arch == ARCH_X64, (void *)patches_desc[i].len_x64,(void *) patches_desc[i].len_x86);
+          if (patches_desc[i].value && len)
+              ft_memcpy(stage1->data + final_off, patches_desc[i].value, len);
+      }
+  }
 
   void stage1_fill_patches(t_type patches[STAGE1_PATCH_AES_KEY],
   						 const t_stage1_ctx *ctx, const t_stage1_params *params,
@@ -668,20 +667,67 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   t_buffer build_stage1_patched(unsigned char class, const t_elf_h *ehdr,
   							  t_stage1_params *params)
   {
+  	const size_t patchs_delta_count = sizeof(g_stage1)/sizeof(*g_stage1);
   	const size_t stage1_patch_offsets[NUM_ARCHS][STAGE1_PATCH_COUNT] = {
-  		[ARCH_X86] = { 0xa1 + 35, 0xb3 + 35, 0x0c, 0x65 + 35, 0xc6 + 35, 0x3f + 35 },
-  		[ARCH_X64] = { 0x08     ,  0x1f    , 0x60, 0xc0     , 0xf0     , 0x98 }
+  		[ARCH_X86] = { compute_patch_offset(ARCH_X86, 0xa1, g_stage1, patchs_delta_count),
+  					   compute_patch_offset(ARCH_X86, 0xb3, g_stage1, patchs_delta_count),
+  					   compute_patch_offset(ARCH_X86, 0x0c, g_stage1, patchs_delta_count),
+  					   compute_patch_offset(ARCH_X86, 0x65, g_stage1, patchs_delta_count),
+  					   compute_patch_offset(ARCH_X86, 0xc6, g_stage1, patchs_delta_count),
+  					   compute_patch_offset(ARCH_X86, 0x3f, g_stage1, patchs_delta_count)},
+  		[ARCH_X64] = { compute_patch_offset(ARCH_X64, 0x08, g_stage1, patchs_delta_count),
+  					   compute_patch_offset(ARCH_X64, 0x1f, g_stage1, patchs_delta_count),
+  					   compute_patch_offset(ARCH_X64, 0x60, g_stage1, patchs_delta_count),
+  					   compute_patch_offset(ARCH_X64, 0xc0, g_stage1, patchs_delta_count),
+  					   compute_patch_offset(ARCH_X64, 0xf0, g_stage1, patchs_delta_count),
+  					   compute_patch_offset(ARCH_X64, 0x98, g_stage1, patchs_delta_count)}
   	};
       t_type patches[STAGE1_PATCH_AES_KEY];
 
   	const t_stage1_ctx ctx = stage1_compute_ctx(class, ehdr, params);
       t_buffer stage1;
 
+  	for (size_t i = 0; i < STAGE1_PATCH_COUNT; i++)
+  	{
+  		printf("s1_off[ARCH_X86][%lu] = %4lx = %8lu\n", i, stage1_patch_offsets[ARCH_X86][i], stage1_patch_offsets[ARCH_X86][i] );
+  		printf("s1_off[ARCH_X64][%lu] = %4lx = %8lu\n", i, stage1_patch_offsets[ARCH_X64][i], stage1_patch_offsets[ARCH_X64][i]);
+  	}
   	stage1 = load_stage_buffer(ctx.arch, STAGE_1);
       if (invalid_buffer(&stage1))
   	{
   		return (stage1);
   	}
+    	size_t expected_va = elf_get_highest_loadable_vaddr_avalaible(
+    		ehdr, class, ctx.phnum) + ctx.prefix_size + (size_t)ft_ternary(
+    			ctx.arch, (void *)(long int)0x5, (void*)(long int)
+    			(compute_patch_offset(ctx.arch, 0x8e, g_stage1,
+    								  sizeof(g_stage1)/sizeof(*g_stage1))));
+
+    	size_t s1_len = stage1.len + ctx.prefix_size + params->encrypted.len;
+
+    	t_patch_desc patches_desc[] = {
+            (t_patch_desc){ .base_off_x86 = 0xa1, .base_off_x64 = 0x08,
+    		  .len_x64 = sizeof(uint64_t), .len_x86 = sizeof(uint32_t),
+              .value = &expected_va },
+            (t_patch_desc){ .base_off_x86 = 0xb3, .base_off_x64 = 0x1f,
+    		  .len_x64 = sizeof(uint64_t), .len_x86 = sizeof(uint32_t),
+              .value = &s1_len },
+            (t_patch_desc){ .base_off_x86 = 0x0c, .base_off_x64 = 0x60,
+    		  .len_x64 = sizeof(uint64_t), .len_x86 = sizeof(uint32_t),
+              .value = &params->stage2_total_size },
+            (t_patch_desc){ .base_off_x86 = 0x65, .base_off_x64 = 0xc0,
+    		  .len_x64 = sizeof(uint64_t), .len_x86 = sizeof(uint32_t),
+              .value = &params->compressed_hdr_size },
+            (t_patch_desc){ .base_off_x86 = 0xc6, .base_off_x64 = 0xf0,
+    		  .len_x64 = sizeof(uint64_t), .len_x86 = sizeof(uint32_t),
+              .value = (void *)&ctx.s2_entry_offset },
+            // AES key patch
+            (t_patch_desc){ .base_off_x86 = 0x3f, .base_off_x64 = 0x98,
+    		  .len_x64 = sizeof(params->key), .len_x86 = sizeof(params->key),
+              .value = &params->key.ints[0] }
+        };
+    	if (sizeof(patches_desc))
+    		ft_printf("patches_desc_exists\n");
 
       stage1_fill_patches(patches, &ctx, params, ehdr, class, &stage1);
       t_patch_set patch = ft_init_patch_set(stage1_patch_offsets[ctx.arch],
@@ -691,6 +737,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       if (ctx.arch == ARCH_X64 || ctx.arch == ARCH_X86)
         ft_memcpy(stage1.data + patch.offsets[STAGE1_PATCH_AES_KEY],
   				&params->key.ints[0], sizeof(params->key.ints));
+  	/* apply_patches_to_buffer_with_patch_desc(&stage1, ctx.arch, patches_desc, sizeof(patches_desc) / sizeof (*patches_desc), g_stage1, sizeof(g_stage1) / sizeof (*g_stage1)) */
       return (stage1);
   }
 
@@ -930,7 +977,6 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   		return (3);
       return (0);
   }
-
 #+end_src
 
 #+begin_src c :tangle no
@@ -1106,6 +1152,7 @@ CLOCK: [2026-01-01 Thu 16:32]--[2026-01-01 Thu 16:54] => 0:22
 :END:
 ***** TODO Use mmap for huge data.
 :LOGBOOK:
+CLOCK: [2026-01-10 Sat 06:37]--[2026-01-10 Sat 12:22] =>  5:45
 CLOCK: [2026-01-03 Sat 15:56]--[2026-01-03 Sat 16:16] =>  0:20
 CLOCK: [2026-01-03 Sat 12:45]--[2026-01-03 Sat 13:05] =>  0:20
 :END:
