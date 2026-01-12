@@ -1085,6 +1085,10 @@ CLOCK: [2025-12-17 Wed 07:49]--[2025-12-17 Wed 08:35] =>  0:46
 :END:
 ** Tasks
 *** TODO Modify ASM
+:LOGBOOK:
+CLOCK: [2026-01-12 Mon 13:50]--[2026-01-12 Mon 14:10] =>  0:20
+CLOCK: [2026-01-12 Mon 12:51]--[2026-01-12 Mon 13:11] =>  0:20
+:END:
 **** TODO x86 & x64
 ***** DONE Delete unused patch
 CLOSED: [2025-12-29 Mon 09:17]
