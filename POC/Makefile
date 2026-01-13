@@ -115,5 +115,4 @@ MAKEFLAGS				:=	--no-print-directory
 
   print-%:
 	@$(info '$*'='$($*)')
-
   .PHONY: all clean fclean re info-% print-%

@@ -1,5 +1,6 @@
 #+title: Stub
 #+startup: fold
+
 * x64
 
 #+begin_src c :tangle payload/x64/all_in.c :mkdirp yes
@@ -14,36 +15,36 @@
 
 
   // Generic function to calculate memory range for ELF segments
-  void calculate_elf_memory_range(Elf64_Phdr *phdr, int phnum, uint64_t *min_vaddr, uint64_t *max_vaddr)
+  void calculate_elf_memory_range(Elf64_Phdr *phdr, int phnum, uint64_t *min_va, uint64_t *max_va)
   {
-      ,*min_vaddr = -1;
-      ,*max_vaddr = 0;
+      ,*min_va = -1;
+      ,*max_va = 0;
 
       while (phnum--) {
           if (phdr[phnum].p_type == PT_LOAD) {
-              if (phdr[phnum].p_vaddr < *min_vaddr)
-                  ,*min_vaddr = phdr[phnum].p_vaddr;
-              uint64_t seg_end = phdr[phnum].p_vaddr + phdr[phnum].p_memsz;
-              if (seg_end > *max_vaddr)
-                  ,*max_vaddr = seg_end;
+              if (phdr[phnum].p_va < *min_va)
+                  ,*min_va = phdr[phnum].p_va;
+              uint64_t seg_end = phdr[phnum].p_va + phdr[phnum].p_memsz;
+              if (seg_end > *max_va)
+                  ,*max_va = seg_end;
           }
       }
 
       // Align to page boundaries
-      ,*min_vaddr &= ~(PAGE_SIZE - 1);
-      /* *max_vaddr = (*max_vaddr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1); */
+      ,*min_va &= ~(PAGE_SIZE - 1);
+      /* *max_va = (*max_va + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1); */
   }
 
   // Generic function to load a single ELF segment
   // phdr = rdx
-  int load_elf_segment(void *elf_ptr, Elf64_Phdr *phdr, uint64_t min_vaddr, int fd)
+  int load_elf_segment(void *elf_ptr, Elf64_Phdr *phdr, uint64_t min_va, int fd)
   {
       if (phdr->p_type != PT_LOAD)
           return 0;
-      char *base = min_vaddr;
+      char *base = min_va;
       // Align offset and size to page boundaries
       uint64_t page_offset = phdr->p_offset & ~(PAGE_SIZE - 1);
-      uint64_t page_vaddr = phdr->p_vaddr & ~(PAGE_SIZE - 1);
+      uint64_t page_va = phdr->p_va & ~(PAGE_SIZE - 1);
 
       // Map at the correct address with MAP_FIXED
       int prot = PROT_READ;
@@ -63,7 +64,7 @@
         }
 
       size_t map_size = map_end - page_offset;
-      void *map_addr = (char *)base + (page_vaddr - min_vaddr);
+      void *map_addr = (char *)base + (page_va - min_va);
       void *result = mmap(map_addr, map_size, prot,
   			flags, fd, page_offset);
       if (result <= -0xfff)/* == MAP_FAILED) */
@@ -82,14 +83,14 @@
         {
 
   	// La dirección virtual donde comienza .bss dentro del segmento
-  	uint64_t va_bss_start = phdr->p_vaddr - page_vaddr + phdr->p_filesz;
+  	uint64_t va_bss_start = phdr->p_va - page_va + phdr->p_filesz;
   	uint64_t va_bss_end = va_bss_start + (phdr->p_filesz - p_memsz);
   	uint64_t va_bss_start_align = ((uint64_t)(offset_bss_start_align + PAGE_SIZE - 1)) & ~(PAGE_SIZE -1);
   	if (va_bss_end > va_bss_start_align)
   	  {
   	    uint64_t bss_map_size = va_bss_end - va_bss_start_align;
-  	    void * vaddr_bss_start_in_segment_align = result + va_bss_start_align;
-  	    void *bss_result = mmap(vaddr_bss_start_in_segment_align, bss_map_size, prot,
+  	    void * va_bss_start_in_segment_align = result + va_bss_start_align;
+  	    void *bss_result = mmap(va_bss_start_in_segment_align, bss_map_size, prot,
   				MAP_FIXED | MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   	    if (bss_result <= -0xfff)
   	      exit (0);
@@ -108,22 +109,22 @@
       Elf64_Ehdr *elf = (Elf64_Ehdr *)ptr;
       Elf64_Phdr *elf_ph = (Elf64_Phdr *)((char *)ptr + elf->e_phoff);
 
-      uint64_t min_vaddr, max_vaddr;
+      uint64_t min_va, max_va;
 
       // Calculate memory range needed
-      calculate_elf_memory_range(elf_ph, elf->e_phnum, &min_vaddr, &max_vaddr);
-      uint64_t total_size = max_vaddr - min_vaddr;
+      calculate_elf_memory_range(elf_ph, elf->e_phnum, &min_va, &max_va);
+      uint64_t total_size = max_va - min_va;
       uint64_t map_flags = MAP_PRIVATE | MAP_ANONYMOUS;
 
       // Reserve entire address space with PROT_NONE
-      void *target_vaddr = 0;
+      void *target_va = 0;
       void *base_addr;
       if (fd == -1)
         {
-  	target_vaddr = min_vaddr + aslr_offset;
+  	target_va = min_va + aslr_offset;
   	map_flags |= MAP_FIXED;
         }
-      base_addr = mmap(target_vaddr, total_size,
+      base_addr = mmap(target_va, total_size,
                           PROT_NONE, map_flags, -1, 0);
 
       if (base_addr <= -0xfff)
@@ -131,13 +132,13 @@
 
       // Load each segment
       for (int i = 0; i < elf->e_phnum; i++) {
-          if (load_elf_segment(base_addr, ptr, &elf_ph[i], min_vaddr, fd) < 0)
+          if (load_elf_segment(base_addr, ptr, &elf_ph[i], min_va, fd) < 0)
   	  exit(0);
       }
       if (fd == -1)
   	write_dyn(base_addr, aslr_offset);
 
-      uint64_t entrypoint = (uint64_t)base_addr + (elf->e_entry - min_vaddr);
+      uint64_t entrypoint = (uint64_t)base_addr + (elf->e_entry - min_va);
       return entrypoint;
   }
 
@@ -288,11 +289,11 @@
   	push rax
   	pop r15
       	sub r15, rsi		; r15 aslr
-  .vaddr_stage1:
+  .va_stage1:
   	and rax, 0xfffffffffffff000
-  	push rax			;[rsp] = (vaddr) s1
+  	push rax			;[rsp] = (va) s1
   	mov rsi,  0xfefffffffffff000	; (len) s1
-  	push rsi			;[rsp] = (len, vaddr) s1
+  	push rsi			;[rsp] = (len, va) s1
   	call .open
   .proc_self_exec:
   	times 15 ret ; "/proc/self/exe"
@@ -313,27 +314,27 @@
     	pop r10			; MAP
     	push 0x3		; RW
     	pop rdx			; prot
-    	xor    edi,edi 		;Vaddr
+    	xor    edi,edi 		;Va
   	mov rsi, 0xfefffffffffff000	; (len) s2
-  	push rsi		;[rsp] (len) s2, (fd, len, vaddr) s1
+  	push rsi		;[rsp] (len) s2, (fd, len, va) s1
   	push 0x9
   	pop rax
   	syscall
     	cmp rax, -4095		;Mmap error.
     	jae _exit
     	push rax
-  	pop r13		;r13 vaddr stage 2, r15 aslr_offset.
+  	pop r13		;r13 va stage 2, r15 aslr_offset.
   	push 0x9
   	pop rax
   	syscall
     	cmp rax, -4095		;Mmap error.
     	jae _exit
     	push rax
-  	pop r14		;r14 decrypt mmap, r13 vaddr stage 2, r15 aslr_offset.
+  	pop r14		;r14 decrypt mmap, r13 va stage 2, r15 aslr_offset.
 
   	jmp end_of_stage1
   .return_crypt_compress_addr:
-  	pop rsi		;src;;[rsp](len) s2, (fd, len, vaddr) s1
+  	pop rsi		;src;;[rsp](len) s2, (fd, len, va) s1
   .set_aeskey:
     	call .pass_aeskey
     	times 16 nop;[Placeholder aeskey]
@@ -342,22 +343,22 @@
            ;movdqu unaligned memory if movdqa should be aligned.
     	movdqu xmm0, [rax]
   .call_decrypt:
-  	pop rdx			;(len) s2 [rsp](fd, len, vaddr) s1
+  	pop rdx			;(len) s2 [rsp](fd, len, va) s1
 
-  	push rdx	       ;[rsp](len) s2, (fd, len, vaddr) s1
+  	push rdx	       ;[rsp](len) s2, (fd, len, va) s1
   	call decrypt; rsi in, rdx in_len, rdi out, xmm0 key
   	test rax, rax
   	jz _exit
   	push r13
   	pop rdx		; mmap dest
-  	push rax	; vaddr of decrypted_s2_elf
+  	push rax	; va of decrypted_s2_elf
   	pop rdi		; src
   	mov rsi, 0xfefffffffffff000
   	call lz77_decompress
   	test rax, rax
   	jnz _exit
   .munmap_decrypt_mmap:
-  	pop rsi			;(len) s2 [rsp] (fd, len, vaddr) s1
+  	pop rsi			;(len) s2 [rsp] (fd, len, va) s1
 
   	xchg rdi, r14
   	push 0xb
@@ -365,12 +366,12 @@
   	syscall
   .mprotect_stage_2:
   	push r13
-  	pop rdi			;vaddr
+  	pop rdi			;va
   	push 0x5
   	pop rdx			;prot R-X
-  	;; pop rsi			;(len) s2 [rsp] (fd, len, vaddr) s1
-  	push r13		;[rsp] (va) s2,(fd, len, vaddr) s1
-  	push rsi		;[rsp] (len, va) s2, (fd, len, vaddr) s1
+  	;; pop rsi			;(len) s2 [rsp] (fd, len, va) s1
+  	push r13		;[rsp] (va) s2,(fd, len, va) s1
+  	push rsi		;[rsp] (len, va) s2, (fd, len, va) s1
   	push 0xA
   	pop rax			;syscall mprotect 10
     	syscall
@@ -484,7 +485,7 @@
     	call .woody_write		; Woody Payload.
     	times 14 ret			;'....WOODY....\n'
     	.woody_write:
-            pop    rsi		;....WOODY....\n ptr.		;[rsp]vaddr s3 size_s2, vaddr s2
+            pop    rsi		;....WOODY....\n ptr.		;[rsp]va s3 size_s2, va s2
     	push 0xe		;ptr_size
     	pop rdx
     	push 0x1		;fd to write syscall
@@ -498,65 +499,65 @@
   global _start
 
   jmp_entry_for_stage3:
-        pop r11;entrypoint interp [rsp]vaddr, size_s2, vaddr s2
-        pop r14		;vaddr s3 [rsp]size_s2, vaddr s2
+        pop r11;entrypoint interp [rsp]va, size_s2, va s2
+        pop r14		;va s3 [rsp]size_s2, va s2
         test r11, r11
         cmovne r13, r11		;if r11 != 0  set r12 = r11
 
         .jmp_stage3:
-        pop rsi			;size_s2 [rsp]  vaddr_s2
-        pop rdi			;vaddr_s2 [rsp]
+        pop rsi			;size_s2 [rsp]  va_s2
+        pop rdi			;va_s2 [rsp]
         push 0xb		;mummap
         pop rax
-        push r13		;[rsp]vaddr entrypoint that go jmp from stage3
-        push 0		;[rsp] reset rdx,vaddr entrypoint that go jmp from stage3
-        push r14		;[rsp] vaddr stage3, reset rdx, vaddr entrypoint
-        ret			; jmp -> vaddr s3, [rsp] vaddr entrypoint
+        push r13		;[rsp]va entrypoint that go jmp from stage3
+        push 0		;[rsp] reset rdx,va entrypoint that go jmp from stage3
+        push r14		;[rsp] va stage3, reset rdx, va entrypoint
+        ret			; jmp -> va s3, [rsp] va entrypoint
 
 
 
   _start:		 ;r15 aslr
-        .stage2:   ;[rsp] size_s2_elf, vaddr_s2_elf, fd_s1, size_s1, vaddr s1
+        .stage2:   ;[rsp] size_s2_elf, va_s2_elf, fd_s1, size_s1, va s1
         .mmap_fd:
-        pop r14			;size_s2 [rsp] va s2f, fd_s1, size_s1, vaddr s1
-        pop r13			;vaddr_s2 [rsp] fd_s1, size_s1, vaddr s1
+        pop r14			;size_s2 [rsp] va s2f, fd_s1, size_s1, va s1
+        pop r13			;va_s2 [rsp] fd_s1, size_s1, va s1
         push 0x2		;MAP_PRIVATE
         pop r10			; flags
         xor r9, r9		; offset
-        pop r8			;fd_s1 [rsp] size_s1, vaddr s1
+        pop r8			;fd_s1 [rsp] size_s1, va s1
         xor edi, edi		;addr
         push 0x1000
         pop rsi			;size
         push 1
         pop rdx			;perm
-        push r8			;[rsp] fd_s1, size_s1, vaddr s1
+        push r8			;[rsp] fd_s1, size_s1, va s1
         push 0x9
         pop rax
         syscall
         cmp rax, -4095		;Mmap error.
         jae _exit		;0x162
         .close_fd:
-        pop rdi			;;fd_s1 [rsp] size_s1, vaddr s1
+        pop rdi			;;fd_s1 [rsp] size_s1, va s1
         push 0x3
         pop rax
         syscall
         test rax, rax
         jnz _exit
   .unmmap_s1:
-        pop rsi			;size_s1 [rsp]  vaddr_s1
-        pop rdi			;vaddr_s1 [rsp]
+        pop rsi			;size_s1 [rsp]  va_s1
+        pop rdi			;va_s1 [rsp]
         push 0xb		;munmap syscall
         pop rax
         syscall
         test rax, rax
         jnz _exit
         push r13
-        push r14		; [rsp] size_s2_elf, vaddr_s2_elf
+        push r14		; [rsp] size_s2_elf, va_s2_elf
         jmp end_of_stage_2
-        .return_ehdr_ptr:;[rsp] ehdr_ptr size_s2, size_s2_elf, vaddr s2
-        pop rdi		; ehdr_ptr [rsp] size_s2_elf, vaddr_s2_elf
-        push rdi	; ;[rsp] ehdr_ptr size_s2, vaddr s2
-        pop rbx 	;ehdr_ptr [rsp] size_s2, vaddr s2
+        .return_ehdr_ptr:;[rsp] ehdr_ptr size_s2, size_s2_elf, va s2
+        pop rdi		; ehdr_ptr [rsp] size_s2_elf, va_s2_elf
+        push rdi	; ;[rsp] ehdr_ptr size_s2, va s2
+        pop rbx 	;ehdr_ptr [rsp] size_s2, va s2
 
         .get_base:
   	;; sub    rsp, 0x10                 ; Allocate stack space
@@ -569,7 +570,7 @@
   	;; call   calculate_elf_memory_range;0x1d7
   	;; mov rdx, QWORD [rsp]		     ;rdx target_va base
         push rbx
-        pop rdi			;pop  ehdr rdi ehdr/ptr ;[rsp] size_s2, vaddr s2
+        pop rdi			;pop  ehdr rdi ehdr/ptr ;[rsp] size_s2, va s2
         push r15		;aslr
         pop rsi			;rsi aslr_offset
         push -1
@@ -583,7 +584,7 @@
         push rax
         pop r13			;r13 entrypoint to jmp
        ;; 0x4f3
-        call get_at_interp_x64	;[rsp] size_s2, vaddr s2
+        call get_at_interp_x64	;[rsp] size_s2, va s2
         cmp rax, -1
         je _exit
         push rax
@@ -591,16 +592,16 @@
         push rdi
         pop r12			;base interp
         ;; This should
-        lea rdi, [rsp + 0x10]	;[rsp] size_s2, vaddr s2
+        lea rdi, [rsp + 0x10]	;[rsp] size_s2, va s2
         call set_auxv		;0x17B
         mov r14, 0xfeffffffffffffff
-        test r14, r14		;if vaddr s3
-        lea rsi, [r14 + r15]	;vaddr s3 + aslr
-        cmovne r14, rsi		;vaddr s3 = vaddr s3 + aslr
-        push r14		;[rsp] vaddr_s3[+ aslr], size_s2, vaddr s2
+        test r14, r14		;if va s3
+        lea rsi, [r14 + r15]	;va s3 + aslr
+        cmovne r14, rsi		;va s3 = va s3 + aslr
+        push r14		;[rsp] va_s3[+ aslr], size_s2, va s2
         test r14, r14
         jne .prep_payload	;0x12a
-        pop r14		;vaddr_s3 [rsp]size_s2, vaddr s2
+        pop r14		;va_s3 [rsp]size_s2, va s2
 
         .create_stage3:
         push 0x22		;MAP_PRIVATE | MAP_ANONYMOUS
@@ -623,34 +624,34 @@
         push 0x4		     ; size of stage3
         pop rcx			     ; N times
         push rcx			     ; N times
-        push rax		;[rsp]vaddr s3, size s3, size_s2, vaddr s2
+        push rax		;[rsp]va s3, size s3, size_s2, va s2
         xchg    rdi, rax             ; rdi = destination mmap
         call .bytecode_stage3
         syscall			;call munmap s2
         pop rdx ;reset this register
         ret			;jmp to entrypoint Interp or not.
         .bytecode_stage3:
-        pop rsi		      ;src s3, [rsp]vaddr_s3, size_s3, size_s2, vaddr s2
+        pop rsi		      ;src s3, [rsp]va_s3, size_s3, size_s2, va s2
         rep movsb
         .mprotect_stage3:
         push 5			;RX
         pop rdx			;perm
-        pop rdi			;vaddr s3 [rsp]size s3, size_s2, vaddr s2
+        pop rdi			;va s3 [rsp]size s3, size_s2, va s2
 
-        pop rsi			;size of bytecode_stage3 [rsp]size_s2, vaddr s2
+        pop rsi			;size of bytecode_stage3 [rsp]size_s2, va s2
 
         push 0xa		;mprotect
         pop rax
-        push rdi		;[rsp]vaddr_s3 size_s2, vaddr s2
-        push r11		;[rsp]interp_vaddr, vaddr_s3, size, vaddr s2
+        push rdi		;[rsp]va_s3 size_s2, va s2
+        push r11		;[rsp]interp_va, va_s3, size, va s2
         syscall
         test rax, rax
         jnz _exit
-        pop r11			;interp_vaddr[rsp] vaddr_s3, size, vaddr s2
+        pop r11			;interp_va[rsp] va_s3, size, va s2
 
         .prep_payload:
-        push r11	;[rsp]interp_vaddr, vaddr_s3, size, vaddr s2
-        push QWORD [rsp + 0x18]	;vaddr s2
+        push r11	;[rsp]interp_va, va_s3, size, va s2
+        push QWORD [rsp + 0x18]	;va s2
         ret
 
   _exit:
@@ -730,11 +731,11 @@
         .end:
         ret
 
-  ; void calculate_elf_memory_range(Elf64_Phdr *phdr, unsigned int phnum, uint64_t *min_vaddr, uint64_t *max_vaddr)
+  ; void calculate_elf_memory_range(Elf64_Phdr *phdr, unsigned int phnum, uint64_t *min_va, uint64_t *max_va)
   calculate_elf_memory_range:
       xor    eax, eax                        ; rax = 0
-      mov    QWORD  [rdx], 0xffffffffffffffff ; *min_vaddr = UINT64_MAX
-      mov    QWORD  [rcx], rax            ; *max_vaddr = 0
+      mov    QWORD  [rdx], 0xffffffffffffffff ; *min_va = UINT64_MAX
+      mov    QWORD  [rcx], rax            ; *max_va = 0
       movsxd rax, esi                         ; rax = phnum (sign extend to 64-bit); May optimize with lea?
       imul   rax, rax, 0x38                  ; rax = phnum * sizeof(Elf64_Phdr)
       add    rdi, rax                        ; rdi = phdr + (phnum * sizeof(Elf64_Phdr))
@@ -748,28 +749,28 @@
       jne    .next_iteration                 ;   goto next_iteration
 
       ; Process PT_LOAD segment
-      mov    rax, QWORD  [rdi-0x28]      ; rax = phdr[-1].p_vaddr
-      cmp    rax, QWORD  [rdx]            ; if (p_vaddr < *min_vaddr)
+      mov    rax, QWORD  [rdi-0x28]      ; rax = phdr[-1].p_va
+      cmp    rax, QWORD  [rdx]            ; if (p_va < *min_va)
       jae    .check_max                      ;   goto check_max
-      mov    QWORD  [rdx], rax            ; *min_vaddr = p_vaddr
+      mov    QWORD  [rdx], rax            ; *min_va = p_va
 
   .check_max:
       mov    rax, QWORD  [rdi-0x10]      ; rax = phdr[-1].p_memsz
-      add    rax, QWORD  [rdi-0x28]       ; rax = p_vaddr + p_memsz
-      cmp    QWORD  [rcx], rax            ; if (*max_vaddr < (p_vaddr + p_memsz))
+      add    rax, QWORD  [rdi-0x28]       ; rax = p_va + p_memsz
+      cmp    QWORD  [rcx], rax            ; if (*max_va < (p_va + p_memsz))
       jae    .next_iteration                 ;   goto next_iteration
-      mov    QWORD  [rcx], rax            ; *max_vaddr = p_vaddr + p_memsz
+      mov    QWORD  [rcx], rax            ; *max_va = p_va + p_memsz
 
   .next_iteration:
       sub    rdi, 0x38                       ; rdi = phdr - sizeof(Elf64_Phdr) (move to previous phdr)
       jmp    .start_loop                     ; goto start_loop
 
   .done:
-      and    QWORD  [rdx], 0xfffffffffffff000 ; *min_vaddr &= ~(PAGE_SIZE - 1) (align down to page)
+      and    QWORD  [rdx], 0xfffffffffffff000 ; *min_va &= ~(PAGE_SIZE - 1) (align down to page)
       ret                                     ; return
 
-  ; int load_elf_segment(void *base, void *elf_ptr, Elf64_Phdr *phdr, uint64_t min_vaddr, int fd)
-  ; rdi = base, rsi = elf_ptr, rdx = phdr, rcx = min_vaddr, r8d = fd
+  ; int load_elf_segment(void *base, void *elf_ptr, Elf64_Phdr *phdr, uint64_t min_va, int fd)
+  ; rdi = base, rsi = elf_ptr, rdx = phdr, rcx = min_va, r8d = fd
 
 
   load_elf_segment:
@@ -779,7 +780,7 @@
 
       ; Save caller-saved registers
       push   r15
-      mov    r9, rcx                  ; r9 = min_vaddr
+      mov    r9, rcx                  ; r9 = min_va
       push   r14
       push   r13
       push   r12
@@ -790,14 +791,14 @@
       ; Extract segment information
       mov    ebp, DWORD  [rdx+0x4]   ; ebp = p_flags
       mov    r13, QWORD  [rdx+0x8]  ; r13 = p_offset
-      mov    r12, QWORD  [rdx+0x10] ; r12 = p_vaddr
+      mov    r12, QWORD  [rdx+0x10] ; r12 = p_va
       mov    eax, ebp                 ; eax = p_flags
       mov    r15, r13                 ; r15 = p_offset (copy)
 
-      ; Align vaddr and offset to page boundary
+      ; Align va and offset to page boundary
       and    eax, 0x2                 ; Test PF_W flag (bit 1)
       and    r15, 0xfffffffffffff000   ; Align p_offset to page boundary
-      and    r12, 0xfffffffffffff000   ; Align p_vaddr to page boundary
+      and    r12, 0xfffffffffffff000   ; Align p_va to page boundary
       cmp    eax, 0x1                 ; Compare PF_W flag with 1
       sbb    eax, eax                 ; Set eax to 0xffffffff if PF_W is set, 0 otherwise
       add    r13, QWORD  [rdx+0x20] ; r13 = p_offset + p_filesz
@@ -826,12 +827,12 @@
 
   .setup_mmap_params:
       ; Setup mmap parameters
-      mov    rax, r12                 ; rax = aligned p_vaddr
+      mov    rax, r12                 ; rax = aligned p_va
       sub    r13, r15                 ; r13 = (p_offset + p_filesz) - aligned p_offset
       mov    QWORD  [rsp], rsi     ; Save elf_ptr on stack
       mov    rbx, rdx                 ; rbx = phdr
-      sub    rax, r9                  ; rax = aligned p_vaddr - min_vaddr
-      lea    r14, [rdi+rax*1]         ; r14 = base + (aligned p_vaddr - min_vaddr)
+      sub    rax, r9                  ; rax = aligned p_va - min_va
+      lea    r14, [rdi+rax*1]         ; r14 = base + (aligned p_va - min_va)
       mov    edx, ebp                 ; edx = combined flags/protection
       mov    r9, r15                  ; r9 = aligned p_offset
       mov    rsi, r13                 ; rsi = size
@@ -932,13 +933,13 @@
       xor    eax, eax                 ; Return 0 (not a load segment)
       ret                            ; Return
 
-  ; uint64_t load_elf_generic(void *ptr, uint64_t aslr_offset, uint64_t target_vaddr, int fd)
-  ; rdi = ptr, rsi = aslr_offset, rdx = target_vaddr, ecx = fd
+  ; uint64_t load_elf_generic(void *ptr, uint64_t aslr_offset, uint64_t target_va, int fd)
+  ; rdi = ptr, rsi = aslr_offset, rdx = target_va, ecx = fd
 
   load_elf_generic:
       ; Save callee-saved registers
       push   r15
-      mov    r10, rdx              ; r10 = target_vaddr
+      mov    r10, rdx              ; r10 = target_va
       mov    r15d, ecx             ; r15d = fd
       push   r14
       mov    r14, rsi              ; r14 = aslr_offset
@@ -952,25 +953,25 @@
       ; Load ELF program header pointer and count
       mov    r12, QWORD  [rdi+0x20]  ; r12 = e_phoff
       movzx  esi, WORD  [rdi+0x38]   ; esi = e_phnum
-      lea    rcx, [rsp+0x18]       ; rcx = pointer to max_vaddr result
-      lea    rdx, [rsp+0x10]       ; rdx = pointer to min_vaddr result
+      lea    rcx, [rsp+0x18]       ; rcx = pointer to max_va result
+      lea    rdx, [rsp+0x10]       ; rdx = pointer to min_va result
       add    r12, rdi              ; r12 = ptr + e_phoff (actual program header address)
       mov    rdi, r12              ; rdi = program header address
       call   calculate_elf_memory_range  ; Call helper function
 
       ; Get results from stack
-      mov    r13, QWORD  [rsp+0x10]  ; r13 = min_vaddr
+      mov    r13, QWORD  [rsp+0x10]  ; r13 = min_va
       mov    r10, r13		   ; r10 target_va = min_va
-      mov    rsi, QWORD  [rsp+0x18] ; rsi = max_vaddr
+      mov    rsi, QWORD  [rsp+0x18] ; rsi = max_va
       mov    ecx, 0x22             ; ecx = MAP_PRIVATE | MAP_ANONYMOUS ; push pop
 
-      ; Calculate total size and check target_vaddr
-      sub    rsi, r13              ; rsi = max_vaddr - min_vaddr (total_size)
-      cmp   r15d, -1              ; Test target_vaddr
+      ; Calculate total size and check target_va
+      sub    rsi, r13              ; rsi = max_va - min_va (total_size)
+      cmp   r15d, -1              ; Test target_va
       jne     .use_default_flags    ; If zero, use default flags
 
       ; Add ASLR offset to target address and set MAP_FIXED
-      add    r10, r14              ; r10 = target_vaddr + aslr_offset
+      add    r10, r14              ; r10 = target_va + aslr_offset
       mov    ecx, 0x32             ; ecx = MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS push pop
 
   .use_default_flags:
@@ -996,7 +997,7 @@
   .load_segment_loop:
       ; Prepare arguments for load_elf_segment call
       mov    r8d, r15d             ; r8d = fd
-      mov    rcx, r13              ; rcx = min_vaddr
+      mov    rcx, r13              ; rcx = min_va
       mov    rdx, r12              ; rdx = current program header
       mov    rsi, rbp              ; rsi = elf_ptr (ptr)
       mov    rdi, rbx              ; rdi = mapping address
@@ -1031,7 +1032,7 @@
   	pop rax			;rax = mapping va
   	push  rbx
   	pop rdi			; rdi = mapping va
-      sub    rax, r13              ; rax = mapping_address - min_vaddr
+      sub    rax, r13              ; rax = mapping_address - min_va
       add    rax, QWORD  [rbp+0x18]  ; rax = adjusted + entry point
 
   .cleanup_and_return:
@@ -1077,9 +1078,9 @@
       cdqe                         ; Sign extend eax to rax (for shifting)
       mov    r8d, 0x68230f8        ; r8d = bitmask for address-type dynamic tags
       shl    rax, 0x4              ; rax = counter * 16 (for calculating final address)
-      add    rax, QWORD  [rdx+0x8]  ; rax = p_vaddr + (counter * 16)
+      add    rax, QWORD  [rdx+0x8]  ; rax = p_va + (counter * 16)
       xor    edx, edx              ; edx = 0 (inner loop counter)
-      add    rdi, rax              ; rdi = ptr + p_vaddr + (counter * 16) (dynamic section start)
+      add    rdi, rax              ; rdi = ptr + p_va + (counter * 16) (dynamic section start)
       shr    rcx, 0x4              ; rcx = p_memsz / 16 (number of dynamic entries)
 
   .inner_loop:
@@ -1166,7 +1167,7 @@
         .process_interpreter:
         mov    rdi, rsp                ; rdi = &interp_elfh[0] (buffer address)
         mov    ecx, ebp                ; ecx = interp_fd
-  ;      xor    edx, edx                ; edx = 0 (target_vaddr = 0)
+  ;      xor    edx, edx                ; edx = 0 (target_va = 0)
         xor    esi, esi                ; esi = 0 (aslr_offset = 0)
         call   load_elf_generic  ; .purpose: Call load_elf_generic for interpreter
         push rdi		     ;Base of elf.
@@ -1201,7 +1202,7 @@ _start:
 #+end_src
 
 * x32
-
+:fold:
 #+begin_src c :tangle payload/x32/all_in.c :mkdirp yes
   #include <elf.h>
   #include <sys/mman.h>
@@ -1240,12 +1241,12 @@ _start:
       return (void *)result;
   }
 
-  int load_elf_segment(void **base, void *elf_ptr, Elf32_Phdr *phdr, unsigned int min_vaddr, int fd)
+  int load_elf_segment(void **base, void *elf_ptr, Elf32_Phdr *phdr, unsigned int min_va, int fd)
   {
       const unsigned int page_offset = phdr->p_offset & ~(PAGE_SIZE - 1);
       const unsigned int offset_dif = phdr->p_offset - page_offset;
-      const unsigned int page_vaddr = phdr->p_vaddr & ~(PAGE_SIZE - 1);
-      const unsigned int va_dif = page_vaddr - min_vaddr;
+      const unsigned int page_va = phdr->p_va & ~(PAGE_SIZE - 1);
+      const unsigned int va_dif = page_va - min_va;
       const int bss_len = phdr->p_memsz - phdr->p_filesz;
       unsigned int map_len;
       int prot;
@@ -1321,10 +1322,10 @@ _start:
         goto exit;
       while (phnum--) {
         if (phdr[phnum].p_type == PT_LOAD) {
-  	if (phdr[phnum].p_vaddr < min_va)
-  	  min_va = phdr[phnum].p_vaddr;
-  	if (phdr[phnum].p_vaddr > max_va)
-  	  max_va = phdr[phnum].p_vaddr + phdr[phnum].p_memsz;
+  	if (phdr[phnum].p_va < min_va)
+  	  min_va = phdr[phnum].p_va;
+  	if (phdr[phnum].p_va > max_va)
+  	  max_va = phdr[phnum].p_va + phdr[phnum].p_memsz;
         }
       }
       min_va &= ~(PAGE_SIZE - 1);
@@ -1362,7 +1363,8 @@ _start:
     return (0);
   }
 #+end_src
-
+:END:
+#Try to change the ~pop ebx, sub esp, 10~ -> ~sub esp, 10pop ebx~
 #+begin_src asm :tangle payload/x32/stage1.s :mkdirp yes
   global _start
 
@@ -1377,7 +1379,7 @@ _start:
         	pop edx
         	mov ecx, 0xfeffffff	; (len) s2
         	push ecx		;[esp] (len) s2
-         	xor    ebx,ebx 		;Vaddr
+         	xor    ebx,ebx 		;Va
         	mov eax, 192
         	int 0x80
          	cmp eax, -4095		;Mmap error.
@@ -1393,11 +1395,12 @@ _start:
         	pop esi
         	push 0x3		;RW-
         	pop edx
-         	xor    ebx,ebx 		;Vaddr
+         	xor    ebx,ebx 		;Va
         	mov eax, 192
         	int 0x80
          	cmp eax, -4095		;Mmap error.
          	jae _exit
+  	xchg edi, eax		;Save decrypt buffer in edi
   	pop eax
   	pop ecx
   	push eax		;[esp] (va)s2
@@ -1408,10 +1411,11 @@ _start:
   	;;
   	pop edx
   	push edx
+  				;Comment the line below. - 2 B to the insertion affect aes key....
         	sub esp, edx
-        	mov edi, esp	 ;edi = buffer out; edx = len out;esi -> in; edx in_len
-        	push edx	;[esp] (len, buffer) decrypt, (len, vaddr) s2
-        	push eax	;[esp] (vaddr) s2, (len, buffer) decrypt, (len, vaddr) s2
+  	;;       	mov edi, esp	 ;edi = buffer out; edx = len out;esi -> in; edx in_len
+        	push edx	;[esp] (len, buffer) decrypt, (len, va) s2
+        	push eax	;[esp] (va) s2, (len, buffer) decrypt, (len, va) s2
         	push esi	;-> in for simplify let's pass all an then he choose.
         	push edx	;-> in_len
         	push edi	;-> out
@@ -1427,24 +1431,25 @@ _start:
         	add esp, 0x10
         	test eax, eax
         	jz _exit
-        	pop edx		; (vaddr) s2 ; [esp] (len, buffer) decrypt, (len, vaddr) s2
-        	push 0		;[esp] (padding),  (len, buffer) decrypt, (len, vaddr) s2.
-        	push edx	;[esp] (vaddr) s2, padding,(len,buffer) decrypt , (len, vaddr) s2.
+        	pop edx		; (va) s2 ; [esp] (len, buffer) decrypt, (len, va) s2
+        	push 0		;[esp] (padding),  (len, buffer) decrypt, (len, va) s2.
+        	push edx	;[esp] (va) s2, padding,(len,buffer) decrypt , (len, va) s2.
 
         	push 0xfeffffff		; len
-        	push eax 	;[esp] (vaddr, len) c_s2, (vaddr) s2, padding,(len,buffer) decrypt , (len, vaddr) s2.
-        	push edx	;[esp] ((dst) s2, (vaddr, len) c_s2) func params, (vaddr) s2, padding,(len,buffer) decrypt , (len, vaddr) s2.
+        	push eax 	;[esp] (va, len) c_s2, (va) s2, padding,(len,buffer) decrypt , (len, va) s2.
+        	push edx	;[esp] ((dst) s2, (va, len) c_s2) func params, (va) s2, padding,(len,buffer) decrypt , (len, va) s2.
         	call lz77_decompress
-        	pop ebx	; (vaddr)s2 [esp](len) c_s2, (vaddr) s2, padding,(len,buffer) decrypt , (len, vaddr) s2.
+        	pop ebx	; (va)s2 [esp](len) c_s2, (va) s2, padding,(len,buffer) decrypt , (len, va) s2.
         	add esp, 0x10		;[esp]
-        	pop edx			;(len) decrypt [esp] (buffer) decrypt, (len, vaddr) s2
-        	add esp, edx ;Restore stack [esp] (len, vaddr) s2
+        	pop edx			;(len) decrypt [esp] (buffer) decrypt, (len, va) s2
+  	;;  ;comment the line below -2 B to the insertion affect expected va ...
+        	add esp, edx ;Restore stack [esp] (len, va) s2
         	test eax, eax
         	jnz _exit		;Fine
 
         .mprotect_stage_2:
         	push 0x5		;Flags R-X
-        	pop edx			;[esp] (len, vaddr) s2
+        	pop edx			;[esp] (len, va) s2
         	pop ecx			;(len) s2 [esp] (va) s2
         	;; push ebx		;[rsp] (va) s2
         	push ecx		;[rsp]  (va, va) s2
@@ -1460,17 +1465,17 @@ _start:
         .aslr:				;Save ebx
         	pop ecx
         	mov eax, ecx
-        	mov esi, 0xfeffffff	;expected vaddr
+        	mov esi, 0xfeffffff	;expected va
         	sub eax, esi
-        	push eax		;;[rsp]  aslr, (len, vaddr) s2
-        .save_vaddr2:
-        	mov edx, ebx		;edx = vaddr s2
-        .vaddr_s1:
+        	push eax		;;[rsp]  aslr, (len, va) s2
+        .save_va2:
+        	mov edx, ebx		;edx = va s2
+        .va_s1:
         	mov eax, ecx
-        	and eax, 0xfffff000	;s1 vaddr
-        	push eax		;[rsp] (vaddr)s1, aslr, (len, vaddr) s2
+        	and eax, 0xfffff000	;s1 va
+        	push eax		;[rsp] (va)s1, aslr, (len, va) s2
         .len_s1:
-        	push 0xfeffffff		;[rsp] (len, vaddr)s1, aslr, (len, vaddr) s2
+        	push 0xfeffffff		;[rsp] (len, va)s1, aslr, (len, va) s2
         .open:
         	mov ebx, ecx
         	xor ecx, ecx		;RD_ONLY
@@ -1483,8 +1488,8 @@ _start:
         .jmp_stage_2:
         	mov eax, 0xfeffffff		;Modify in C.
         	add edx, eax
-        	push edx ;; push (vaddr) s2
-        	ret;		 ;(pop rip [rsp] -> vaddr_s2_elf)[rsp] (fd, len, va) s1, aslr, (len, va) s2
+        	push edx ;; push (va) s2
+        	ret;		 ;(pop rip [rsp] -> va_s2_elf)[rsp] (fd, len, va) s1, aslr, (len, va) s2
 
         _exit:
         	xor ebx, ebx		;
@@ -1630,6 +1635,8 @@ _start:
         	call _start.return_crypt_compress_addr
 #+end_src
 
+:fold:
+
 #+begin_src asm :tangle payload/x32/payload.s :mkdirp yes
   payload:
           call .woody_write	;;
@@ -1655,7 +1662,7 @@ _start:
         ;; edi fd
         ;; ebp offset/0x1000
         ;; eax 192
-   ;[esp] (fd, len, vaddr) s1, aslr, (len, vaddr) s2 Fine
+   ;[esp] (fd, len, va) s1, aslr, (len, va) s2 Fine
   jmp_pad_s3:
         pop edx 		;Entry interp;[esp] (e) elf, (va) s3, (len, va) s2;
         pop esi			;Entry elf; [esp] (va) s3, (len, va) s2;
@@ -1680,21 +1687,21 @@ _start:
         push 0x2
         pop esi
         pop edi
-        push edi		;Save fd ;[esp] (fd, len, vaddr) s1, aslr, (len, vaddr) s2
+        push edi		;Save fd ;[esp] (fd, len, va) s1, aslr, (len, va) s2
         xor ebp, ebp
         push 192
         pop eax
         int 0x80
         cmp eax, -4095
         jae _exit
-        pop ebx		;Restore fd close fd ;[esp] (len, vaddr) s1, aslr, (len, vaddr) s2
+        pop ebx		;Restore fd close fd ;[esp] (len, va) s1, aslr, (len, va) s2
 
         push 0x6	;Close Sys nbr
         pop eax
         int 0x80
         test eax, eax
         jnz _exit
-   ;[esp] (len, vaddr) s1, aslr, (len, vaddr) s2
+   ;[esp] (len, va) s1, aslr, (len, va) s2
         pop ecx			;(len) [esp] (va) s1, aslr, (len, va) s2
         pop ebx			;(va) s1, [esp] aslr, (len, va) s2
         push 91			;Munmap
@@ -1706,17 +1713,17 @@ _start:
         jmp end_s2
    return_ehdr_ptr: 		;[X] Fine Stack
         pop edi			;[esp] aslr, (len, va) s2 -> Fine
-        push edi		; [esp] ehdr, aslr, (len, vaddr)s2 -> Fine
+        push edi		; [esp] ehdr, aslr, (len, va)s2 -> Fine
         .get_base:		;[X]
         mov    edx, DWORD  [edi+0x1c] ; eax = e_phoff
         add edx, edi      ; PHDR
-        pop eax	       ;ehdr  [esp] aslr, (len, vaddr)s2.
-        pop ebx	       ;aslr [esp] (len, vaddr) s2;
-        push ebx       ;[esp] aslr, (len, vaddr) s2;
-        push -1	       ;[esp] (fd) args, aslr, (len, vaddr) s2;
+        pop eax	       ;ehdr  [esp] aslr, (len, va)s2.
+        pop ebx	       ;aslr [esp] (len, va) s2;
+        push ebx       ;[esp] aslr, (len, va) s2;
+        push -1	       ;[esp] (fd) args, aslr, (len, va) s2;
 
-        push ebx       ;[esp](aslr, fd) args, aslr, (len, vaddr) s2; .
-        push eax       ;[esp](ehdr, aslr, fd) args, aslr, (len, vaddr) s2;
+        push ebx       ;[esp](aslr, fd) args, aslr, (len, va) s2; .
+        push eax       ;[esp](ehdr, aslr, fd) args, aslr, (len, va) s2;
         ;; load elf (ehdr,aslr, fd)
         call load_elf; Fine esp
         add esp, 0xc
@@ -1745,7 +1752,7 @@ _start:
         pop edx			;elf va Discard (va) elf [esp] aslr, (len, va) s2 ;
         pop edx			;aslr [esp] (len, va) s2 ;
    ;; [esp] (len, va) s2
-        mov esi, 0xfeffffff	;vaddr s3 Modified in C
+        mov esi, 0xfeffffff	;va s3 Modified in C
         test esi, esi
         lea edi, [esi + edx]	;
         cmovne esi, edi
@@ -1881,12 +1888,12 @@ _start:
 
    .end:
         ret
-   ; int load_elf_segment(void *base, void *elf_ptr, Elf32_Phdr *phdr, uint32_t min_vaddr, int fd)
+   ; int load_elf_segment(void *base, void *elf_ptr, Elf32_Phdr *phdr, uint32_t min_va, int fd)
    ; Parameters:
    ;   [ebp+0x8] = base (base address where ELF should be loaded)
    ;   [ebp+0xc] = elf_ptr (pointer to ELF file in memory)
    ;   [ebp+0x10] = phdr (pointer to current program header)
-   ;   [ebp+0x14] = min_vaddr (minimum virtual address of all segments)
+   ;   [ebp+0x14] = min_va (minimum virtual address of all segments)
    ;   [ebp+0x18] = fd (file descriptor, -1 for buffer)
 
    load_elf_segment:
@@ -2234,18 +2241,18 @@ _start:
        cmp    eax, 0x1
        jne    .program_header_loop_next
 
-       ; Get the virtual address of the segment (p_vaddr)
+       ; Get the virtual address of the segment (p_va)
        mov    eax, DWORD  [ebp-0x14]
        shl    eax, 0x5          ; Multiply by 32
        add    eax, DWORD  [ebp-0x24]
-       mov    edx, DWORD  [eax+0x8] ; p_vaddr
+       mov    edx, DWORD  [eax+0x8] ; p_va
 
        ; Update mmin virtual address if needed
        cmp    edx, DWORD  [ebp-0xc]
        jae    .no_update_min_addr
        mov    DWORD  [ebp-0xc], edx
    .no_update_min_addr:
-        add edx, DWORD [eax+0x14] ; p_vaddr + p_memsz
+        add edx, DWORD [eax+0x14] ; p_va + p_memsz
        cmp    edx, DWORD  [ebp-0x10]
         jle .program_header_loop_next
         mov    DWORD  [ebp-0x10], edx
@@ -2474,18 +2481,41 @@ _start:
   	ret
 #+end_src
 
+:END:
+
 * How to:
-**  Improve:
 ** Get bytecode:
 Compile asm
 ~nasm -f elf{64,32} path.s~
 ~readelf -WS path.o~
+:fold:
 #+begin_quote
 Section Headers:
   [Nr] Name       Type                       Off    Size
   [ 1] .text             PROGBITS    000180 0001b7
   #+end_quote
-using off for skip and size for count.
-~dd if=path.o of=dst skip=$((0x180)) bs=1 count=$((0x1B7))~
+:END:
+using off for skip and len for count.
+~dd if=path.o of=dst skip=$((0xoff)) bs=1 count=$((0xlen))~
+add string in case of stage1
+:fold:
+#+begin_src sh
+hexdump -h
+Options:
+ -e, --format <format>     format string to be used for displaying data
+ -v, --no-squeezing        output identical lines
 
-* Working on it
+#+end_src
+:END:
+
+~str=$(echo -en "/proc/self/exe\x00" | hexdump -v -e '1/1 "%02x"')~
+:fold:
+#+begin_src sh
+xxd -h
+    -p         output in postscript plain hexdump style.
+    -c cols     format <cols> octets per line. Default 16 (-i: 12, -ps: 30).
+    -r          reverse operation: convert (or patch) hexdump into binary.
+
+#+end_src
+:END:
+~xxd -p -c 0  bytecode/x32/stage1.bin | sed "s/\(c3\)\{15\}/$a/g" | xxd -r -p > output_bin~

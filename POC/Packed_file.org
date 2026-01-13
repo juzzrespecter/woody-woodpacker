@@ -632,7 +632,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   }
 
   const t_patch_delta g_stage1[] = {
-  	(t_patch_delta){ .offset = 0xd, .len = 35, .arch = ARCH_X86, .sign = 1 },
+  	(t_patch_delta){ .offset = 0xd, .len = 34, .arch = ARCH_X86, .sign = 1 },
   };
 
   static void apply_patches_to_buffer_with_patch_desc(t_buffer *stage1,
