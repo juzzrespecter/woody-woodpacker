@@ -116,3 +116,40 @@ Type ~C-c C-c~ or mark the region and type ~M-x eval-region~
    (my/files-in-relative-dir "./POC/" "\\.org$"))
 
 #+end_src
+* How to change the color of the promp for exit status last command
+#+begin_src sh
+  RED="\[\033[0;31m\]"
+  GREEN="\[\033[0;32m\]"
+  YELLOW="\[\033[0;33m\]"
+  CYAN="\[\033[0;36m\]"
+  RESET="\[\033[0m\]" # Reset color
+  prompt_color() {
+      if [[ $? -eq 0 ]]; then
+  	echo -en "$GREEN" # Success color
+      else
+  	echo -en "$RED"   # Failure color
+      fi
+  }
+  PS1="$(prompt_color)> ${RESET}"
+#+end_src
+* Auto assembly, patch, generate bytecod.
+#+begin_src sh
+  # xxd -h
+      # -l len      stop after <len> octets.
+      # -c cols     format <cols> octets per line. Default 16 (-i: 12, -ps: 30).
+      # -ps         output in postscript plain hexdump style.
+      # -r          reverse operation: convert (or patch) hexdump into binary.
+      # -s [+][-]seek  start at <seek> bytes abs. (or +: rel.) infile offset.
+  test_stage()
+  {
+      nasm -f elf"$a" payload/x"$a"/"$f".s
+      off=$((0x$(readelf -WS payload/x"$a"/"$f".o | grep .text | awk '{ print $6}')))
+      len=$((0x$(readelf -WS payload/x"$a"/"$f".o | grep .text | awk '{ print $7}')))
+      if [[ "$f" == "stage1" ]]; then
+  	xxd -s $off -l $len -p -c 0 payload/x"$a"/"$f".o   | sed "s/\(c3\)\{15\}/$str/g" | xxd -r -p > bytecode/x"$a"/"$f".bin
+  	rm out.bin
+      else
+  	dd if=payload/x"$a"/"$f".o of=bytecode/x"$a"/"$f".bin bs=1 skip=$((0x$off)) count=$((0x$len))
+      fi
+  }
+#+end_src

