@@ -225,41 +225,45 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   }
 
   //cmn/math.c
-  uint64_t align_up(uint64_t size, uint64_t alignment)
+  /* static size_t align_down(uint64_t size, uint64_t alignment) */
+  /* { */
+  /* 	return ((size / alignment) * alignment); */
+  /* } */
+  static size_t align_up(uint64_t size, uint64_t alignment)
   {
       return (((size + alignment - 1) / alignment) * alignment);
   }
 
   // I leave it here
   //cmn/invalid.c
-  bool invalid_read(int fd, void *ptr, size_t len)
+  static bool invalid_read(int fd, void *ptr, size_t len)
   {
       return (read(fd, ptr, len) != (ssize_t)len);
   }
 
-  bool invalid_write(int fd, void *ptr, size_t len)
+  static bool invalid_write(int fd, void *ptr, size_t len)
   {
       return (write(fd, ptr, len) != (ssize_t)len);
   }
 
-  bool invalid_buffer(t_buffer *buf)
+  static bool invalid_buffer(t_buffer *buf)
   {
       return (!buf->data || !buf->len);
   }
 
-  bool invalid_aes(t_aes128_key *key)
-  {
-  	const int max_ndx = (sizeof(key->ints) / sizeof(*key->ints));
-  	int	i;
+  /* static bool invalid_aes(t_aes128_key *key) */
+  /* { */
+  /* 	const int max_ndx = (sizeof(key->ints) / sizeof(*key->ints)); */
+  /* 	int	i; */
 
-  	i = 0;
-  	while (i < max_ndx && key->ints[i] == 0)
-  		i++;
-  	return (max_ndx == i);
-  }
+  /* 	i = 0; */
+  /* 	while (i < max_ndx && key->ints[i] == 0) */
+  /* 		i++; */
+  /* 	return (max_ndx == i); */
+  /* } */
 
   //cmn/buffer.c
-  t_buffer alloc_concat_buffers(const t_buffer *a, const t_buffer *b)
+  static t_buffer alloc_concat_buffers(const t_buffer *a, const t_buffer *b)
   {
   	t_buffer concat;
 
@@ -286,23 +290,23 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   }
 
   //elf/analysis.c
-  size_t elf_is_gnu_stack_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum)
-  {
-      t_elf_ph phdr;
-      uint64_t i;
+  /* static size_t elf_is_gnu_stack_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum) */
+  /* { */
+  /*     t_elf_ph phdr; */
+  /*     uint64_t i; */
 
-      i = 0;
-      while (i < phnum)
-  	{
-  	    phdr = elf_get_program_header(ehdr, i);
-  	    if (elf_get_program_header_type(&phdr, class) == PT_GNU_STACK) // If not loadable ignore
-  			return (1);
-  	    i++;
-  	}
-      return  (0);
-  }
+  /*     i = 0; */
+  /*     while (i < phnum) */
+  /* 	{ */
+  /* 	    phdr = elf_get_program_header(ehdr, i); */
+  /* 	    if (elf_get_program_header_type(&phdr, class) == PT_GNU_STACK) // If not loadable ignore */
+  /* 			return (1); */
+  /* 	    i++; */
+  /* 	} */
+  /*     return  (0); */
+  /* } */
 
-  size_t elf_get_gnu_stack_phdr_ndx(const t_elf_h *ehdr, unsigned char class, uint64_t phnum)
+  static size_t elf_get_gnu_stack_phdr_ndx(const t_elf_h *ehdr, unsigned char class, uint64_t phnum)
   {
       t_elf_ph phdr;
       uint64_t i;
@@ -888,8 +892,74 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       return l;
   }
 
+
+  // elf/check valid for execution
+  /* size_t elf_get_va(t_elf_ph *phdr, size_t phnum, unsigned char class) */
+  /* { */
+  /* 	size_t min_va; */
+  /* 	size_t max_va; */
+  /*     size_t p_va; */
+  /* 	size_t seg_end; */
+
+  /* 	while (phnum--) */
+  /* 	{ */
+  /* 		if (elf_get_program_header_type(&phdr[phnum], class) != PT_LOAD) */
+  /* 			continue; */
+  /* 		p_va = elf_get_program_header_vaddr(&phdr[phnum], class); */
+  /* 		if (p_va < min_va) */
+  /* 			min_va = p_va; */
+  /* 		seg_end = p_va + elf_get_program_header_memsz(&phdr[phnum], class); */
+  /* 		if (seg_end > max_va) */
+  /* 			max_va = seg_end; */
+  /* 	} */
+
+  /* 	min_va = align_down(min_va, 0x1000); */
+  /* 	max_va = align_up(max_va, 0x1000); */
+  /* 	return (max_va - min_va); */
+  /* } */
+  /* #include <sys/resource.h> //rlimit, getrlimit */
+  /* //Valid VA */
+  /* bool elf_invalid_va_len(t_elf_ph *phdr, size_t phnum, unsigned char class, size_t s1_len, size_t s2_len) */
+  /* { */
+  /* 	const size_t required_va = elf_get_va(phdr, phnum, class) + s1_len + 2 * s2_len; */
+  /* 	struct rlimit rl; */
+
+  /* 	getrlimit(RLIMIT_AS, &rl); */
+  /* 	return (rl.rlim_cur != RLIM_INFINITY && required_va > rl.rlim_cur); */
+  /* } */
+
+  // Cpu/Os Validation
+  #include <cpuid.h> // __get_cpuid
+  // Valid Set of Instructions
+  static int cpu_has_sse(int edx) {
+      return (edx & (1 << 25)) != 0;
+  }
+
+  static int os_supports_xmm(int edx) {
+  	return (edx & (1 << 24)) != 0; // FXSR
+  }
+  //! FXSR floating-point context fast save and restore.
+
+  static int cpu_supports_cmov(int edx) {
+        return (edx & (1 << 14)) != 0; // CMOV
+  }
+
+  static bool valid_cpu_x86(void)
+  {
+  	unsigned int eax;
+  	unsigned int ebx;
+  	unsigned int ecx;
+  	unsigned int edx;
+
+  	if (!__get_cpuid(1, &eax, &ebx, &ecx, &edx))
+  		return (0);
+  	return (cpu_has_sse(edx)
+  		&& os_supports_xmm(edx)
+  		&& cpu_supports_cmov(edx));
+  }
+
   //t_elf_write_ctx
-  t_phdr_layout phdr_rx_layout(const t_elf_write_ctx *ctx)
+  static t_phdr_layout phdr_rx_layout(const t_elf_write_ctx *ctx)
   {
       const uint64_t ehdr_sz = elf_get_struct_size_elf_header((char *)ctx->ehdr->elf32);
       const uint64_t phdr_sz = elf_get_struct_size_elf_ph(ctx->class);
@@ -1088,7 +1158,7 @@ CLOCK: [2025-12-17 Wed 07:25]--[2025-12-17 Wed 07:47] =>  0:22
 CLOCK: [2025-12-17 Wed 07:49]--[2025-12-17 Wed 08:35] =>  0:46
 :END:
 ** Tasks
-*** TODO Modify ASM
+*** DONE Modify ASM
 :LOGBOOK:
 CLOCK: [2026-01-12 Mon 13:50]--[2026-01-12 Mon 14:10] =>  0:20
 CLOCK: [2026-01-12 Mon 12:51]--[2026-01-12 Mon 13:11] =>  0:20
@@ -1158,7 +1228,7 @@ CLOSED: [2026-01-01 Thu 16:58]
 - State "DONE"       from "TODO"       [2026-01-01 Thu 16:58]
 CLOCK: [2026-01-01 Thu 16:32]--[2026-01-01 Thu 16:54] => 0:22
 :END:
-***** TODO Use mmap for huge data.
+***** DONE Use mmap for huge data.
 :LOGBOOK:
 CLOCK: [2026-01-10 Sat 06:37]--[2026-01-10 Sat 12:22] =>  5:45
 CLOCK: [2026-01-03 Sat 15:56]--[2026-01-03 Sat 16:16] =>  0:20
@@ -1211,26 +1281,52 @@ CLOSED: [2025-12-29 Mon 10:03]
 :END:
 ******* x64
 ***** COMMENT Not Todo recode what already works for better org.
-*** HOLD Modify C.
-**** x86 & x64
+*** DONE HOLD Modify C.
+**** DONE x86 & x64
 ***** Check address space limits:
 #+begin_src c :tangle no
-size_t lo = SIZE_MAX, hi = 0;
+  size_t get_elf_va(t_elf_ph *phdr, int phnum, unsigned char class)
+  {
+      size_t min_va = -1;
+      size_t max_va = 0;
+  	size_t p_va;
+  	size_t p_memsz;
+  	size_t seg_end;
 
-for each PT_LOAD:
-    lo = min(lo, phdr.p_vaddr);
-    hi = max(hi, phdr.p_vaddr + phdr.p_memsz);
+      while (phnum--)
+  	{
+  		if (elf_get_program_header_type(&phdr, class) != PT_LOAD)
+  			continue;
+  		p_va = elf_get_program_header_vaddr(&phdr, class);
+  		if (p_va < min_va)
+  			min_va = p_va;
+  		seg_end = p_va + elf_get_program_header_memsz(&phdr, class);
+  		if (seg_end > max_va)
+  			max_va = seg_end;
+      }
 
-size_t vm_required = hi - lo;
+      // Align to page boundaries
+      min_va &= ~(PAGE_SIZE - 1);// align down()
+      max_va = (*max_va + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);// align up()
+  	return (max_va - min_va);
+  }
+#+end_src
 
+#+begin_src c :tangle no
+required_va = vm_required + s1 len + 2 * s2 len
+#+end_src
+
+#+begin_src c :tangle no
+size_t vm_required = get_elf_va(phdr, phnum, class);
+size_t required_va = vm_required + s1 len + 2 * s2 len
   struct rlimit rl;
   getrlimit(RLIMIT_AS, &rl);
 
   if (rl.rlim_cur != RLIM_INFINITY &&
-      vm_required > rl.rlim_cur)
+      required_va > rl.rlim_cur)
       -> guaranteed failure
 #+end_src
-**** x86
+**** DONE x86
 ~https://asm-docs.microagi.org/x86/cpuid.html~
 ~https://asm-docs.microagi.org/x86/cpuid.html#fig-3-8~
 ***** CPU  support SSE
@@ -1303,3 +1399,15 @@ munmap s2
 r/edx = 0
 jmp target/interp_entrypoint.
 #+end_quote
+* Automatization
+#+begin_src emacs-lisp
+(defun my-c-make-function-static ()
+  "Insert 'static' at beginning of current C function and move to next."
+  (interactive)
+  (c-beginning-of-defun)
+  (unless (looking-at-p "\\s-*static\\b")
+    (insert "static "))
+  (c-end-of-defun)
+  (c-beginning-of-defun))
+
+#+end_src
