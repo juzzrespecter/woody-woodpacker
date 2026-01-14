@@ -1387,7 +1387,7 @@ _start:
         	pop ecx			; (len) s2 [esp]
         	push ecx		; [esp] (len) s2
         	push eax		; [esp] (va, len) s2
-
+  .decrypt_mmap:
          	xor    ebp, ebp 	;offset
          	push -1			;
          	pop    edi		;fd
@@ -1408,12 +1408,8 @@ _start:
         	jmp end_of_stage1
   .return_crypt_compress_addr:
         	pop esi		; -> input
-  	;;
   	pop edx
   	push edx
-  				;Comment the line below. - 2 B to the insertion affect aes key....
-  	;; sub esp, edx
-  	;;       	mov edi, esp	 ;edi = buffer out; edx = len out;esi -> in; edx in_len
         	push edx	;[esp] (len, buffer) decrypt, (len, va) s2
         	push eax	;[esp] (va) s2, (len, buffer) decrypt, (len, va) s2
         	push esi	;-> in for simplify let's pass all an then he choose.
@@ -1431,51 +1427,53 @@ _start:
         	add esp, 0x10
         	test eax, eax
         	jz _exit
-        	pop edx		; (va) s2 ; [esp] (len, buffer) decrypt, (len, va) s2
-        	push 0		;[esp] (padding),  (len, buffer) decrypt, (len, va) s2.
-        	push edx	;[esp] (va) s2, padding,(len,buffer) decrypt , (len, va) s2.
-
-        	push 0xfeffffff		; len
-        	push eax 	;[esp] (va, len) c_s2, (va) s2, padding,(len,buffer) decrypt , (len, va) s2.
-        	push edx	;[esp] ((dst) s2, (va, len) c_s2) func params, (va) s2, padding,(len,buffer) decrypt , (len, va) s2.
-        	call lz77_decompress
-        	pop ebx	; (va)s2 [esp](len) c_s2, (va) s2, padding,(len,buffer) decrypt , (len, va) s2.
-        	add esp, 0x10		;[esp]
-        	pop edx			;(len) decrypt [esp] (buffer) decrypt, (len, va) s2
-  	;;  ;comment the line below -2 B to the insertion affect expected va ... add esp, edx ;Restore stack [esp] (len, va) s2
-        	test eax, eax
+        	pop edx		; (va) s2 ; [esp] (len, len, va) s2
+        	push edx	;[esp] (va, len, len, va) s2.
+        	push 0xfeffffff		; ;[esp] (len) c_s2, (va) s2,  (len, len, va) s2.
+        	push eax 	;[esp] (va, len) c_s2, (va, len, len, va) s2.
+        	push edx	;[esp] ((dst) s2, (va, len) c_s2) func params, (va, len, len, va) s2.
+        	call lz77_decompress	;Previous 3 B -> New 8 B
+  	test eax, eax
         	jnz _exit		;Fine
-
-        .mprotect_stage_2:
+  .munmap_decrypt: 	;[esp] ((dst) s2, (va, len) c_s2) func params, (va, len, len, va) s2.
+  	pop ebx			;(va) s2,[esp] (va, len) c_s2) func params, (va, len, len, va) s2.
+  	pop ebx			;(va) c_s2[esp] ((len) c_s2) func params, (va, len, len, va) s2.
+          pop ecx 		;(len) c_s2[esp] (va, len, len, va) s2.
+          push 91			;munmap[esp] (va, len, len, va) s2.
+  	pop eax			;[esp] (va, len, len, va) s2.
+  	int 0x80		;[esp] (va, len, len, va) s2.
+  .set_var_stage_2:		;[esp] (va, len, len, va) s2.
+  	pop ebx			;(va) s2 [esp] (len, len, va) s2.
+        	pop edx			;(len) s2 [esp] (len, va) s2
+  .mprotect_stage_2:
         	push 0x5		;Flags R-X
         	pop edx			;[esp] (len, va) s2
         	pop ecx			;(len) s2 [esp] (va) s2
-        	;; push ebx		;[rsp] (va) s2
-        	push ecx		;[rsp]  (va, va) s2
+        	push ecx		;[rsp]  (len, va) s2
         	push 125
         	pop eax
         	int 0x80
         	test eax, eax
-          	jnz _exit
-        .init_open_s1:
+          jnz _exit
+  .init_open_s1:
         	call .aslr
         ._proc_self_exe:
         	times 15 ret
-        .aslr:				;Save ebx
+  .aslr:				;Save ebx
         	pop ecx
         	mov eax, ecx
         	mov esi, 0xfeffffff	;expected va
         	sub eax, esi
         	push eax		;;[rsp]  aslr, (len, va) s2
-        .save_va2:
+  .save_va2:
         	mov edx, ebx		;edx = va s2
-        .va_s1:
+  .va_s1:
         	mov eax, ecx
         	and eax, 0xfffff000	;s1 va
         	push eax		;[rsp] (va)s1, aslr, (len, va) s2
-        .len_s1:
+  .len_s1:
         	push 0xfeffffff		;[rsp] (len, va)s1, aslr, (len, va) s2
-        .open:
+  .open:
         	mov ebx, ecx
         	xor ecx, ecx		;RD_ONLY
         	push 5
@@ -1484,13 +1482,13 @@ _start:
         	test eax, eax
         	js _exit
         	push eax		;[rsp] (fd, len, va) s1, aslr, (len, va) s2
-        .jmp_stage_2:
+  .jmp_stage_2:
         	mov eax, 0xfeffffff		;Modify in C.
         	add edx, eax
         	push edx ;; push (va) s2
         	ret;		 ;(pop rip [rsp] -> va_s2_elf)[rsp] (fd, len, va) s1, aslr, (len, va) s2
 
-        _exit:
+  _exit:
         	xor ebx, ebx		;
         	push 1
         	pop eax

@@ -198,7 +198,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
       while (i < count)
   	{
           if ((deltas[i].arch == arch || deltas[i].arch == ARCH_ALL)
-  			&& deltas[i].offset < base_offset)
+  			&& deltas[i].offset <= base_offset)
   			delta += deltas[i].len * deltas[i].sign;
   		i++;
       }
@@ -631,13 +631,12 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   	return (ctx);
   }
 
-
-
-
   const t_patch_delta g_stage1[] = {
   	(t_patch_delta){ .offset = 0xd, .len = 34, .arch = ARCH_X86, .sign = 1 },
   	(t_patch_delta){ .offset = 0x3e, .len = 2, .arch = ARCH_X86, .sign = -1 }, /* -2 B to the insertion affect aes key.... */
   	(t_patch_delta){ .offset = 0xa0, .len = 2, .arch = ARCH_X86, .sign = -1 }, /* -2 B to the insertion affect expected va */
+  	(t_patch_delta){ .offset = 0x64, .len = 2, .arch = ARCH_X86, .sign = -1 }, /* -2 B affect to compress hdr len */
+  	(t_patch_delta){ .offset = 0x66, .len = 5, .arch = ARCH_X86, .sign = 1 }, /* -2 B affect passed compress hdr len */
   };
 
   static void apply_patches_to_buffer_with_patch_desc(t_buffer *stage1,
@@ -657,8 +656,6 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
               ft_memcpy(stage1->data + final_off, patches_desc[i].value, len);
       }
   }
-
-
 
   static void stage1_build_patch_desc(
       t_patch_desc desc[STAGE1_PATCH_COUNT],
