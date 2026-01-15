@@ -105,7 +105,8 @@
   # include <stdint.h>  // uint64_t, uint32_t
   # include <stdbool.h> // bool
   # include <stddef.h> // size_t
-  # include <unistd.h>//write, read
+  # include <unistd.h>//write, read, lseek, open
+  # include <fcntl.h> // O_RDONLY, close
   # include "libft.h" //ft_bzero, ft_memcpy
 
   typedef union u_type
@@ -160,6 +161,18 @@
     	t_aes128_key key;
   }	t_encrypt;
 
+  typedef enum e_bin_type {
+  	STAGE_1,
+  	STAGE_2,
+  	STAGE_3,
+  	PAYLOAD_BIN,
+  	NUM_BIN_TYPES
+  }	t_bin_type;
+
+
+  //file validation
+  int		get_file(int *fd, const char *path); //open
+  int 	get_file_size(int fd, off_t *file_size);//lseek
   // overflow
   //stdbool (bool), stdint (uint64_t)
   bool	unsigned_overflow_limit(uint64_t times, uint64_t size, uint64_t limit);
@@ -242,7 +255,6 @@
   		i++;
   	}
   }
-
     size_t compute_patch_offset(t_arch arch, size_t base_offset,
     	const t_patch_delta *deltas, size_t count)
   {
@@ -278,7 +290,98 @@
       const t_type *val, size_t count, size_t value_size);
 #+end_src
 
+#+begin_src c :tangle srcs/cmn/stages.c :mkdirp yes
+  #include "common.h"
 
+  t_buffer	load_stage_buffer(t_arch arch, t_bin_type bin_type)
+    {
+  	  static const char *const	binary_paths[NUM_ARCHS][NUM_BIN_TYPES] = {
+        [ARCH_X86] = {
+            [STAGE_1]     = "bytecode/x32/stage1.bin",
+            [STAGE_2]     = "bytecode/x32/stage2.bin",
+            [STAGE_3]     = "bytecode/x32/stage3.bin",
+            [PAYLOAD_BIN] = "bytecode/x32/payload.bin"
+        },
+        [ARCH_X64] = {
+            [STAGE_1]     = "bytecode/x64/stage1.bin",
+            [STAGE_2]     = "bytecode/x64/stage2.bin",
+            [STAGE_3]     = "bytecode/x64/stage3.bin",
+            [PAYLOAD_BIN] = "bytecode/x64/payload.bin"
+        }
+    };
+        int						stage_fd;
+        t_buffer				stage;
+
+        stage_fd = open(binary_paths[arch][bin_type], O_RDONLY);
+        if (stage_fd < 0 || get_file_size(stage_fd, (off_t *)&stage.len) || !stage.len)
+        {
+    		if (stage_fd >= 0)
+    			close(stage_fd);
+    		return ((t_buffer){0});
+        }
+        stage.data = malloc(stage.len);
+        if (!stage.data)
+        {
+    		close(stage_fd);
+    		return ((t_buffer){0});
+        }
+        bool invalid = invalid_read(stage_fd, stage.data, stage.len);
+        close(stage_fd);
+        if (!invalid)
+    		return (stage);
+    	free(stage.data);
+    	return ((t_buffer){0});
+    }
+
+      t_buffer load_and_apply_patches_to_buffer(t_arch arch, t_bin_type bin_type, const t_patch_set *patch)
+    {
+    	t_buffer binary;
+
+    	ft_bzero(&binary, sizeof(binary));
+    	binary = load_stage_buffer(arch, bin_type);
+    	if (!invalid_buffer(&binary))
+    		apply_patches_to_buffer(binary.data, patch);
+    	return (binary); // Success
+    }
+#+end_src
+
+#+begin_src c :tangle include/common.h :mkdirp yes
+  //stages
+  t_buffer	load_stage_buffer(t_arch arch, t_bin_type bin_type);
+  t_buffer load_and_apply_patches_to_buffer(t_arch arch, t_bin_type bin_type, const t_patch_set *patch);
+#+end_src
+
+#+begin_src c :tangle src/elf/file.c :mkdirp yes
+  #include "common.h"
+
+  int	get_file(const char *filename, int *fd)
+  {
+  	,*fd = open(filename, O_RDONLY);
+
+  	if (*fd < 0)
+          return (ERROR_STDL);
+  	return (SUCCESS);
+  }
+
+  int get_file_size(int fd, off_t *file_size)
+  {
+  	,*file_size = lseek(fd, 0, SEEK_END);
+  	if (*file_size == ERROR_STDL)
+  	{
+  		perror("Failed to seek the end of file");
+  		return (FAIL_LSEEK);
+  	}
+  	if (lseek(fd, 0, SEEK_SET) == ERROR_STDL)
+  	{
+  		perror("Failed to seek the begin of file");
+  		return (FAIL_LSEEK);
+  	}
+  	return (SUCCESS);
+  }
+#+end_src
+#+begin_src c :tangle include/common.h :mkdirp yes
+
+#+end_src
 #+begin_src c :tangle include/common.h :mkdirp yes
 # endif
 #+end_src

@@ -27,6 +27,7 @@
       						get_elfh_e_ident \
       						valid_elfh \
       						valid_elf_h_2 \
+  		                                            analysis \
 
 
       ELF_PARSER-DIR                        :=      elf/parser/
@@ -39,12 +40,15 @@
 
       ELF_SETTERS-SRCS			:=	$(addprefix $(ELF_SETTERS-DIR), $(ELF_SETTERS-SRC))
 
+
       CMN-SRC				:= 	overflow \
     	                        align \
     	  encrypt \
-    	  buffer\
-          invalid\
-  patch\
+    	  buffer \
+          invalid \
+  patch \
+  		stages \
+
 
       CMN-DIR                                :=      cmn/
 
@@ -64,6 +68,7 @@
       ELF_PACKER-DIR                  := elf/packer/
       ELF_PACKER-SRC			:= elf_packer
       ELF_PACKER-SRCS				:=	$(addprefix $(ELF_PACKER-DIR), $(ELF_PACKER-SRC))
+
 
         SRCS					:= $(PROGRAM-SRC) $(CMN-SRCS) $(ELF_PARSER-SRCS) $(ELF_PACKER-SRCS) $(COMPRESS-SRCS) $(ELF_SETTERS-SRCS)
 

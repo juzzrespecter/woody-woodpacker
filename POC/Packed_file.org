@@ -58,11 +58,13 @@ NOPIE = ~Elfh_type == ET_EXEC~
 ** SElinux
 Don't allow to got a mmap with Write and exec. First write then mprotect Read|EXEC
 * Packer
+
 #+begin_src c :tangle srcs/elf/packer/elf_packer.c :mkdirp yes
   // Headers Begin
   #include <string.h>
   #include "woody.h"
-  #include "common.h" // align_up
+  #include "common.h"
+  #include "elf_format.h" // align_up, elf_get_gnu_phdr_ndx
   #include <stdbool.h>
   #include <unistd.h>
   #include <stdio.h>
@@ -153,88 +155,6 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
   	size_t s1_len;
   }	t_stage1_patch_values;
 // Headers End
-    //elf/analysis.c
-    /* static size_t elf_is_gnu_stack_phdr(t_elf_h *ehdr, unsigned char class, uint64_t phnum) */
-    /* { */
-    /*     t_elf_ph phdr; */
-    /*     uint64_t i; */
-
-    /*     i = 0; */
-    /*     while (i < phnum) */
-    /* 	{ */
-    /* 	    phdr = elf_get_program_header(ehdr, i); */
-    /* 	    if (elf_get_program_header_type(&phdr, class) == PT_GNU_STACK) // If not loadable ignore */
-    /* 			return (1); */
-    /* 	    i++; */
-    /* 	} */
-    /*     return  (0); */
-    /* } */
-
-    static size_t elf_get_gnu_stack_phdr_ndx(const t_elf_h *ehdr, unsigned char class, uint64_t phnum)
-    {
-        t_elf_ph phdr;
-        uint64_t i;
-
-        i = 0;
-        while (i < phnum)
-    	{
-    	    phdr = elf_get_program_header(ehdr, i);
-    	    if (elf_get_program_header_type(&phdr, class) == PT_GNU_STACK) // If not loadable ignore
-    			return (i);
-    	    i++;
-    	}
-        return  (0);
-    }
-
-    size_t elf_get_highest_used_vaddr_avalaible(const t_elf_h *ehdr, unsigned char class, uint64_t phnum)
-    {
-        t_elf_ph phdr;
-        uint64_t i;
-        size_t p_vaddr;
-        size_t p_end_vaddr;
-        size_t highest_used_addr = 0;
-
-        i = 0;
-        while (i < phnum)
-    	{
-    	    phdr = elf_get_program_header(ehdr, i);
-    	    if (elf_get_program_header_type(&phdr, class) != PT_LOAD) // If not loadable ignore
-    		{
-    		    i++;
-    		    continue ;
-    		}
-    	    p_vaddr = elf_get_program_header_vaddr(&phdr, class);
-    	    p_end_vaddr = p_vaddr + elf_get_program_header_memsz(&phdr, class);
-    	    if (highest_used_addr <= p_end_vaddr)
-    			highest_used_addr = p_end_vaddr;
-    	    i++;
-    	}
-        return  (highest_used_addr);
-    }
-
-    size_t elf_get_highest_loadable_vaddr_avalaible(const t_elf_h *ehdr, unsigned char class, uint64_t phnum)
-    {
-    	return (align_up(elf_get_highest_used_vaddr_avalaible(ehdr, class, phnum), 0x1000));
-    }
-
-    static uint64_t elf_get_closest_higher_p_offset(const t_elf_h *ehdr, unsigned char class, uint64_t phnum, uint64_t p_offset)
-    {
-        t_elf_ph phdr;
-        uint64_t ph_ndx;
-        uint64_t closest_offset = -1;
-        uint64_t cur_offset;
-        ph_ndx = 0;
-        while (ph_ndx < phnum)
-    	{
-    	    phdr = elf_get_program_header(ehdr, ph_ndx);
-    	    cur_offset = elf_get_program_header_offset(&phdr, class);
-    	    if (cur_offset > p_offset && cur_offset < closest_offset)
-    			closest_offset = cur_offset;
-    	    ph_ndx++;
-    	}
-        return (closest_offset);
-    }
-
     static void set_elf_headers(t_elf_h *ehdr, uint64_t *shnum, uint64_t *phnum, unsigned char *class)
     {
     	,*shnum = elf_get_elfh_shnum(ehdr);
@@ -244,58 +164,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
 
     // stages
     /* Path mapping table */
-    static const char *const g_binary_paths[NUM_ARCHS][NUM_BIN_TYPES] = {
-        [ARCH_X86] = {
-            [STAGE_1]     = "bytecode/x32/stage1.bin",
-            [STAGE_2]     = "bytecode/x32/stage2.bin",
-            [STAGE_3]     = "bytecode/x32/stage3.bin",
-            [PAYLOAD_BIN] = "bytecode/x32/payload.bin"
-        },
-        [ARCH_X64] = {
-            [STAGE_1]     = "bytecode/x64/stage1.bin",
-            [STAGE_2]     = "bytecode/x64/stage2.bin",
-            [STAGE_3]     = "bytecode/x64/stage3.bin",
-            [PAYLOAD_BIN] = "bytecode/x64/payload.bin"
-        }
-    };
 
-
-    t_buffer	load_stage_buffer(t_arch arch, t_bin_type bin_type)
-    {
-        int			stage_fd;
-        t_buffer	stage;
-
-        stage_fd = open(g_binary_paths[arch][bin_type], O_RDONLY);
-        if (stage_fd < 0 || get_file_size(stage_fd, (off_t *)&stage.len) || !stage.len)
-        {
-    		if (stage_fd >= 0)
-    			close(stage_fd);
-    		return ((t_buffer){0});
-        }
-        stage.data = malloc(stage.len);
-        if (!stage.data)
-        {
-    		close(stage_fd);
-    		return ((t_buffer){0});
-        }
-        bool invalid = invalid_read(stage_fd, stage.data, stage.len);
-        close(stage_fd);
-        if (!invalid)
-    		return (stage);
-    	free(stage.data);
-    	return ((t_buffer){0});
-    }
-
-    static t_buffer load_and_apply_patches_to_buffer(t_arch arch, t_bin_type bin_type, const t_patch_set *patch)
-    {
-    	t_buffer binary;
-
-    	ft_bzero(&binary, sizeof(binary));
-    	binary = load_stage_buffer(arch, bin_type);
-    	if (!invalid_buffer(&binary))
-    		apply_patches_to_buffer(binary.data, patch);
-    	return (binary); // Success
-    }
 
     //payload
 

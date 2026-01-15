@@ -97,20 +97,20 @@ Compare if the nbr of params is distint of 1.
 
 *** open the file.
 
-   #+begin_src c :tangle srcs/file_validation.c
-     #include "woody.h"
+   #+begin_src c :tangle no
+     //srcs/file_validation.c
+         #include "woody.h"
 
-     int	get_file(const char *filename, int *fd)
-      {
-        ,*fd = open(filename, O_RDONLY);
+         int	get_file(const char *filename, int *fd)
+          {
+            ,*fd = open(filename, O_RDONLY);
 
-        if (*fd < 0)
-          return (ERROR_STDL);
-        return (SUCCESS);
-      }
+            if (*fd < 0)
+              return (ERROR_STDL);
+            return (SUCCESS);
+          }
 
    #+end_src
-
 
 **** Adding to main:
 #+begin_src c :tangle "srcs/main.c" :mkdirp yes
@@ -122,7 +122,8 @@ Compare if the nbr of params is distint of 1.
 
 *** size of the file
 
-#+begin_src c :tangle srcs/file_validation.c :mkdirp yes
+#+begin_src c :tangle no
+  //srcs/file_validation.c :mkdirp yes
   int get_file_size(int fd, off_t *file_size)
     {
     ,*file_size = lseek(fd, 0, SEEK_END);
@@ -219,13 +220,7 @@ Cause:  ELF, PE and Mach O got Magic number/Signature
          ERR_INJECT_S3 = 11
        } t_error;
 
-       typedef enum {
-           STAGE_1,
-           STAGE_2,
-           STAGE_3,
-           PAYLOAD_BIN,
-           NUM_BIN_TYPES
-       } t_bin_type;
+
 #+end_src
 
 ELF Got a signature 4 bytes,  and PE and DOS got a Signature of the file of 2 Bytes and PE another inside one header 4 bytes.
@@ -246,10 +241,6 @@ I just check the DOS Signature (Could happend that is a DOS file and not PE shou
 #+end_src
 
    #+begin_src c :tangle include/woody.h
-     //file_validation
-     int	get_file(const char *filename, int *fd);
-     int 	get_file_size(int fg, off_t *file_size);
-
      // signature_check
      t_file_type get_ftype(const char *file_content, const off_t *file_size);
    #+end_src
