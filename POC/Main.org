@@ -57,6 +57,7 @@ _start:
   # include <unistd.h> // lseek
   # include <fcntl.h> // open, close
   # include <stdio.h> // perror
+  # include "common.h" // t_type
   # include "format_elf.h" // elf
   # include "compress.h" // lz77
   # include "libft.h" // lists
@@ -203,14 +204,6 @@ Cause:  ELF, PE and Mach O got Magic number/Signature
        	struct s_list	*next;
        }	t_list;
 
-       typedef union u_type
-       {
-         uint8_t	b;
-         uint16_t	b2;
-         uint32_t	b4;
-         uint64_t	b8;
-       } t_type;
-
        typedef enum e_error {
          ERR_SUCCESS = 0,
          ERR_INVALID_ELF = 1,
@@ -226,14 +219,6 @@ Cause:  ELF, PE and Mach O got Magic number/Signature
          ERR_INJECT_S3 = 11
        } t_error;
 
-       // Architecture indices
-       typedef enum	e_arch{
-           ARCH_X86,
-           ARCH_X64,
-           NUM_ARCHS,
-           ARCH_ALL=NUM_ARCHS
-       }	t_arch;
-
        typedef enum {
            STAGE_1,
            STAGE_2,
@@ -241,9 +226,6 @@ Cause:  ELF, PE and Mach O got Magic number/Signature
            PAYLOAD_BIN,
            NUM_BIN_TYPES
        } t_bin_type;
-
-
-
 #+end_src
 
 ELF Got a signature 4 bytes,  and PE and DOS got a Signature of the file of 2 Bytes and PE another inside one header 4 bytes.
@@ -266,7 +248,7 @@ I just check the DOS Signature (Could happend that is a DOS file and not PE shou
    #+begin_src c :tangle include/woody.h
      //file_validation
      int	get_file(const char *filename, int *fd);
-     int get_file_size(int fg, off_t *file_size);
+     int 	get_file_size(int fg, off_t *file_size);
 
      // signature_check
      t_file_type get_ftype(const char *file_content, const off_t *file_size);
@@ -279,7 +261,7 @@ I just check the DOS Signature (Could happend that is a DOS file and not PE shou
 
 #+end_src
 
-***  File Format Specific:
+*** File Format Specific:
 ****  Valid Format
  #+begin_src c  :tangle "srcs/main.c" :mkdirp yes
    int (*valid[2])(void*,off_t) = {

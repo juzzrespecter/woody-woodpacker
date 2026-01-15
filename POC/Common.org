@@ -1,10 +1,6 @@
 #+title: Common functions.
 
-* DONE Add overflow functs.
-CLOSED: [2025-06-19 Thu 17:45]
-:LOGBOOK:
-- State "DONE"       from "TODO"       [2025-06-19 Thu 17:45]
-:END:
+
 #+begin_src c :tangle  srcs/cmn/overflow.c :mkdirp yes
   #include <stdint.h>
   #include <stdbool.h>
@@ -69,50 +65,227 @@ CLOSED: [2025-06-19 Thu 17:45]
 
 #+end_src
 
+#+begin_src c :tangle srcs/cmn/align.c
+  #include "common.h"
+
+  size_t align_down(uint64_t size, uint64_t alignment)
+  {
+  	return ((size / alignment) * alignment);
+  }
+  size_t align_up(uint64_t size, uint64_t alignment)
+  {
+  	return (((size + alignment - 1) / alignment) * alignment);
+  }
+#+end_src
+
+#+begin_src c :tangle srcs/cmn/encrypt.c
+  #include "common.h"
+  //                                        unused ret_size,
+  void *encrypt(void *raw, size_t raw_size, size_t *ret_size, int *key)
+  {
+    	if (raw_size)
+  		,*ret_size = raw_size;
+  	if (key)
+  		ft_bzero(key, 128/8);
+    	return (raw);
+  }
+
+  t_encrypt wrapper_encrypt(t_buffer *raw)
+  {
+  	t_encrypt crypt;
+
+  	crypt.buffer.data = encrypt(raw->data, raw->len, &crypt.buffer.len, (int *)&crypt.key.ints[0]);
+  	return (crypt);
+  }
+#+end_src
+
 #+begin_src c :tangle include/common.h :mkdirp yes
   #ifndef COMMON_H
   # define COMMON_H
-  # include <stdint.h>
-  # include <stdbool.h>
+  # include <stdint.h>  // uint64_t, uint32_t
+  # include <stdbool.h> // bool
+  # include <stddef.h> // size_t
+  # include <unistd.h>//write, read
+  # include "libft.h" //ft_bzero, ft_memcpy
 
-  // overflow 
+  typedef union u_type
+  {
+  	uint8_t	b;
+  	uint16_t	b2;
+  	uint32_t	b4;
+  	uint64_t	b8;
+  } t_type;
+
+  typedef struct	s_patch_set {
+  	const size_t	*offsets;
+  	const t_type	*values; // change for void **
+  	const size_t	count;
+  	const size_t	value_size;// change for len
+  }	t_patch_set;
+  // Architecture indices
+  typedef enum	e_arch{
+  	ARCH_X86,
+  	ARCH_X64,
+  	NUM_ARCHS,
+  	ARCH_ALL=NUM_ARCHS
+  }	t_arch;
+
+
+  typedef struct s_patch_delta {
+  	size_t	offset;   // base offset
+  	size_t	len;      // bytes added or removed
+  	t_arch	arch;     // ARCH_X86, ARCH_X64, or NUM_ARCHS for "all"
+    	int8_t	sign;     // 1 or -1
+  } t_patch_delta;
+
+  typedef struct	s_patch_desc {
+  	size_t	base_off_x86;
+  	size_t	base_off_x64;
+  	size_t	len_x86;
+  	size_t	len_x64;
+  	void	*value;
+  }	t_patch_desc;
+
+  typedef struct	s_aes128_key {
+  	uint32_t ints[4];  // 128 bits
+  }	t_aes128_key;
+
+  typedef struct	s_buffer {
+      void	*data;
+      size_t	len;
+  }	t_buffer;
+
+  typedef struct	s_encrypt {
+    	t_buffer buffer;
+    	t_aes128_key key;
+  }	t_encrypt;
+
+  // overflow
+  //stdbool (bool), stdint (uint64_t)
   bool	unsigned_overflow_limit(uint64_t times, uint64_t size, uint64_t limit);
   bool	signed_overflow_limit(int64_t times, int64_t size, int64_t limit);
   bool	int_mult_overflow(int64_t times, int64_t size, uint64_t size_bits);
   bool	uint_mult_overflow(unsigned int times, unsigned int size);
   bool	unsigned_int_mult_overflow(uint64_t times, uint64_t size, uint64_t size_bits);
 
-typedef enum e_register
- {
-    RAX,
-    EAX,
-    RBX,
-    EBX,
-    RCX,
-    ECX,
-    RDX,
-    EDX,
-    RDI,
-    EDI,
-    RSI,
-    ESI,
-    RBP,
-    EBP,
-    RSP,
-    ESP,
-    R8,
-    R9,
-    R10,
-    R11,
-    R12,
-    R13,
-    R14,
-    R15,
-  }	t_registers ;
+  //align
+  //stddef.h (size_t)
+  //stdint.h (uint64_t)
+  size_t align_down(uint64_t size, uint64_t alignment);
+  size_t align_up(uint64_t size, uint64_t alignment);
+
+  //encrypt
+  //libft.h (ft_bzero)
+  void *encrypt(void *raw, size_t raw_size, size_t *ret_size, int *key);
+  t_encrypt wrapper_encrypt(t_buffer *raw);
 #+end_src
 
+#+begin_src c :tangle srcs/cmn/buffer.c :mkdirp yes
+  #include "common.h"
+
+  bool invalid_buffer(t_buffer *buf)
+  {
+    	return (!buf->data || !buf->len);
+  }
+
+  t_buffer alloc_concat_buffers(const t_buffer *a, const t_buffer *b)
+  {
+    	t_buffer concat;
+
+    	concat.len = a->len + b->len;
+    	concat.data = malloc(concat.len);
+    	if (!concat.data)
+    		return (concat);
+    	ft_memcpy(concat.data, a->data, a->len);
+    	ft_memcpy(concat.data + a->len, b->data, b->len);
+    	return (concat);
+  }
+#+end_src
+
+#+begin_src c :tangle include/common.h :mkdirp yes
+  //buffer
+  bool invalid_buffer(t_buffer *buf);
+  t_buffer alloc_concat_buffers(const t_buffer *a, const t_buffer *b);
+#+end_src
+
+#+begin_src c :tangle srcs/cmn/invalid.c :mkdirp yes
+  #include "common.h"
+
+  bool invalid_read(int fd, void *ptr, size_t len)
+  {
+      return (read(fd, ptr, len) != (ssize_t)len);
+  }
+
+  bool invalid_write(int fd, void *ptr, size_t len)
+  {
+      return (write(fd, ptr, len) != (ssize_t)len);
+  }
+#+end_src
+
+#+begin_src c :tangle include/common.h :mkdirp yes
+  //invalid
+    bool invalid_read(int fd, void *ptr, size_t len);
+    bool invalid_write(int fd, void *ptr, size_t len);
+#+end_src
+
+#+begin_src c :tangle srcs/cmn/patch.c :mkdirp yes
+   #include "common.h"
+
+  void apply_patches_to_buffer(char *buffer, const t_patch_set *patch)
+  {
+  	size_t	i;
+
+  	i = 0;
+  	while (i < patch->count)
+  	{
+  		ft_memcpy(buffer + patch->offsets[i], &patch->values[i].b8, patch->value_size);
+  		i++;
+  	}
+  }
+
+    size_t compute_patch_offset(t_arch arch, size_t base_offset,
+    	const t_patch_delta *deltas, size_t count)
+  {
+  	size_t delta;
+    	size_t i;
+
+    	delta = 0;
+    	i = 0;
+  	while (i < count)
+    	{
+  		if ((deltas[i].arch == arch || deltas[i].arch == ARCH_ALL)
+    			&& deltas[i].offset <= base_offset)
+    			delta += deltas[i].len * deltas[i].sign;
+    		i++;
+  	}
+  	return (base_offset + delta);
+  }
+
+  t_patch_set ft_init_patch_set(const size_t *off,
+      const t_type *val, size_t count, size_t value_size)
+  {
+  	t_patch_set patch = (t_patch_set){.offsets=off, .values=val, .count=count,
+    									  .value_size=value_size};
+  	return (patch);
+  }
+ #+end_src
+
+#+begin_src c :tangle include/common.h :mkdirp yes
+  void apply_patches_to_buffer(char *buffer, const t_patch_set *patch);
+  size_t compute_patch_offset(t_arch arch, size_t base_offset,
+  	const t_patch_delta *deltas, size_t count);
+    t_patch_set ft_init_patch_set(const size_t *off,
+      const t_type *val, size_t count, size_t value_size);
+#+end_src
 
 
 #+begin_src c :tangle include/common.h :mkdirp yes
-  # endif
+# endif
 #+end_src
+
+* Tasks:
+** DONE Add overflow functs.
+CLOSED: [2025-06-19 Thu 17:45]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2025-06-19 Thu 17:45]
+:END:
