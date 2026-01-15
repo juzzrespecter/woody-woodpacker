@@ -48,14 +48,14 @@
           invalid \
   patch \
   		stages \
+  		file
 
 
       CMN-DIR                                :=      cmn/
 
       CMN-SRCS				:=	$(addprefix $(CMN-DIR), $(CMN-SRC))
 
-      PROGRAM-SRC				:=	file_validation\
-      						main\
+      PROGRAM-SRC				:= main\
       						signature_check\
 
       #PROGRAM-DIR                          := ./

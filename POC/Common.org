@@ -80,6 +80,7 @@
 
 #+begin_src c :tangle srcs/cmn/encrypt.c
   #include "common.h"
+
   //                                        unused ret_size,
   void *encrypt(void *raw, size_t raw_size, size_t *ret_size, int *key)
   {
@@ -161,6 +162,14 @@
     	t_aes128_key key;
   }	t_encrypt;
 
+  typedef enum e_file_type {
+  	FT_ELF,
+  	/* FT_MACH_O, */
+  	FT_PE,  // FT_DOS?
+  	FT_UNKNOW,
+  	FT_NUM=FT_UNKNOW
+  }	t_file_type;
+
   typedef enum e_bin_type {
   	STAGE_1,
   	STAGE_2,
@@ -170,9 +179,7 @@
   }	t_bin_type;
 
 
-  //file validation
-  int		get_file(int *fd, const char *path); //open
-  int 	get_file_size(int fd, off_t *file_size);//lseek
+
   // overflow
   //stdbool (bool), stdint (uint64_t)
   bool	unsigned_overflow_limit(uint64_t times, uint64_t size, uint64_t limit);
@@ -255,6 +262,7 @@
   		i++;
   	}
   }
+
     size_t compute_patch_offset(t_arch arch, size_t base_offset,
     	const t_patch_delta *deltas, size_t count)
   {
@@ -280,6 +288,24 @@
     									  .value_size=value_size};
   	return (patch);
   }
+
+     void apply_patches_to_buffer_with_patch_desc(t_buffer *stage1,
+    	const t_arch arch,
+    	const t_patch_desc *patches_desc, size_t patch_count,
+    	const t_patch_delta *deltas, size_t delta_count)
+    {
+        for (size_t i = 0; i < patch_count; ++i)
+        {
+            uint64_t final_off = compute_patch_offset(arch,
+                                                      (size_t)ft_ternary((arch == ARCH_X64), (void *)patches_desc[i].base_off_x64
+    															 , (void *)patches_desc[i].base_off_x86),
+                                                      deltas, delta_count);
+
+            size_t	len = (size_t)ft_ternary(arch == ARCH_X64, (void *)patches_desc[i].len_x64,(void *) patches_desc[i].len_x86);
+            if (patches_desc[i].value && len)
+                ft_memcpy(stage1->data + final_off, patches_desc[i].value, len);
+        }
+    }
  #+end_src
 
 #+begin_src c :tangle include/common.h :mkdirp yes
@@ -288,31 +314,54 @@
   	const t_patch_delta *deltas, size_t count);
     t_patch_set ft_init_patch_set(const size_t *off,
       const t_type *val, size_t count, size_t value_size);
+  void apply_patches_to_buffer_with_patch_desc(t_buffer *stage1,
+    	const t_arch arch,
+    	const t_patch_desc *patches_desc, size_t patch_count,
+    	const t_patch_delta *deltas, size_t delta_count);
 #+end_src
 
 #+begin_src c :tangle srcs/cmn/stages.c :mkdirp yes
   #include "common.h"
 
-  t_buffer	load_stage_buffer(t_arch arch, t_bin_type bin_type)
-    {
-  	  static const char *const	binary_paths[NUM_ARCHS][NUM_BIN_TYPES] = {
+  static const char	*g_binary_paths[FT_NUM][NUM_ARCHS][NUM_BIN_TYPES] = {
+  	[FT_ELF] = {
         [ARCH_X86] = {
-            [STAGE_1]     = "bytecode/x32/stage1.bin",
-            [STAGE_2]     = "bytecode/x32/stage2.bin",
-            [STAGE_3]     = "bytecode/x32/stage3.bin",
-            [PAYLOAD_BIN] = "bytecode/x32/payload.bin"
+            [STAGE_1]     = "bytecode/elf/x32/stage1.bin",
+            [STAGE_2]     = "bytecode/elf/x32/stage2.bin",
+            [STAGE_3]     = "bytecode/elf/x32/stage3.bin",
+            [PAYLOAD_BIN] = "bytecode/elf/x32/payload.bin"
         },
         [ARCH_X64] = {
-            [STAGE_1]     = "bytecode/x64/stage1.bin",
-            [STAGE_2]     = "bytecode/x64/stage2.bin",
-            [STAGE_3]     = "bytecode/x64/stage3.bin",
-            [PAYLOAD_BIN] = "bytecode/x64/payload.bin"
+            [STAGE_1]     = "bytecode/elf/x64/stage1.bin",
+            [STAGE_2]     = "bytecode/elf/x64/stage2.bin",
+            [STAGE_3]     = "bytecode/elf/x64/stage3.bin",
+            [PAYLOAD_BIN] = "bytecode/elf/x64/payload.bin"
         }
+  	},
+  	[FT_PE] = {
+  	 [ARCH_X86] = {
+            [STAGE_1]     = "bytecode/pe/x32/stage1.bin",
+            [STAGE_2]     = "bytecode/pe/x32/stage2.bin",
+            [STAGE_3]     = "bytecode/pe/x32/stage3.bin",
+            [PAYLOAD_BIN] = "bytecode/pe/x32/payload.bin"
+        },
+        [ARCH_X64] = {
+            [STAGE_1]     = "bytecode/pe/x64/stage1.bin",
+            [STAGE_2]     = "bytecode/pe/x64/stage2.bin",
+            [STAGE_3]     = "bytecode/pe/x64/stage3.bin",
+            [PAYLOAD_BIN] = "bytecode/pe/x64/payload.bin"
+  	  }
+  	}
     };
+
+
+  t_buffer	load_stage_buffer(t_arch arch, t_bin_type bin_type, t_file_type ft)
+    {
+
         int						stage_fd;
         t_buffer				stage;
 
-        stage_fd = open(binary_paths[arch][bin_type], O_RDONLY);
+        stage_fd = open(g_binary_paths[ft][arch][bin_type], O_RDONLY);
         if (stage_fd < 0 || get_file_size(stage_fd, (off_t *)&stage.len) || !stage.len)
         {
     		if (stage_fd >= 0)
@@ -333,12 +382,17 @@
     	return ((t_buffer){0});
     }
 
+    t_buffer	load_stage_elf_buffer(t_arch arch, t_bin_type bin_type)
+    {
+  	  return (load_stage_buffer(arch, bin_type, FT_ELF));
+    }
+
       t_buffer load_and_apply_patches_to_buffer(t_arch arch, t_bin_type bin_type, const t_patch_set *patch)
     {
     	t_buffer binary;
 
     	ft_bzero(&binary, sizeof(binary));
-    	binary = load_stage_buffer(arch, bin_type);
+    	binary = load_stage_elf_buffer(arch, bin_type);
     	if (!invalid_buffer(&binary))
     		apply_patches_to_buffer(binary.data, patch);
     	return (binary); // Success
@@ -347,40 +401,77 @@
 
 #+begin_src c :tangle include/common.h :mkdirp yes
   //stages
-  t_buffer	load_stage_buffer(t_arch arch, t_bin_type bin_type);
-  t_buffer load_and_apply_patches_to_buffer(t_arch arch, t_bin_type bin_type, const t_patch_set *patch);
+  t_buffer	load_stage_buffer(t_arch arch, t_bin_type bin_type, t_file_type ft);
+  t_buffer	load_stage_elf_buffer(t_arch arch, t_bin_type bin_type);
+  t_buffer	load_and_apply_patches_to_buffer(t_arch arch, t_bin_type bin_type, const t_patch_set *patch);
 #+end_src
 
-#+begin_src c :tangle src/elf/file.c :mkdirp yes
+#+begin_src c :tangle srcs/cmn/file.c :mkdirp yes
   #include "common.h"
 
   int	get_file(const char *filename, int *fd)
   {
   	,*fd = open(filename, O_RDONLY);
 
-  	if (*fd < 0)
-          return (ERROR_STDL);
-  	return (SUCCESS);
+  	return (*fd < 0);
   }
 
   int get_file_size(int fd, off_t *file_size)
   {
   	,*file_size = lseek(fd, 0, SEEK_END);
-  	if (*file_size == ERROR_STDL)
+  	if (*file_size == -1)
   	{
   		perror("Failed to seek the end of file");
-  		return (FAIL_LSEEK);
+  		return (-2);
   	}
-  	if (lseek(fd, 0, SEEK_SET) == ERROR_STDL)
+  	if (lseek(fd, 0, SEEK_SET) == -1)
   	{
   		perror("Failed to seek the begin of file");
-  		return (FAIL_LSEEK);
+  		return (-2);
   	}
-  	return (SUCCESS);
+  	return (0);
   }
 #+end_src
 #+begin_src c :tangle include/common.h :mkdirp yes
+  //file validation
+  int		get_file(const char *path, int *fd); //open
+  int 	get_file_size(int fd, off_t *file_size);//lseek
+#+end_src
 
+#+begin_src c :tangle src/cmn/cpu_os_validation.c :mkdirp yes
+  #include "elf_format.h"
+  #include <cpuid.h> // __get_cpuid
+  // Valid Set of Instructions
+  static int cpu_has_sse(int edx) {
+  	return (edx & (1 << 25)) != 0;
+  }
+
+  static int os_supports_xmm(int edx) {
+  	return (edx & (1 << 24)) != 0; // FXSR
+  }
+  //! FXSR floating-point context fast save and restore.
+
+  static int cpu_supports_cmov(int edx) {
+  	return (edx & (1 << 14)) != 0; // CMOV
+  }
+
+  bool valid_cpu_x86(void)
+  {
+  	unsigned int eax;
+  	unsigned int ebx;
+  	unsigned int ecx;
+  	unsigned int edx;
+
+  	if (!__get_cpuid(1, &eax, &ebx, &ecx, &edx))
+  		return (0);
+  	return (cpu_has_sse(edx)
+  		&& os_supports_xmm(edx)
+  		&& cpu_supports_cmov(edx));
+  }
+#+end_src
+
+#+begin_src c :tangle include/common.h :mkdirp yes
+bool valid_cpu_x86(void);
 #+end_src
 #+begin_src c :tangle include/common.h :mkdirp yes
 # endif

@@ -185,12 +185,6 @@ Cause:  ELF, PE and Mach O got Magic number/Signature
      # define PE_SIGN_SIZE 4
      # define ELF_MAGIC_SIZE SELFMAG      // Below this line end the ignored defines
 
-     typedef enum e_file_type {
-       FT_ELF,
-       /* FT_MACH_O, */
-       FT_PE,  // FT_DOS?
-       FT_UNKNOW
-     }	t_file_type;
 
 
        typedef  union u_elf_addr

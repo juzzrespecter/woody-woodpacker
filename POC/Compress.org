@@ -4,9 +4,7 @@
 #+begin_src c :tangle include/compress.h :mkdirp yes:
   #ifndef COMPRESS_H
   # define COMPRESS_H
-  # include "lst.h"    // t_list
-  # include <stddef.h> // size_t
-  # include <stdint.h> // uint16_t
+  #include "common.h"// size_t, t_list, t_buffer, uint16_t
 
   typedef enum	e_compress_lz77
     {
@@ -25,11 +23,41 @@
 
   unsigned char *lz77_get_compress_arr(t_list *lst, size_t *arr_size);
   t_list *lz77_compress_to_list(const unsigned char *data, size_t data_len);
+  t_buffer lz77_get_headed_buffer(t_buffer *input, size_t value_size);
 
   #endif
 #+end_src
 #+begin_src c :tangle srcs/compress/compress.c :mkdirp yes:
   #include "compress.h"
+
+
+    static t_buffer lz77_get_buffer(t_buffer *input)
+    {
+        t_list *compressed_list;
+        t_buffer compressed;
+
+        compressed_list  = lz77_compress_to_list((unsigned char *)input->data, input->len);
+        if (!compressed_list)
+    		return (compressed);
+        compressed.data = lz77_get_compress_arr(compressed_list, &compressed.len);
+        ft_lstclear(&compressed_list, free);
+    	return (compressed);
+    }
+
+    t_buffer lz77_get_headed_buffer(t_buffer *input, size_t value_size)
+    {
+    	t_buffer tmp = {.data=&input->len, .len=value_size};
+        t_buffer compressed;
+        t_buffer compressed_with_header;
+
+    	compressed = lz77_get_buffer(input);
+    	if (invalid_buffer(&compressed))
+    		return (compressed);
+    	compressed_with_header = alloc_concat_buffers(&tmp, &compressed);
+    	free(compressed.data);
+    	return (compressed_with_header);
+    }
+
 
   t_list *lz77_compress_to_list(const unsigned char *data, size_t data_len) {
       if (!data || data_len == 0) return NULL;

@@ -3,7 +3,7 @@
 
 * x64
 
-#+begin_src c :tangle payload/x64/all_in.c :mkdirp yes
+#+begin_src c :tangle payload/elf/x64/all_in.c :mkdirp yes
   #include <elf.h>
   #include <sys/mman.h>
   #include <fcntl.h>
@@ -277,7 +277,7 @@
 
 #+end_src
 
-#+begin_src asm :tangle payload/x64/stage1.s :mkdirp yes
+#+begin_src asm :tangle payload/elf/x64/stage1.s :mkdirp yes
   global _start
 
   _start:
@@ -479,7 +479,7 @@
   	call _start.return_crypt_compress_addr
 #+end_src
 
-#+begin_src asm :tangle payload/x64/payload.s :mkdirp yes
+#+begin_src asm :tangle payload/elf/x64/payload.s :mkdirp yes
   	global payload
     payload:
     	call .woody_write		; Woody Payload.
@@ -495,7 +495,7 @@
             syscall			; I shouldn't protect this in case payload fail still working as normally.
   #+end_src
 
-#+begin_src asm :tangle payload/x64/stage2.s :mkdirp yes
+#+begin_src asm :tangle payload/elf/x64/stage2.s :mkdirp yes
   global _start
 
   jmp_entry_for_stage3:
@@ -1192,7 +1192,7 @@
           call _start.return_ehdr_ptr
 #+end_src
 
-#+begin_src asm :tangle payload/x64/stage3.s :mkdirp yes
+#+begin_src asm :tangle payload/elf/x64/stage3.s :mkdirp yes
 global _start
 
 _start:
@@ -1202,8 +1202,8 @@ _start:
 #+end_src
 
 * x32
-:fold:
-#+begin_src c :tangle payload/x32/all_in.c :mkdirp yes
+
+#+begin_src c :tangle payload/elf/x32/all_in.c :mkdirp yes
   #include <elf.h>
   #include <sys/mman.h>
   #include <fcntl.h>
@@ -1363,9 +1363,8 @@ _start:
     return (0);
   }
 #+end_src
-:END:
 
-#+begin_src asm :tangle payload/x32/stage1.s :mkdirp yes
+#+begin_src asm :tangle payload/elf/x32/stage1.s :mkdirp yes
   global _start
 
   _start:
@@ -1630,9 +1629,7 @@ _start:
         	call _start.return_crypt_compress_addr
 #+end_src
 
-:fold:
-
-#+begin_src asm :tangle payload/x32/payload.s :mkdirp yes
+#+begin_src asm :tangle payload/elf/x32/payload.s :mkdirp yes
   payload:
           call .woody_write	;;
   	times 14 ret
@@ -1647,7 +1644,7 @@ _start:
   	int 0x80
 #+end_src
 
-#+begin_src asm :tangle payload/x32/stage2.s :mkdirp yes
+#+begin_src asm :tangle payload/elf/x32/stage2.s :mkdirp yes
    global _start:
         ;; Cheatsheet mmap
         ;; ebx addr
@@ -2470,13 +2467,12 @@ _start:
         call return_ehdr_ptr
 #+end_src
 
-#+begin_src asm :tangle payload/x32/stage3.s :mkdirp yes
+#+begin_src asm :tangle payload/elf/x32/stage3.s :mkdirp yes
   	int 0x80
   	pop edx
   	ret
 #+end_src
 
-:END:
 
 * How to:
 ** Get bytecode:
@@ -2513,4 +2509,4 @@ xxd -h
 
 #+end_src
 :END:
-~xxd -p -c 0  bytecode/x32/stage1.bin | sed "s/\(c3\)\{15\}/$a/g" | xxd -r -p > output_bin~
+~xxd -p -c 0  bytecode/elf/x32/stage1.bin | sed "s/\(c3\)\{15\}/$a/g" | xxd -r -p > output_bin~

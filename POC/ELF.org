@@ -64,6 +64,86 @@ Elf header = ehdr = _h
     Elf32_Dyn	*elf32;
     Elf64_Dyn	*elf64;
   }	t_elf_dyn;
+  typedef struct	s_stage2_result {
+  	t_buffer	buffer;           // Stage2 buffer
+  	size_t		payload_raw_size; // Size of raw payload used in concat
+  }	t_stage2_result;
+
+  typedef struct s_stage1_params {
+    	size_t			stage2_total_size;
+    	t_buffer		encrypted;
+    	size_t			compressed_hdr_size;
+    	size_t			payload_raw_size;
+    	t_aes128_key	key;
+  }	t_stage1_params;
+
+  typedef struct	s_compress_encrypt {
+    	t_encrypt encrypt;
+    	size_t head_compress_len;
+  }	t_compress_encrypt;
+
+  typedef struct	s_payload_prereq {
+  	t_buffer        stage1;
+  	t_buffer        encrypted_payload;
+  	t_stage1_params stage1_params;
+  }	t_payload_prereq;
+
+  typedef struct	s_phdr_layout {
+  	uint64_t offset;
+  	uint64_t vaddr;
+  	uint64_t paddr;
+  	uint64_t filesz;
+  	uint64_t memsz;
+  	uint64_t align;
+  	uint64_t type;
+  	uint64_t flags;
+  }	t_phdr_layout;
+
+  typedef struct	s_elf_write_ctx {
+    	t_elf_h		   *ehdr;
+    	int				fd;
+    	unsigned char	class;
+    	uint64_t		phnum;
+    	uint64_t		new_phdr_vaddr;
+    	uint64_t		payload_size;
+  }	t_elf_write_ctx;
+
+  typedef struct s_s3_find_params {
+  	const t_elf_h   *ehdr;
+  	unsigned char    class;
+  	uint64_t         phnum;
+  	size_t           gap_size;
+  } t_s3_find_params;
+
+  typedef struct s_s3_find_result {
+  	bool      found;
+  	uint64_t  vaddr;
+  	uint64_t  offset;
+  	t_elf_ph  phdr;
+  } t_s3_find_result;
+
+  typedef struct	s_stage1_ctx {
+  	t_arch    arch;
+  	size_t    value_size;
+  	uint64_t  phnum;
+  	uint32_t  prefix_size;
+  	uint64_t  s2_entry_offset;
+  }	t_stage1_ctx;
+
+  typedef enum e_stage1_patch_idx {
+  	STAGE1_PATCH_EXPECTED_VADDR = 0,   // Highest loadable VA + prefix + ASLR adjustment
+  	STAGE1_PATCH_S1_SIZE,             // Stage1 length + prefix + encrypted len
+  	STAGE1_PATCH_STAGE2_SIZE,         // Stage2 total size
+  	STAGE1_PATCH_COMPRESSED_HDR_SIZE, // Compressed header size
+  	STAGE1_PATCH_S2_ENTRY_OFFSET,     // Stage2 entry offset
+  	STAGE1_PATCH_AES_KEY,             // AES key overwrite
+  	STAGE1_PATCH_COUNT                // Total number of valid patches
+  } t_stage1_patch_idx;
+
+  typedef struct	s_stage1_patch_values {
+  	size_t expected_va;
+  	size_t s1_len;
+  }	t_stage1_patch_values;
 
   # include "elf_setters_phdr.h" // phdr setters
   # include "elf_setters_ehdr.h" // ehdr setters
@@ -946,6 +1026,7 @@ uint32_t	elf_get_section_header_addr(const t_elf_sh *shdr, unsigned char class)
 
 #+begin_src c :tangle srcs/elf/parser/analysis.c :mkdirp yes
     #include "format_elf.h"
+
   //elf/analisis
       size_t elf_get_gnu_stack_phdr_ndx(const t_elf_h *ehdr, unsigned char class, uint64_t phnum)
       {
@@ -1014,7 +1095,8 @@ uint32_t	elf_get_section_header_addr(const t_elf_sh *shdr, unsigned char class)
 
 #+end_src
 #+begin_src c :tangle include/elf_format.h :mkdirp yes
-  //analysis
+
+//analysis
   size_t elf_get_gnu_stack_phdr_ndx(const t_elf_h *ehdr, unsigned char class, uint64_t phnum);
 
   size_t elf_get_highest_used_vaddr_avalaible(const t_elf_h *ehdr, unsigned char class, uint64_t phnum);
