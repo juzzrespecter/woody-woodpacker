@@ -24,7 +24,7 @@
    stage=stage1|stage2|payload
   # -c 0 for avoid split newlines.
   xxd -p -c 0  bytecode/x32/stage1.bin | sed "s/\(c3\)\{15\}/$a/g" | xxd -r -p > output_bin
-    xxd -p bytecode/x32/payload.bin | sed "s/\(c3\)\{14\}/$woody/g" | xxd -r -p > output.bin
+  xxd -p bytecode/x32/payload.bin | sed "s/\(c3\)\{14\}/$woody/g" | xxd -r -p > output.bin
 
 
 #+end_src
@@ -38,7 +38,7 @@
   - s1: get aslr offset,  [(va, size) s1, open /proc/self/exe], mmap s2 RW-, decrypt, decompress in s2, mprotect s2, jmp s2.
   - s2: [open  /proc/self/exe] mmap with fd, close fd, munmap s1[(va, size) s1], load elf, load interp, set auxv, jmp payload, and s3.
     - s3: munmap s2, reset r/edx, jmp to entrypoint(interpe or elf).  if couldn't append to one phdr R-X of the elf file s2 create one.
-**  Not update AT_EXECFN (auxv)
+** Not update AT_EXECFN (auxv)
 The dynamic linker needs the executable path for the AT_EXECFN entry in the auxiliary vector:
     This entry must contain the full path to the executable
     Without it, certain runtime behaviors would fail
@@ -904,7 +904,7 @@ int cpu_has_aesni(void) {
 #+end_src
 **** TODO Split source in files
 :LOGBOOK:
-CLOCK: [2026-01-15 Thu 13:46]
+CLOCK: [2026-01-15 Thu 13:46]--[2026-01-15 Thu 15:17] =>  1:31
 CLOCK: [2026-01-15 Thu 09:25]--[2026-01-15 Thu 09:45] =>  0:20
 :END:
 ***** TODO Organize file struct

@@ -134,26 +134,31 @@ Type ~C-c C-c~ or mark the region and type ~M-x eval-region~
 #+end_src
 * Auto assembly, patch, generate bytecod.
 #+begin_src sh
-  # xxd -h
-      # -l len      stop after <len> octets.
-      # -c cols     format <cols> octets per line. Default 16 (-i: 12, -ps: 30).
-      # -ps         output in postscript plain hexdump style.
-      # -r          reverse operation: convert (or patch) hexdump into binary.
-      # -s [+][-]seek  start at <seek> bytes abs. (or +: rel.) infile offset.
-  # ~str=$(echo -en "/proc/self/exe\x00" | hexdump -v -e '1/1 "%02x"')~
- gen_bin_stage()
-  {
-      nasm -f elf"$a" payload/elf/x"$a"/"$f".s
-      off=$((0x$(readelf -WS payload/elf/x"$a"/"$f".o | grep .text | awk '{ print $6}')))
-      len=$((0x$(readelf -WS payload/elf/x"$a"/"$f".o | grep .text | awk '{ print $7}')))
-      if [[ "$f" == "stage1" ]]; then
-  	xxd -s $off -l $len -p -c 0 payload/elf/x"$a"/"$f".o   | sed "s/\(c3\)\{15\}/$str/g" | xxd -r -p > bytecode/elf/x"$a"/"$f".bin
-      else
-  	echo "off -> 0x$off -> $((0x$off))"
-  	echo "len -> 0x$len -> $((0x$len))"
-  	dd if=payload/elf/x"$a"/"$f".o of=bytecode/elf/x"$a"/"$f".bin bs=1 skip=$(($off)) count=$(($len))
-      fi
-  }
+     # xxd -h
+         # -l len      stop after <len> octets.
+         # -c cols     format <cols> octets per line. Default 16 (-i: 12, -ps: 30).
+         # -ps         output in postscript plain hexdump style.
+         # -r          reverse operation: convert (or patch) hexdump into binary.
+         # -s [+][-]seek  start at <seek> bytes abs. (or +: rel.) infile offset.
+     file_path=$(echo -en "/proc/self/exe\x00" | hexdump -v -e '1/1 "%02x"')
+     woody=$(echo "....WOODY...." | hexdump -v -e '1/1 "%02x"')
+
+          gen_bin_stage()
+     {
+         nasm -f elf"$a" payload/elf/x"$a"/"$f".s
+         off=$((0x$(readelf -WS payload/elf/x"$a"/"$f".o | grep .text | awk '{ print $6}')))
+         len=$((0x$(readelf -WS payload/elf/x"$a"/"$f".o | grep .text | awk '{ print $7}')))
+         if [[ "$f" == "stage1" ]]; then
+     	       xxd -s $off -l $len -p -c 0 payload/elf/x"$a"/"$f".o   | sed "s/\(c3\)\{15\}/$file_path/g" | xxd -r -p > bytecode/elf/x"$a"/"$f".bin
+         elif [[ "$f" == "payload" ]]; then
+             xxd -s $off -l $len -p -c 0 payload/elf/x"$a"/"$f".o  | sed "s/\(c3\)\{14\}/$woody/g" | xxd -r -p > bytecode/elf/x"$a"/"$f".bin
+         else
+     	echo "off -> 0x$off -> $((0x$off))"
+     	echo "len -> 0x$len -> $((0x$len))"
+     	dd if=payload/elf/x"$a"/"$f".o of=bytecode/elf/x"$a"/"$f".bin bs=1 skip=$(($off)) count=$(($len))
+         fi
+     }
+
 #+end_src
 * Auto Test
 #+begin_src sh
@@ -162,12 +167,14 @@ Type ~C-c C-c~ or mark the region and type ~M-x eval-region~
     make
     ./woody_woodpacker ./dyn_link_x64
     if [[ $? -eq 0 ]]; then
+        echo "Running woody x64"
         ./woody
     else
         echo "Error x64"
     fi
     ./woody_woodpacker ./dyn_link_x86
     if [[ $? -eq 0 ]]; then
+        echo "Running woody x32"
         ./woody
     else
         echo "Error x86"
