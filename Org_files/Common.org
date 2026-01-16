@@ -438,7 +438,7 @@
   int 	get_file_size(int fd, off_t *file_size);//lseek
 #+end_src
 
-#+begin_src c :tangle src/cmn/cpu_os_validation.c :mkdirp yes
+#+begin_src c :tangle srcs/cmn/cpu_os_validation.c :mkdirp yes
   #include "elf_format.h"
   #include <cpuid.h> // __get_cpuid
   // Valid Set of Instructions

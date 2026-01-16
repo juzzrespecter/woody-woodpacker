@@ -48,7 +48,8 @@
           invalid \
   patch \
   		stages \
-  		file
+  		file \
+  		cpu_os_validation
 
 
       CMN-DIR                                :=      cmn/

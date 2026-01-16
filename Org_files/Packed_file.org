@@ -64,7 +64,7 @@ Don't allow to got a mmap with Write and exec. First write then mprotect Read|EX
     #include <string.h>
     #include "woody.h"
     #include "common.h"
-    #include "elf_format.h" // align_up, elf_get_gnu_phdr_ndx
+    #include "format_elf.h" // align_up, elf_get_gnu_phdr_ndx
     #include <stdbool.h>
     #include <unistd.h>
     #include <stdio.h>
