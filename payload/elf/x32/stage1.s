@@ -254,6 +254,7 @@ _exit:
           mov    esp, ebp            ; Restore stack pointer
           ret                       ; Return
 
+    ;;TODO @danrodri implement the logic.
       decrypt:
       	mov eax, esi
       	ret

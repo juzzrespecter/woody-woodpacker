@@ -201,7 +201,7 @@
         t_patch_desc desc[STAGE1_PATCH_COUNT],
         t_stage1_patch_values *vals,
         const t_stage1_ctx *ctx,
-        const t_stage1_params *params,
+        t_stage1_params *params,
         const t_elf_h *ehdr,
         unsigned char class,
         const t_buffer *stage1)
@@ -215,6 +215,8 @@
                                        g_stage1,
                                        sizeof(g_stage1) / sizeof(*g_stage1)));
         vals->s1_len = stage1->len + ctx->prefix_size + params->encrypted.len;
+
+		params->stage2_total_size = align_up(params->stage2_total_size, 16);
 
         desc[STAGE1_PATCH_EXPECTED_VADDR] = (t_patch_desc){
             .base_off_x86 = 0xa1,

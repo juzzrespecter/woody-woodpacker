@@ -1,6 +1,6 @@
 #include "common.h"
 
-//                                        unused ret_size,
+//TODO @danrodri implement the logic.
 void *encrypt(void *raw, size_t raw_size, size_t *ret_size, int *key)
 {
   	if (raw_size)

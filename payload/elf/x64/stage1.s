@@ -190,6 +190,7 @@ lz77_decompress:
 	neg rax
 	ret
 
+;;TODO @danrodri implement the logic.
 decrypt:
 	push rsi
 	pop rax
